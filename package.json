@@ -1,0 +1,14 @@
+{
+  "name": "uas-saksbank",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Delt redaksjonell saksbank for UAS Norway / Dronemagasinet, med automatisk RSS-innhenting.",
+  "scripts": {
+    "dev": "netlify dev"
+  },
+  "dependencies": {
+    "@netlify/functions": "^2.8.1",
+    "@supabase/supabase-js": "^2.45.4",
+    "rss-parser": "^3.13.0"
+  }
+}

@@ -1,0 +1,1053 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8" />
+<title>Saksbank – UAS Norway</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --color-ink: #101820;
+    --color-paper: #eef1ec;
+    --color-accent: #3b6e8c;
+    --color-accent-deep: #1f4a5f;
+    --color-amber: #c97a2e;
+    --color-green: #4c8b5d;
+    --color-red: #b8503f;
+
+    --bg: var(--color-paper);
+    --bg-elevated: #ffffff;
+    --bg-sunken: #e2e7e1;
+    --text: var(--color-ink);
+    --text-muted: #55605f;
+    --border: rgba(16, 24, 32, 0.14);
+    --accent: var(--color-accent);
+    --accent-contrast: #ffffff;
+    --focus: var(--color-accent-deep);
+
+    --amber-bg: rgba(201, 122, 46, 0.14);
+    --amber-fg: #8a5219;
+    --green-bg: rgba(76, 139, 93, 0.14);
+    --green-fg: #2f6b41;
+    --red-bg: rgba(184, 80, 63, 0.14);
+    --red-fg: #93392a;
+    --yellow-bg: rgba(196, 162, 22, 0.18);
+    --yellow-fg: #7a6008;
+    --slate-bg: rgba(16, 24, 32, 0.07);
+    --slate-fg: #55605f;
+
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1418; --bg-elevated: #141d22; --bg-sunken: #0a1013;
+      --text: #e7ece9; --text-muted: #9aa6a2; --border: rgba(231, 236, 233, 0.14);
+      --accent: #6fa8c9; --accent-contrast: #06131a; --focus: #8fc0dd;
+      --amber-bg: rgba(224, 153, 84, 0.16); --amber-fg: #e0a262;
+      --green-bg: rgba(115, 181, 132, 0.16); --green-fg: #7fc496;
+      --red-bg: rgba(214, 120, 103, 0.18); --red-fg: #e08d7c;
+      --yellow-bg: rgba(224, 196, 84, 0.2); --yellow-fg: #e0c454;
+      --slate-bg: rgba(231, 236, 233, 0.08); --slate-fg: #9aa6a2;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-sans);
+    font-size: 15px; line-height: 1.45; -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, h4 { text-wrap: balance; margin: 0; }
+  button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
+
+  .app { display: flex; flex-direction: column; height: 100vh; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 16px; padding: 0 20px; height: 60px; flex-shrink: 0;
+    background: var(--bg-elevated); border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--accent), var(--accent-deep, var(--accent)));
+    box-shadow: 0 0 0 3px var(--amber-bg); flex-shrink: 0;
+  }
+  .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+  .brand-text .name { font-size: 0.85rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .brand-text .sub { font-size: 0.72rem; color: var(--text-muted); }
+  .topbar-spacer { flex: 1; }
+  .topbar-actions { display: flex; align-items: center; gap: 8px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);
+    font-weight: 600; font-size: 0.85rem; white-space: nowrap;
+  }
+  .btn:hover { background: var(--bg-sunken); }
+  .btn-primary { background: var(--accent); color: var(--accent-contrast); border-color: transparent; }
+  .btn-primary:hover { filter: brightness(1.06); }
+  .btn-ghost { background: transparent; border-color: transparent; }
+  .btn-ghost:hover { background: var(--bg-sunken); }
+  .btn-danger { color: var(--red-fg); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .badge-count {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px;
+    padding: 0 5px; border-radius: 9px; background: var(--amber-bg); color: var(--amber-fg);
+    font-size: 0.68rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .live-dot {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 0.72rem; color: var(--text-muted);
+  }
+  .live-dot::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--green-fg);
+  }
+  .live-dot.offline::before { background: var(--red-fg); }
+
+  .view-switch { display: flex; gap: 2px; background: var(--bg-sunken); padding: 2px; border-radius: 9px; }
+  .btn-view { border: none; background: transparent; padding: 6px 12px; border-radius: 7px; font-weight: 600; font-size: 0.82rem; color: var(--text-muted); }
+  .btn-view.active { background: var(--bg-elevated); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); }
+
+  .pilot-banner {
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0; padding: 8px 20px;
+    background: var(--amber-bg); color: var(--amber-fg); font-size: 0.78rem; border-bottom: 1px solid var(--border);
+  }
+  .pilot-banner strong { font-weight: 700; }
+  .pilot-banner-spacer { flex: 1; }
+  .pilot-banner button.btn { padding: 4px 10px; font-size: 0.76rem; background: var(--bg-elevated); }
+  .about-section { display: flex; flex-direction: column; gap: 6px; }
+  .about-section h3 { font-size: 0.82rem; font-weight: 700; }
+  .about-section p, .about-section li { font-size: 0.83rem; color: var(--text-muted); line-height: 1.5; }
+  .about-section ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+  .about-ok { color: var(--green-fg); }
+  .about-missing { color: var(--red-fg); }
+
+  .main { flex: 1; display: flex; min-height: 0; }
+  .board-wrap { flex: 1; overflow-x: auto; padding: 16px 12px; }
+  .board { display: flex; gap: 12px; height: 100%; align-items: flex-start; }
+  .column { flex: 0 0 272px; display: flex; flex-direction: column; background: var(--bg-sunken); border-radius: 12px; max-height: 100%; }
+  .column-header { display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px; position: sticky; top: 0; z-index: 1; }
+  .column-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); }
+  .column-count { font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: 0.72rem; }
+  .column-body { flex: 1; overflow-y: auto; padding: 4px 10px 12px; display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
+  .column-empty { font-size: 0.78rem; color: var(--text-muted); padding: 12px 4px; text-align: center; }
+
+  .list-wrap { flex: 1; overflow: auto; padding: 16px 20px; }
+  .list-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .list-table th {
+    text-align: left; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--bg); z-index: 1;
+  }
+  .list-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+  .list-title { cursor: pointer; font-weight: 650; white-space: normal; }
+  .list-title:hover { color: var(--accent); }
+  .list-table td.overdue { color: var(--red-fg); font-weight: 700; }
+  .list-table select { padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elevated); color: var(--text); }
+
+  .card {
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; padding: 10px 11px;
+    display: flex; flex-direction: column; gap: 7px; text-align: left; width: 100%;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card[draggable="true"] { cursor: grab; }
+  .card.dragging { opacity: 0.45; }
+  .column-body.drag-over { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--bg-elevated); border-radius: 8px; }
+  .chip-row { display: flex; gap: 5px; flex-wrap: wrap; }
+  .chip { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+  .chip-type-redaksjonell { background: var(--slate-bg); color: var(--slate-fg); }
+  .chip-type-content { background: var(--amber-bg); color: var(--amber-fg); }
+  .chip-type-ai { background: transparent; color: var(--text-muted); border: 1px dashed var(--border); }
+  .chip-site { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .chip-urg-akutt { background: var(--red-bg); color: var(--red-fg); }
+  .chip-urg-planlagt { background: var(--yellow-bg); color: var(--yellow-fg); }
+  .chip-urg-tidlos { background: var(--green-bg); color: var(--green-fg); }
+  .chip-rss { background: transparent; color: var(--text-muted); border: 1px dotted var(--border); }
+
+  .card-title { font-size: 0.9rem; font-weight: 650; line-height: 1.3; }
+  .card-meta { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--text-muted); }
+  .avatar {
+    width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: var(--accent-contrast);
+    display: inline-flex; align-items: center; justify-content: center; font-size: 0.6rem; font-weight: 700; flex-shrink: 0;
+  }
+  .meta-due { font-variant-numeric: tabular-nums; }
+  .meta-due.overdue { color: var(--red-fg); font-weight: 700; }
+
+  .score-row { display: flex; align-items: center; gap: 6px; }
+  .score-meter { flex: 1; height: 4px; border-radius: 3px; background: var(--bg-sunken); overflow: hidden; }
+  .score-fill { height: 100%; border-radius: 3px; }
+  .score-num { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+  .aside { flex: 0 0 300px; border-left: 1px solid var(--border); background: var(--bg-elevated); display: flex; flex-direction: column; min-height: 0; }
+  .aside-header { padding: 14px 16px 8px; display: flex; align-items: center; justify-content: space-between; }
+  .aside-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); }
+  .aside-list { flex: 1; overflow-y: auto; padding: 4px 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .aside-empty { font-size: 0.8rem; color: var(--text-muted); padding: 20px 8px; text-align: center; }
+  .activity-item { display: flex; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-sunken); font-size: 0.78rem; }
+  .activity-item.alert { background: var(--amber-bg); }
+  .activity-icon { flex-shrink: 0; font-size: 0.9rem; line-height: 1.4; }
+  .activity-body b { font-weight: 700; }
+  .activity-time { display: block; margin-top: 2px; font-size: 0.68rem; color: var(--text-muted); font-family: var(--font-mono); }
+
+  @media (max-width: 860px) {
+    .aside { position: fixed; inset: 60px 0 0 0; z-index: 30; transform: translateX(100%); transition: transform 0.2s ease; flex: none; }
+    .aside.open { transform: translateX(0); }
+    @media (prefers-reduced-motion: reduce) { .aside { transition: none; } }
+    .column { flex-basis: 84vw; scroll-snap-align: start; }
+    .board { scroll-snap-type: x mandatory; }
+    .brand-text .sub { display: none; }
+  }
+
+  .overlay { position: fixed; inset: 0; background: rgba(6, 10, 12, 0.5); display: flex; align-items: stretch; justify-content: flex-end; z-index: 40; }
+  .overlay.center { align-items: center; justify-content: center; padding: 24px; }
+  .panel { background: var(--bg); width: min(480px, 100vw); height: 100%; overflow-y: auto; box-shadow: -8px 0 24px rgba(0,0,0,0.15); display: flex; flex-direction: column; }
+  .overlay.center .panel { width: min(560px, 100%); height: auto; max-height: 88vh; border-radius: 14px; }
+  .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 16px 18px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg); z-index: 1; }
+  .panel-header h2 { font-size: 1rem; }
+  .panel-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 16px; }
+  .panel-footer { padding: 14px 18px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; gap: 8px; position: sticky; bottom: 0; background: var(--bg); }
+
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); }
+  .field input, .field select, .field textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-elevated); color: var(--text); width: 100%; }
+  .field textarea { resize: vertical; min-height: 60px; font-family: var(--font-mono); font-size: 0.82rem; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .helper { font-size: 0.72rem; color: var(--text-muted); }
+  .section-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 14px; margin-top: 2px; }
+
+  .slider-row { display: flex; align-items: center; gap: 10px; }
+  .slider-row label { flex: 0 0 110px; font-size: 0.78rem; color: var(--text); font-weight: 600; text-transform: none; letter-spacing: 0; }
+  .slider-row input[type="range"] { flex: 1; }
+  .slider-row .val { width: 20px; text-align: right; font-family: var(--font-mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+
+  .stopp-box { border: 1px solid var(--amber-fg); background: var(--amber-bg); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .stopp-box.done { border-color: var(--green-fg); background: var(--green-bg); }
+  .stopp-title { font-weight: 700; font-size: 0.82rem; display: flex; align-items: center; gap: 6px; }
+  .checkline { display: flex; align-items: flex-start; gap: 8px; font-size: 0.82rem; }
+
+  .kilder-list { display: flex; flex-direction: column; gap: 6px; }
+  .kilde-row { display: flex; gap: 6px; }
+  .kilde-row input { flex: 1; }
+  .icon-btn { border: none; background: transparent; color: var(--text-muted); padding: 6px; border-radius: 6px; }
+  .icon-btn:hover { background: var(--bg-sunken); color: var(--red-fg); }
+
+  .history-item { font-size: 0.78rem; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+  .history-item:last-child { border-bottom: none; }
+  .history-time { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-muted); }
+
+  .draft-box { font-family: var(--font-mono); font-size: 0.78rem; white-space: pre-wrap; background: var(--bg-sunken); border-radius: 8px; padding: 12px; border: 1px solid var(--border); max-height: 40vh; overflow-y: auto; }
+  .newsletter-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+  .newsletter-item:last-child { border-bottom: none; }
+
+  .weights-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .weight-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.8rem; }
+  .weight-field input { width: 52px; text-align: center; }
+
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 8px; font-size: 0.82rem; z-index: 60; box-shadow: 0 6px 18px rgba(0,0,0,0.2); }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  /* login */
+  .login-screen { height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .login-card { width: min(360px, 100%); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 14px; padding: 28px; display: flex; flex-direction: column; gap: 16px; }
+  .login-card h1 { font-size: 1.1rem; }
+  .login-card p { font-size: 0.85rem; color: var(--text-muted); }
+  .login-status { font-size: 0.82rem; }
+  .login-status.error { color: var(--red-fg); }
+  .login-status.ok { color: var(--green-fg); }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div style="display:flex;align-items:center;justify-content:center;height:100vh;color:var(--text-muted);font-size:0.85rem;">Laster …</div>
+</div>
+
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ── Supabase-oppsett ────────────────────────────────────────────
+  // Fyll inn etter at Supabase-prosjektet er opprettet (Project Settings → API).
+  // Dette er anon/public-nøkkelen — den er trygg å ha i frontend-koden,
+  // tilgangen styres av RLS-reglene i supabase/schema.sql.
+  var SUPABASE_URL = "https://DITT-PROSJEKT.supabase.co";
+  var SUPABASE_ANON_KEY = "DIN-ANON-KEY";
+
+  var CONFIGURED = SUPABASE_URL.indexOf("DITT-PROSJEKT") === -1 && SUPABASE_ANON_KEY.indexOf("DIN-ANON-KEY") === -1;
+  var supabase = CONFIGURED ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+  var STATUSES = [
+    { id: "ide", label: "Idé" },
+    { id: "godkjent", label: "Godkjent" },
+    { id: "i-arbeid", label: "I arbeid" },
+    { id: "utkast-klart", label: "Utkast klart" },
+    { id: "wp-utkast", label: "WP-utkast opprettet" },
+    { id: "publisert", label: "Publisert" }
+  ];
+  var SIDE_STATUSES = { arkivert: "Arkivert", avvist: "Avvist" };
+  var TYPE_LABELS = { redaksjonell: "Redaksjonell", content: "INFO", ai: "Redaksjonen / ChatGPT" };
+  var URGENCY_LABELS = { akutt: "Akutt", planlagt: "Planlagt", tidlos: "Tidløs" };
+  var SITES = ["dronemag.no", "uasnorway.no"];
+  var SITE_LABELS = { "dronemag.no": "DRONEMAGASINET", "uasnorway.no": "UAS NORWAY" };
+  var OWNERS = ["Ikke tildelt", "Hans Torgersen", "Anders Martinsen", "Tina Martinsen", "Erfan Shaerzadeh", "Redaksjonen"];
+  var APPROVERS = OWNERS.filter(function (o) { return o !== "Ikke tildelt"; });
+  var AUDIENCES = ["Ikke satt", "Hobbyoperatører", "Operatører/PfO", "Bransje/leverandører", "Nye operatører", "Alle lesere"];
+  var WEIGHTS_KEY = "uas-saksbank-weights-v1"; // personlig visningspreferanse — greit lokalt
+
+  function nowIso() { return new Date().toISOString(); }
+  function fmtTime(iso) {
+    var d = new Date(iso);
+    return d.toLocaleDateString("nb-NO", { day: "2-digit", month: "2-digit" }) + " " +
+      d.toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" });
+  }
+  function daysUntil(dateStr) {
+    if (!dateStr) return null;
+    var target = new Date(dateStr + "T00:00:00");
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    return Math.round((target - today) / 86400000);
+  }
+  function fmtDue(dateStr) {
+    if (!dateStr) return "Ingen frist";
+    var n = daysUntil(dateStr);
+    if (n < 0) return "Forfalt (" + Math.abs(n) + "d)";
+    if (n === 0) return "I dag";
+    if (n === 1) return "I morgen";
+    return "Om " + n + " dager";
+  }
+  function escapeHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function initials(name) {
+    if (!name || name === "Ikke tildelt") return "–";
+    var parts = name.trim().split(/\s+/);
+    return (parts[0][0] + (parts[1] ? parts[1][0] : "")).toUpperCase();
+  }
+
+  /* ---------- DB ↔ app-modell ---------- */
+
+  function dbToCase(row) {
+    return {
+      id: row.id, title: row.title || "", sakstype: row.sakstype, hastegrad: row.hastegrad,
+      status: row.status, eier: row.eier || "Ikke tildelt", frist: row.frist || "",
+      nesteHandling: row.neste_handling || "", kilder: row.kilder || [], kategori: row.kategori || "",
+      malgruppe: row.malgruppe || "Ikke satt", nettsted: row.nettsted, triage: row.triage,
+      stoppGodkjent: !!row.stopp_godkjent, publisertAv: row.publisert_av || "",
+      nyhetsbrevInkludert: !!row.nyhetsbrev_inkludert, historikk: row.historikk || [],
+      isRss: (row.historikk || []).some(function (h) { return /RSS-kilde/.test(h.text || ""); })
+    };
+  }
+
+  function caseToDbUpdate(c) {
+    return {
+      title: c.title, sakstype: c.sakstype, hastegrad: c.hastegrad, status: c.status, eier: c.eier,
+      frist: c.frist || null, neste_handling: c.nesteHandling, kilder: c.kilder, kategori: c.kategori,
+      malgruppe: c.malgruppe, nettsted: c.nettsted, triage: c.triage, stopp_godkjent: c.stoppGodkjent,
+      publisert_av: c.publisertAv, nyhetsbrev_inkludert: c.nyhetsbrevInkludert, historikk: c.historikk
+    };
+  }
+
+  function statusLabel(id) {
+    var s = STATUSES.filter(function (x) { return x.id === id; })[0];
+    if (s) return s.label;
+    return SIDE_STATUSES[id] || id;
+  }
+
+  var state = {
+    cases: [],
+    weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
+    ui: { asideOpen: false, modal: null, activeCaseId: null, view: "board" },
+    session: null,
+    realtimeOk: false
+  };
+
+  var draggedId = null;
+
+  function loadWeights() {
+    try {
+      var w = localStorage.getItem(WEIGHTS_KEY);
+      if (w) state.weights = JSON.parse(w);
+    } catch (e) {}
+  }
+  function persistWeights() {
+    localStorage.setItem(WEIGHTS_KEY, JSON.stringify(state.weights));
+  }
+
+  function computeScore(triage, weights) {
+    var w = weights;
+    var sumW = w.aktualitet + w.betydning + w.eksklusivitet + w.innsats;
+    if (sumW <= 0) sumW = 1;
+    var raw = (triage.aktualitet * w.aktualitet + triage.betydning * w.betydning +
+      triage.eksklusivitet * w.eksklusivitet + (6 - triage.innsats) * w.innsats) / sumW;
+    return Math.round((raw / 5) * 100);
+  }
+  function scoreColorVar(score) {
+    if (score >= 66) return "var(--green-fg)";
+    if (score >= 40) return "var(--amber-fg)";
+    return "var(--slate-fg)";
+  }
+  function getCase(id) { return state.cases.filter(function (c) { return c.id === id; })[0]; }
+
+  /* ---------- Supabase I/O ---------- */
+
+  async function fetchCases() {
+    var res = await supabase.from("cases").select("*").order("created_at", { ascending: false });
+    if (res.error) { showToast("Kunne ikke hente saker: " + res.error.message); return; }
+    state.cases = (res.data || []).map(dbToCase);
+  }
+
+  async function refreshAndRender() {
+    await fetchCases();
+    render();
+  }
+
+  async function createCase(fields) {
+    var nowIsoStr = nowIso();
+    var payload = Object.assign({
+      title: "", sakstype: "redaksjonell", hastegrad: "planlagt", status: "ide",
+      eier: "Ikke tildelt", neste_handling: "", kilder: [], kategori: "", malgruppe: "Ikke satt",
+      nettsted: "dronemag.no", triage: { aktualitet: 3, betydning: 3, innsats: 3, eksklusivitet: 3 },
+      historikk: [{ ts: nowIsoStr, text: "Sak opprettet" }]
+    }, fields);
+    var res = await supabase.from("cases").insert(payload).select().single();
+    if (res.error) { showToast("Kunne ikke lagre: " + res.error.message); return null; }
+    return res.data;
+  }
+
+  async function updateCase(id, updates) {
+    var res = await supabase.from("cases").update(updates).eq("id", id);
+    if (res.error) { showToast("Kunne ikke lagre endring: " + res.error.message); return false; }
+    return true;
+  }
+
+  async function deleteCase(id) {
+    var res = await supabase.from("cases").delete().eq("id", id);
+    if (res.error) { showToast("Kunne ikke slette: " + res.error.message); return false; }
+    return true;
+  }
+
+  /* ---------- rendering ---------- */
+
+  var root = document.getElementById("app");
+
+  function render() {
+    var alerts = buildAlerts();
+    root.innerHTML =
+      renderTopbar(alerts.length) +
+      renderPilotBanner() +
+      '<div class="main">' +
+        (state.ui.view === "list" ? renderListView() : renderBoard()) +
+        renderAside(alerts) +
+      "</div>" +
+      renderModal();
+    bindEvents();
+  }
+
+  function renderTopbar(alertCount) {
+    var email = state.session && state.session.user ? state.session.user.email : "";
+    return (
+      '<header class="topbar">' +
+        '<div class="brand">' +
+          '<div class="brand-mark" aria-hidden="true"></div>' +
+          '<div class="brand-text"><span class="name">Saksbank</span><span class="sub">UAS Norway · Dronemagasinet</span></div>' +
+        "</div>" +
+        '<div class="topbar-spacer"></div>' +
+        '<span class="live-dot' + (state.realtimeOk ? "" : " offline") + '">' + (state.realtimeOk ? "Live" : "Ikke tilkoblet") + "</span>" +
+        '<div class="view-switch" role="group" aria-label="Visning">' +
+          '<button class="btn-view' + (state.ui.view === "board" ? " active" : "") + '" data-action="set-view" data-view="board">Kolonner</button>' +
+          '<button class="btn-view' + (state.ui.view === "list" ? " active" : "") + '" data-action="set-view" data-view="list">Liste</button>' +
+        "</div>" +
+        '<div class="topbar-actions">' +
+          '<button class="btn" data-action="open-weights">Prioriteringsmodell</button>' +
+          '<button class="btn" data-action="open-newsletter">Nyhetsbrevutkast</button>' +
+          '<button class="btn btn-ghost" data-action="toggle-aside" aria-label="Aktivitet">Aktivitet ' + (alertCount ? '<span class="badge-count">' + alertCount + "</span>" : "") + "</button>" +
+          '<button class="btn btn-primary" data-action="open-new-tip">+ Nytt tips</button>' +
+          '<button class="btn btn-ghost" data-action="sign-out" title="' + escapeHtml(email) + '">Logg ut</button>' +
+        "</div>" +
+      "</header>"
+    );
+  }
+
+  function renderPilotBanner() {
+    return (
+      '<div class="pilot-banner">' +
+        "🗂️ <span><strong>Pilot.</strong> Saksbank og RSS-innhenting er ekte og delt mellom alle innloggede. WordPress, Mailchimp og AI-triage er fortsatt ikke koblet på.</span>" +
+        '<div class="pilot-banner-spacer"></div>' +
+        '<button class="btn" data-action="open-about">Om piloten</button>' +
+      "</div>"
+    );
+  }
+
+  function renderAboutModal() {
+    return (
+      '<div class="overlay center" data-action="close-modal-bg">' +
+        '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="about-title">' +
+          '<div class="panel-header"><h2 id="about-title">Om denne piloten</h2><button class="icon-btn" data-action="close-modal">✕</button></div>' +
+          '<div class="panel-body">' +
+            '<div class="about-section"><h3>Fungerer allerede</h3><ul>' +
+              '<li class="about-ok">✓ Delt saksbank — alle innloggede ser samme data, i sanntid</li>' +
+              '<li class="about-ok">✓ Innlogging via e-post (magic link)</li>' +
+              '<li class="about-ok">✓ Automatisk RSS-innhenting hver time, nye funn havner i «Idé»</li>' +
+              '<li class="about-ok">✓ STOPP-gate: ingen sak kan settes Publisert uten kontroll og godkjenner</li>' +
+              '<li class="about-ok">✓ Nyhetsbrevutkast som kun henter status Publisert, uten duplikater</li>' +
+            "</ul></div>" +
+            '<div class="about-section"><h3>Mangler fortsatt</h3><ul>' +
+              '<li class="about-missing">✗ AI-genererte triage-forslag — sakstype/hastegrad/score settes manuelt</li>' +
+              '<li class="about-missing">✗ Ekte WordPress-utkast — status er kun en etikett</li>' +
+              '<li class="about-missing">✗ Ekte Mailchimp-sending — utkastet må kopieres inn manuelt</li>' +
+              '<li class="about-missing">✗ Doffin, eventkalender, omtaleovervåkning</li>' +
+            "</ul></div>" +
+          "</div>" +
+          '<div class="panel-footer"><button class="btn btn-primary" data-action="close-modal">Lukk</button></div>' +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderBoard() {
+    var cols = STATUSES.map(function (s) {
+      var items = state.cases.filter(function (c) { return c.status === s.id; });
+      return (
+        '<div class="column">' +
+          '<div class="column-header"><span class="column-title">' + escapeHtml(s.label) + '</span><span class="column-count">' + items.length + "</span></div>" +
+          '<div class="column-body" data-status="' + s.id + '">' +
+            (items.length ? items.map(renderCard).join("") : '<div class="column-empty">Ingen saker</div>') +
+          "</div>" +
+        "</div>"
+      );
+    }).join("");
+    return '<div class="board-wrap"><div class="board">' + cols + "</div></div>";
+  }
+
+  function renderCard(c) {
+    var score = computeScore(c.triage, state.weights);
+    var due = fmtDue(c.frist);
+    var overdue = c.frist && daysUntil(c.frist) < 0 && c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist";
+    return (
+      '<button class="card" draggable="true" data-action="open-case" data-id="' + c.id + '">' +
+        '<div class="chip-row">' +
+          '<span class="chip chip-type-' + c.sakstype + '">' + TYPE_LABELS[c.sakstype] + "</span>" +
+          '<span class="chip chip-urg-' + c.hastegrad + '">' + URGENCY_LABELS[c.hastegrad] + "</span>" +
+          '<span class="chip chip-site">' + (SITE_LABELS[c.nettsted] || c.nettsted) + "</span>" +
+          (c.isRss ? '<span class="chip chip-rss">RSS</span>' : "") +
+        "</div>" +
+        '<div class="card-title">' + escapeHtml(c.title || "(uten tittel)") + "</div>" +
+        '<div class="card-meta"><span class="avatar">' + initials(c.eier) + "</span><span>" + escapeHtml(c.eier || "Ingen eier") + '</span><span class="meta-due' + (overdue ? " overdue" : "") + '">· ' + due + "</span></div>" +
+        '<div class="score-row"><div class="score-meter"><div class="score-fill" style="width:' + score + '%;background:' + scoreColorVar(score) + ';"></div></div><span class="score-num">' + score + "</span></div>" +
+      "</button>"
+    );
+  }
+
+  function statusOptionsMarkup(current) {
+    return STATUSES.map(function (s) {
+      return '<option value="' + s.id + '"' + (s.id === current ? " selected" : "") + ">" + s.label + "</option>";
+    }).join("") + Object.keys(SIDE_STATUSES).map(function (k) {
+      return '<option value="' + k + '"' + (k === current ? " selected" : "") + ">" + SIDE_STATUSES[k] + "</option>";
+    }).join("");
+  }
+
+  function renderListView() {
+    var order = STATUSES.map(function (s) { return s.id; }).concat(Object.keys(SIDE_STATUSES));
+    var rows = state.cases.slice().sort(function (a, b) {
+      var oa = order.indexOf(a.status), ob = order.indexOf(b.status);
+      if (oa !== ob) return oa - ob;
+      return computeScore(b.triage, state.weights) - computeScore(a.triage, state.weights);
+    });
+    return (
+      '<div class="list-wrap"><table class="list-table">' +
+        "<thead><tr><th>Tittel</th><th>Type</th><th>Hastegrad</th><th>Nettsted</th><th>Journalist</th><th>Status</th><th>Frist</th><th>Score</th></tr></thead><tbody>" +
+        (rows.length ? rows.map(function (c) {
+          var score = computeScore(c.triage, state.weights);
+          var due = fmtDue(c.frist);
+          var overdue = c.frist && daysUntil(c.frist) < 0 && ["publisert", "arkivert", "avvist"].indexOf(c.status) === -1;
+          return (
+            "<tr>" +
+              '<td class="list-title" data-action="open-case" data-id="' + c.id + '">' + escapeHtml(c.title || "(uten tittel)") + "</td>" +
+              '<td><span class="chip chip-type-' + c.sakstype + '">' + TYPE_LABELS[c.sakstype] + "</span></td>" +
+              '<td><span class="chip chip-urg-' + c.hastegrad + '">' + URGENCY_LABELS[c.hastegrad] + "</span></td>" +
+              '<td><span class="chip chip-site">' + (SITE_LABELS[c.nettsted] || c.nettsted) + "</span></td>" +
+              "<td>" + escapeHtml(c.eier) + "</td>" +
+              '<td><select data-list-status="' + c.id + '">' + statusOptionsMarkup(c.status) + "</select></td>" +
+              '<td class="' + (overdue ? "overdue" : "") + '">' + due + "</td>" +
+              '<td class="score-num">' + score + "</td>" +
+            "</tr>"
+          );
+        }).join("") : '<tr><td colspan="8" class="column-empty">Ingen saker</td></tr>') +
+        "</tbody></table></div>"
+    );
+  }
+
+  function buildAlerts() {
+    var alerts = [];
+    state.cases.forEach(function (c) {
+      if (["publisert", "arkivert", "avvist"].indexOf(c.status) !== -1) return;
+      if (c.frist) {
+        var n = daysUntil(c.frist);
+        if (n < 0) alerts.push({ icon: "⚠️", text: "Frist forfalt: <b>" + escapeHtml(c.title) + "</b>", ts: c.frist, alert: true });
+        else if (n <= 2) alerts.push({ icon: "⏱️", text: "Frist nærmer seg: <b>" + escapeHtml(c.title) + "</b> (" + fmtDue(c.frist) + ")", ts: c.frist, alert: true });
+      }
+      if (c.eier === "Ikke tildelt" && c.status !== "ide") {
+        alerts.push({ icon: "👤", text: "Mangler eier: <b>" + escapeHtml(c.title) + "</b>", ts: nowIso(), alert: true });
+      }
+    });
+    return alerts;
+  }
+
+  function renderAside(alerts) {
+    var feed = [];
+    alerts.forEach(function (a) { feed.push({ icon: a.icon, html: a.text, ts: a.ts, alert: true }); });
+    state.cases.forEach(function (c) {
+      c.historikk.slice(0, 3).forEach(function (h) {
+        feed.push({ icon: "•", html: escapeHtml(c.title) + " — " + escapeHtml(h.text), ts: h.ts, alert: false });
+      });
+    });
+    feed.sort(function (a, b) { return new Date(b.ts) - new Date(a.ts); });
+    feed = feed.slice(0, 30);
+    return (
+      '<aside class="aside' + (state.ui.asideOpen ? " open" : "") + '">' +
+        '<div class="aside-header"><span class="aside-title">Aktivitet</span><button class="icon-btn" data-action="toggle-aside" aria-label="Lukk">✕</button></div>' +
+        '<div class="aside-list">' +
+          (feed.length ? feed.map(function (f) {
+            return '<div class="activity-item' + (f.alert ? " alert" : "") + '"><span class="activity-icon">' + f.icon + '</span><span class="activity-body">' + f.html + '<span class="activity-time">' + fmtTime(f.ts) + "</span></span></div>";
+          }).join("") : '<div class="aside-empty">Ingen aktivitet ennå</div>') +
+        "</div>" +
+      "</aside>"
+    );
+  }
+
+  function renderModal() {
+    var m = state.ui.modal;
+    if (!m) return "";
+    if (m === "new-tip") return renderNewTipModal();
+    if (m === "case") return renderCaseModal(getCase(state.ui.activeCaseId));
+    if (m === "newsletter") return renderNewsletterModal();
+    if (m === "weights") return renderWeightsModal();
+    if (m === "about") return renderAboutModal();
+    return "";
+  }
+
+  function renderNewTipModal() {
+    return (
+      '<div class="overlay center" data-action="close-modal-bg">' +
+        '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="new-tip-title">' +
+          '<div class="panel-header"><h2 id="new-tip-title">Nytt tips</h2><button class="icon-btn" data-action="close-modal">✕</button></div>' +
+          '<form class="panel-body" id="new-tip-form">' +
+            '<div class="field"><label for="nt-title">Tittel / kort beskrivelse</label><input id="nt-title" name="title" required placeholder="F.eks. Ny sone innført ved Gardermoen" /></div>' +
+            '<div class="field"><label for="nt-kilde">Kilde / lenke</label><input id="nt-kilde" name="kilde" placeholder="Lim inn lenke eller skriv kilde" /></div>' +
+            '<div class="field"><label for="nt-notat">Notat</label><textarea id="nt-notat" name="notat" placeholder="Kort notat om hvorfor dette kan være en sak"></textarea></div>' +
+            '<div class="field-row">' +
+              '<div class="field"><label for="nt-type">Sakstype</label><select id="nt-type" name="sakstype">' + optionsFor(TYPE_LABELS, "redaksjonell") + "</select></div>" +
+              '<div class="field"><label for="nt-hastegrad">Hastegrad</label><select id="nt-hastegrad" name="hastegrad"><option value="akutt">Akutt</option><option value="planlagt" selected>Planlagt</option><option value="tidlos">Tidløs</option></select></div>' +
+            "</div>" +
+            '<div class="field"><label for="nt-eier">Journalist (valgfritt)</label><select id="nt-eier" name="eier">' +
+              OWNERS.map(function (o) { return "<option" + (o === "Ikke tildelt" ? " selected" : "") + ">" + escapeHtml(o) + "</option>"; }).join("") +
+            "</select></div>" +
+            '<p class="helper">Saken legges i kolonnen «Idé» og er synlig for hele teamet med en gang.</p>' +
+          "</form>" +
+          '<div class="panel-footer"><button class="btn" data-action="close-modal">Avbryt</button><button class="btn btn-primary" data-action="submit-new-tip">Legg til tips</button></div>' +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderCaseModal(c) {
+    if (!c) return "";
+    var score = computeScore(c.triage, state.weights);
+    var canPublish = c.status === "wp-utkast";
+    var stoppReady = c.stoppGodkjent && c.publisertAv;
+    var statusOptions = statusOptionsMarkup(c.status);
+    return (
+      '<div class="overlay" data-action="close-modal-bg">' +
+        '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="case-title">' +
+          '<div class="panel-header"><h2 id="case-title">Sak' + (c.isRss ? " · oppdaget via RSS" : "") + '</h2><button class="icon-btn" data-action="close-modal">✕</button></div>' +
+          '<div class="panel-body">' +
+            '<div class="field"><label for="c-title">Tittel</label><input id="c-title" data-field="title" value="' + escapeHtml(c.title) + '" /></div>' +
+            '<div class="field-row">' +
+              '<div class="field"><label for="c-type">Sakstype</label><select id="c-type" data-field="sakstype">' + optionsFor(TYPE_LABELS, c.sakstype) + "</select></div>" +
+              '<div class="field"><label for="c-urg">Hastegrad</label><select id="c-urg" data-field="hastegrad">' + optionsFor(URGENCY_LABELS, c.hastegrad) + "</select></div>" +
+            "</div>" +
+            '<div class="field-row">' +
+              '<div class="field"><label for="c-status">Status</label><select id="c-status" data-field="status">' + statusOptions + "</select></div>" +
+              '<div class="field"><label for="c-site">Nettsted</label><select id="c-site" data-field="nettsted">' +
+                SITES.map(function (s) { return '<option value="' + s + '"' + (s === c.nettsted ? " selected" : "") + ">" + (SITE_LABELS[s] || s) + "</option>"; }).join("") +
+              "</select></div>" +
+            "</div>" +
+            '<div class="field-row">' +
+              '<div class="field"><label for="c-eier">Journalist</label><select id="c-eier" data-field="eier">' +
+                OWNERS.map(function (o) { return "<option" + (o === c.eier ? " selected" : "") + ">" + escapeHtml(o) + "</option>"; }).join("") +
+              "</select></div>" +
+              '<div class="field"><label for="c-frist">Frist</label><input id="c-frist" type="date" data-field="frist" value="' + escapeHtml(c.frist) + '" /></div>' +
+            "</div>" +
+            '<div class="field"><label for="c-neste">Neste handling</label><input id="c-neste" data-field="nesteHandling" value="' + escapeHtml(c.nesteHandling) + '" /></div>' +
+            '<div class="field-row">' +
+              '<div class="field"><label for="c-malgruppe">Målgruppe</label><select id="c-malgruppe" data-field="malgruppe">' +
+                AUDIENCES.map(function (a) { return "<option" + (a === c.malgruppe ? " selected" : "") + ">" + escapeHtml(a) + "</option>"; }).join("") +
+              "</select></div>" +
+              '<div class="field"><label for="c-kategori">Kategori / tagger</label><input id="c-kategori" data-field="kategori" value="' + escapeHtml(c.kategori) + '" /></div>' +
+            "</div>" +
+            '<div class="field"><label>Kilder</label><div class="kilder-list" id="kilder-list">' +
+              (c.kilder.length ? c.kilder.map(function (k, i) {
+                return '<div class="kilde-row"><input data-kilde-idx="' + i + '" value="' + escapeHtml(k) + '" /><button class="icon-btn" data-action="remove-kilde" data-idx="' + i + '">✕</button></div>';
+              }).join("") : "") +
+            "</div><button class=\"btn\" data-action=\"add-kilde\" type=\"button\">+ Legg til kilde</button></div>" +
+            '<div class="section-label">Prioriteringsmodell (forklarbar, kan justeres)</div>' +
+            triageSlider("aktualitet", "Aktualitet", c.triage.aktualitet) +
+            triageSlider("betydning", "Betydning", c.triage.betydning) +
+            triageSlider("eksklusivitet", "Eksklusivitet", c.triage.eksklusivitet) +
+            triageSlider("innsats", "Innsats", c.triage.innsats) +
+            '<p class="helper">Score: <b style="color:' + scoreColorVar(score) + '">' + score + "/100</b> — vektet snitt av aktualitet, betydning og eksklusivitet, justert ned for høy innsats.</p>" +
+            (canPublish || c.status === "publisert" ? (
+              '<div class="section-label">Publiseringskontroll (STOPP)</div>' +
+              '<div class="stopp-box' + (stoppReady ? " done" : "") + '">' +
+                '<div class="stopp-title">' + (stoppReady ? "✅ Kontrollert og godkjent" : "🛑 Manuell kontroll kreves før publisering") + "</div>" +
+                (c.status === "publisert" ? '<p class="helper">Godkjent av ' + escapeHtml(c.publisertAv || "—") + ".</p>" : (
+                  '<label class="checkline"><input type="checkbox" id="c-stopp-check"' + (c.stoppGodkjent ? " checked" : "") + ' /> Jeg har lest og kontrollert hele saken (tekst, kilder, bilder, bildetekster).</label>' +
+                  '<div class="field"><label for="c-godkjentav">Godkjent av</label><select id="c-godkjentav"><option value=""' + (c.publisertAv ? "" : " selected") + ">Velg godkjenner</option>" +
+                    APPROVERS.map(function (a) { return "<option" + (a === c.publisertAv ? " selected" : "") + ">" + escapeHtml(a) + "</option>"; }).join("") +
+                  "</select></div>" +
+                  '<button class="btn btn-primary" data-action="publish-case" ' + (canPublish ? "" : "disabled") + '>Merk som publisert</button>' +
+                  '<p class="helper">Uten kontroll og navn her kan saken ikke settes til Publisert — og tas dermed heller ikke med i nyhetsbrevet.</p>'
+                )) +
+              "</div>"
+            ) : "") +
+            '<div class="section-label">Historikk</div>' +
+            '<div>' + c.historikk.map(function (h) {
+              return '<div class="history-item"><span class="history-time">' + fmtTime(h.ts) + "</span><br />" + escapeHtml(h.text) + "</div>";
+            }).join("") + "</div>" +
+          "</div>" +
+          '<div class="panel-footer"><button class="btn btn-danger" data-action="delete-case">Slett sak</button><div style="display:flex;gap:8px;"><button class="btn" data-action="close-modal">Lukk</button><button class="btn btn-primary" data-action="save-case">Lagre</button></div></div>' +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function optionsFor(labels, current) {
+    return Object.keys(labels).map(function (k) {
+      return '<option value="' + k + '"' + (k === current ? " selected" : "") + ">" + labels[k] + "</option>";
+    }).join("");
+  }
+  function triageSlider(key, label, val) {
+    return '<div class="slider-row"><label>' + label + '</label><input type="range" min="1" max="5" step="1" data-triage="' + key + '" value="' + val + '" /><span class="val">' + val + "</span></div>";
+  }
+
+  function renderWeightsModal() {
+    var w = state.weights;
+    var fields = [["aktualitet", "Aktualitet"], ["betydning", "Betydning"], ["eksklusivitet", "Eksklusivitet"], ["innsats", "Innsats (motvirker)"]];
+    return (
+      '<div class="overlay center" data-action="close-modal-bg">' +
+        '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="weights-title">' +
+          '<div class="panel-header"><h2 id="weights-title">Prioriteringsmodell</h2><button class="icon-btn" data-action="close-modal">✕</button></div>' +
+          '<div class="panel-body"><p class="helper">Juster hvor mye hver faktor teller i triage-scoren (personlig visning, lagres kun i din nettleser).</p>' +
+            '<div class="weights-grid">' + fields.map(function (f) {
+              return '<div class="weight-field">' + f[1] + '<input type="number" min="0" max="3" step="0.5" data-weight="' + f[0] + '" value="' + w[f[0]] + '" /></div>';
+            }).join("") + "</div>" +
+          "</div>" +
+          '<div class="panel-footer"><button class="btn" data-action="close-modal">Lukk</button><button class="btn btn-primary" data-action="save-weights">Lagre vekting</button></div>' +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderNewsletterModal() {
+    var published = state.cases.filter(function (c) { return c.status === "publisert" && !c.nyhetsbrevInkludert; });
+    var already = state.cases.filter(function (c) { return c.status === "publisert" && c.nyhetsbrevInkludert; });
+    return (
+      '<div class="overlay center" data-action="close-modal-bg">' +
+        '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="nl-title">' +
+          '<div class="panel-header"><h2 id="nl-title">Nyhetsbrevutkast</h2><button class="icon-btn" data-action="close-modal">✕</button></div>' +
+          '<div class="panel-body">' +
+            '<p class="helper">Henter kun saker med status <b>Publisert</b> som ikke allerede er tatt med i et tidligere utkast.</p>' +
+            (published.length ? published.map(function (c) {
+              return '<div class="newsletter-item"><input type="checkbox" checked data-nl-id="' + c.id + '" /> <span>' + escapeHtml(c.title) + '<br /><span class="helper">' + (SITE_LABELS[c.nettsted] || c.nettsted) + " · publisert av " + escapeHtml(c.publisertAv || "—") + "</span></span></div>";
+            }).join("") : '<p class="aside-empty">Ingen nye publiserte saker å ta med akkurat nå.</p>') +
+            (already.length ? '<p class="helper">' + already.length + " sak(er) er allerede inkludert i et tidligere utkast." : "") +
+            '<div id="draft-output"></div>' +
+          "</div>" +
+          '<div class="panel-footer"><button class="btn" data-action="close-modal">Lukk</button><button class="btn btn-primary" data-action="generate-newsletter"' + (published.length ? "" : " disabled") + '>Generer utkast</button></div>' +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  /* ---------- events ---------- */
+
+  function bindEvents() {
+    root.querySelectorAll("[data-action]").forEach(function (el) { el.addEventListener("click", handleAction); });
+    root.querySelectorAll("[data-triage]").forEach(function (el) {
+      el.addEventListener("input", function () { el.parentElement.querySelector(".val").textContent = el.value; });
+    });
+    root.querySelectorAll('.card[draggable="true"]').forEach(function (el) {
+      el.addEventListener("dragstart", handleDragStart);
+      el.addEventListener("dragend", handleDragEnd);
+    });
+    root.querySelectorAll(".column-body[data-status]").forEach(function (el) {
+      el.addEventListener("dragover", handleDragOver);
+      el.addEventListener("dragleave", handleDragLeave);
+      el.addEventListener("drop", handleDrop);
+    });
+    root.querySelectorAll("[data-list-status]").forEach(function (el) {
+      el.addEventListener("change", function () {
+        var c = getCase(el.getAttribute("data-list-status"));
+        if (c) trySetStatus(c, el.value, "listevisning");
+      });
+    });
+  }
+
+  async function trySetStatus(c, newStatus, methodLabel) {
+    var prevStatus = c.status;
+    if (newStatus === prevStatus) return;
+    if (newStatus === "publisert" && !(c.stoppGodkjent && c.publisertAv)) {
+      showToast("Åpne saken og fullfør STOPP-kontrollen før den kan publiseres");
+      state.ui.activeCaseId = c.id; state.ui.modal = "case"; render();
+      return;
+    }
+    var historikk = [{ ts: nowIso(), text: "Status endret (" + methodLabel + "): " + statusLabel(prevStatus) + " → " + statusLabel(newStatus) }].concat(c.historikk);
+    var ok = await updateCase(c.id, { status: newStatus, historikk: historikk });
+    if (ok) { showToast("Status oppdatert"); await refreshAndRender(); }
+  }
+
+  function handleDragStart(e) {
+    draggedId = e.currentTarget.getAttribute("data-id");
+    e.dataTransfer.effectAllowed = "move";
+    try { e.dataTransfer.setData("text/plain", draggedId); } catch (err) {}
+    e.currentTarget.classList.add("dragging");
+  }
+  function handleDragEnd(e) { e.currentTarget.classList.remove("dragging"); draggedId = null; }
+  function handleDragOver(e) { e.preventDefault(); e.currentTarget.classList.add("drag-over"); }
+  function handleDragLeave(e) { e.currentTarget.classList.remove("drag-over"); }
+  function handleDrop(e) {
+    e.preventDefault(); e.currentTarget.classList.remove("drag-over");
+    var id = draggedId || e.dataTransfer.getData("text/plain");
+    var newStatus = e.currentTarget.getAttribute("data-status");
+    var c = getCase(id);
+    if (!c || !newStatus) return;
+    trySetStatus(c, newStatus, "dra-og-slipp");
+  }
+
+  function handleAction(e) {
+    var action = e.currentTarget.getAttribute("data-action");
+    if (action === "close-modal-bg" && e.target !== e.currentTarget) return;
+    switch (action) {
+      case "set-view": state.ui.view = e.currentTarget.getAttribute("data-view"); render(); break;
+      case "toggle-aside": state.ui.asideOpen = !state.ui.asideOpen; render(); break;
+      case "open-new-tip": state.ui.modal = "new-tip"; render(); break;
+      case "open-case": state.ui.activeCaseId = e.currentTarget.getAttribute("data-id"); state.ui.modal = "case"; render(); break;
+      case "open-newsletter": state.ui.modal = "newsletter"; render(); break;
+      case "open-weights": state.ui.modal = "weights"; render(); break;
+      case "open-about": state.ui.modal = "about"; render(); break;
+      case "close-modal": case "close-modal-bg": state.ui.modal = null; state.ui.activeCaseId = null; render(); break;
+      case "submit-new-tip": submitNewTip(); break;
+      case "save-case": saveCaseFromForm(); break;
+      case "publish-case": publishCaseFromForm(); break;
+      case "delete-case": deleteActiveCase(); break;
+      case "add-kilde": addKildeRow(); break;
+      case "remove-kilde": removeKildeRow(parseInt(e.currentTarget.getAttribute("data-idx"), 10)); break;
+      case "save-weights": saveWeights(); break;
+      case "generate-newsletter": generateNewsletter(); break;
+      case "sign-out": signOut(); break;
+    }
+  }
+
+  async function submitNewTip() {
+    var form = document.getElementById("new-tip-form");
+    var title = form.querySelector("#nt-title").value.trim();
+    if (!title) { form.querySelector("#nt-title").focus(); return; }
+    var kilde = form.querySelector("#nt-kilde").value.trim();
+    var notat = form.querySelector("#nt-notat").value.trim();
+    var sakstype = form.querySelector("#nt-type").value;
+    var hastegrad = form.querySelector("#nt-hastegrad").value;
+    var eier = form.querySelector("#nt-eier").value;
+    var created = await createCase({
+      title: title, sakstype: sakstype, hastegrad: hastegrad, status: "ide", eier: eier,
+      kilder: kilde ? [kilde] : [], neste_handling: notat || "Vurder relevans og vinkel",
+      historikk: [{ ts: nowIso(), text: "Sak opprettet (tips)" }]
+    });
+    if (!created) return;
+    state.ui.modal = null;
+    await refreshAndRender();
+    showToast("Tips lagt til i «Idé»");
+  }
+
+  function readCaseForm() {
+    var c = getCase(state.ui.activeCaseId);
+    if (!c) return null;
+    root.querySelectorAll("[data-field]").forEach(function (el) { c[el.getAttribute("data-field")] = el.value; });
+    root.querySelectorAll("[data-triage]").forEach(function (el) { c.triage[el.getAttribute("data-triage")] = parseInt(el.value, 10); });
+    var kildeInputs = root.querySelectorAll("[data-kilde-idx]");
+    if (kildeInputs.length) c.kilder = Array.prototype.map.call(kildeInputs, function (el) { return el.value; });
+    return c;
+  }
+
+  async function saveCaseFromForm() {
+    var before = getCase(state.ui.activeCaseId);
+    var prevStatus = before ? before.status : null;
+    var c = readCaseForm();
+    if (!c) return;
+    if (c.status !== prevStatus) {
+      if (c.status === "publisert" && !(c.stoppGodkjent && c.publisertAv)) {
+        c.status = prevStatus;
+        showToast("Kan ikke sette Publisert uten fullført STOPP-kontroll");
+      } else {
+        c.historikk = [{ ts: nowIso(), text: "Status endret: " + statusLabel(prevStatus) + " → " + statusLabel(c.status) }].concat(c.historikk);
+      }
+    }
+    var ok = await updateCase(c.id, caseToDbUpdate(c));
+    if (!ok) return;
+    state.ui.modal = null; state.ui.activeCaseId = null;
+    await refreshAndRender();
+    showToast("Sak lagret");
+  }
+
+  async function publishCaseFromForm() {
+    var c = readCaseForm();
+    if (!c) return;
+    var check = document.getElementById("c-stopp-check");
+    var godkjentAv = document.getElementById("c-godkjentav");
+    c.stoppGodkjent = !!(check && check.checked);
+    c.publisertAv = godkjentAv ? godkjentAv.value.trim() : "";
+    if (!c.stoppGodkjent || !c.publisertAv) { showToast("Kryss av kontroll og fyll inn hvem som godkjenner"); render(); return; }
+    c.status = "publisert";
+    c.historikk = [{ ts: nowIso(), text: "Publisert av " + c.publisertAv + " etter manuell kontroll" }].concat(c.historikk);
+    var ok = await updateCase(c.id, caseToDbUpdate(c));
+    if (!ok) return;
+    await refreshAndRender();
+    showToast("Sak publisert");
+  }
+
+  async function deleteActiveCase() {
+    if (!window.confirm("Slette denne saken permanent?")) return;
+    var id = state.ui.activeCaseId;
+    var ok = await deleteCase(id);
+    if (!ok) return;
+    state.ui.modal = null; state.ui.activeCaseId = null;
+    await refreshAndRender();
+    showToast("Sak slettet");
+  }
+
+  function addKildeRow() { var c = readCaseForm(); if (!c) return; c.kilder.push(""); render(); }
+  function removeKildeRow(idx) { var c = readCaseForm(); if (!c) return; c.kilder.splice(idx, 1); render(); }
+
+  function saveWeights() {
+    root.querySelectorAll("[data-weight]").forEach(function (el) { state.weights[el.getAttribute("data-weight")] = parseFloat(el.value) || 0; });
+    persistWeights();
+    state.ui.modal = null; render();
+    showToast("Vekting lagret");
+  }
+
+  async function generateNewsletter() {
+    var ids = Array.prototype.slice.call(root.querySelectorAll("[data-nl-id]")).filter(function (el) { return el.checked; }).map(function (el) { return el.getAttribute("data-nl-id"); });
+    var cases = ids.map(getCase).filter(Boolean);
+    if (!cases.length) return;
+    var lines = ["UAS Norway / Dronemagasinet — nyhetsbrevutkast", "=".repeat(44), ""];
+    cases.forEach(function (c) {
+      lines.push("• " + c.title);
+      lines.push("  (" + (SITE_LABELS[c.nettsted] || c.nettsted) + ")");
+      if (c.kilder[0]) lines.push("  " + c.kilder[0]);
+      lines.push("");
+    });
+    lines.push("— Generert fra saker med status Publisert. Ikke sendt automatisk; kopier inn i Mailchimp-utkast.");
+    var text = lines.join("\n");
+
+    for (var i = 0; i < cases.length; i++) {
+      var c = cases[i];
+      var historikk = [{ ts: nowIso(), text: "Inkludert i nyhetsbrevutkast" }].concat(c.historikk);
+      await updateCase(c.id, { nyhetsbrev_inkludert: true, historikk: historikk });
+    }
+    await fetchCases();
+
+    var out = document.getElementById("draft-output");
+    if (out) {
+      out.innerHTML = '<div class="section-label">Utkast</div><div class="draft-box">' + escapeHtml(text) + '</div><button class="btn" style="margin-top:10px;" id="copy-draft-btn" type="button">Kopier tekst</button>';
+      document.getElementById("copy-draft-btn").addEventListener("click", function () {
+        if (navigator.clipboard) navigator.clipboard.writeText(text);
+        showToast("Kopiert");
+      });
+    }
+  }
+
+  function showToast(msg) {
+    var t = document.createElement("div");
+    t.className = "toast"; t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, 2200);
+  }
+
+  /* ---------- auth ---------- */
+
+  function renderLoginScreen(status, statusType) {
+    root.innerHTML =
+      '<div class="login-screen"><div class="login-card">' +
+        "<h1>Saksbank — UAS Norway</h1>" +
+        "<p>Logg inn med e-postadressen din. Du får tilsendt en lenke — ingen passord å huske.</p>" +
+        '<form id="login-form" class="field">' +
+          '<label for="login-email">E-post</label>' +
+          '<input id="login-email" type="email" required placeholder="navn@uasnorway.no" />' +
+          '<button class="btn btn-primary" type="submit" style="margin-top:10px;">Send innloggingslenke</button>' +
+        "</form>" +
+        (status ? '<p class="login-status ' + (statusType || "") + '">' + escapeHtml(status) + "</p>" : "") +
+      "</div></div>";
+    var form = document.getElementById("login-form");
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var email = document.getElementById("login-email").value.trim();
+      if (!email) return;
+      var res = await supabase.auth.signInWithOtp({ email: email, options: { emailRedirectTo: window.location.origin } });
+      if (res.error) renderLoginScreen("Kunne ikke sende lenke: " + res.error.message, "error");
+      else renderLoginScreen("Sjekk innboksen til " + email + " for innloggingslenken.", "ok");
+    });
+  }
+
+  function renderNotConfiguredScreen() {
+    root.innerHTML =
+      '<div class="login-screen"><div class="login-card">' +
+        "<h1>Saksbank — ikke koblet til database ennå</h1>" +
+        '<p>SUPABASE_URL og SUPABASE_ANON_KEY er ikke fylt inn i <code>public/index.html</code>. Se README.md for stegene.</p>' +
+      "</div></div>";
+  }
+
+  function signOut() { supabase.auth.signOut(); }
+
+  var realtimeChannel = null;
+  function subscribeRealtime() {
+    if (realtimeChannel) return;
+    realtimeChannel = supabase
+      .channel("cases-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "cases" }, function () {
+        refreshAndRender();
+      })
+      .subscribe(function (status) {
+        state.realtimeOk = status === "SUBSCRIBED";
+        render();
+      });
+  }
+
+  async function boot() {
+    if (!CONFIGURED) { renderNotConfiguredScreen(); return; }
+
+    var sessionRes = await supabase.auth.getSession();
+    state.session = sessionRes.data.session;
+
+    supabase.auth.onAuthStateChange(function (_event, session) {
+      state.session = session;
+      if (session) { subscribeRealtime(); refreshAndRender(); }
+      else { renderLoginScreen(); }
+    });
+
+    if (!state.session) { renderLoginScreen(); return; }
+
+    loadWeights();
+    subscribeRealtime();
+    await refreshAndRender();
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
