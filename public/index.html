@@ -152,11 +152,21 @@
 
   .card {
     background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; padding: 10px 11px;
-    display: flex; flex-direction: column; gap: 7px; text-align: left; width: 100%;
+    display: flex; flex-direction: column; gap: 7px; text-align: left; width: 100%; cursor: pointer; position: relative;
   }
   .card:hover { border-color: var(--accent); }
+  .card:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .card[draggable="true"] { cursor: grab; }
   .card.dragging { opacity: 0.45; }
+  .card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .card-top-row { display: flex; align-items: center; justify-content: space-between; }
+  .card-delete { padding: 3px; opacity: 0.55; }
+  .card-delete:hover { opacity: 1; color: var(--red-fg); }
+
+  .selection-bar {
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0; padding: 8px 20px;
+    background: var(--bg-sunken); border-bottom: 1px solid var(--border); font-size: 0.82rem; font-weight: 600;
+  }
   .column-body.drag-over { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--bg-elevated); border-radius: 8px; }
   .chip-row { display: flex; gap: 5px; flex-wrap: wrap; }
   .chip { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
@@ -376,7 +386,7 @@
     cases: [],
     sources: [],
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null },
+    ui: { asideOpen: false, modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {} },
     session: null,
     realtimeOk: false
   };
@@ -452,6 +462,12 @@
     return true;
   }
 
+  async function deleteCases(ids) {
+    var res = await supabase.from("cases").delete().in("id", ids);
+    if (res.error) { showToast("Kunne ikke slette: " + res.error.message); return false; }
+    return true;
+  }
+
   /* ---------- rendering ---------- */
 
   var root = document.getElementById("app");
@@ -461,12 +477,26 @@
     root.innerHTML =
       renderTopbar(alerts.length) +
       renderPilotBanner() +
+      renderSelectionBar() +
       '<div class="main">' +
         (state.ui.view === "list" ? renderListView() : renderBoard()) +
         renderAside(alerts) +
       "</div>" +
       renderModal();
     bindEvents();
+  }
+
+  function renderSelectionBar() {
+    var ids = Object.keys(state.ui.selectedIds);
+    if (!ids.length) return "";
+    return (
+      '<div class="selection-bar">' +
+        "<span>" + ids.length + " valgt</span>" +
+        '<div class="pilot-banner-spacer"></div>' +
+        '<button class="btn btn-ghost" data-action="clear-selection">Nullstill valg</button>' +
+        '<button class="btn btn-danger" data-action="delete-selected">Slett valgte</button>' +
+      "</div>"
+    );
   }
 
   function renderTopbar(alertCount) {
@@ -598,8 +628,13 @@
     var score = computeScore(c.triage, state.weights);
     var due = fmtDue(c.frist);
     var overdue = c.frist && daysUntil(c.frist) < 0 && c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist";
+    var checked = !!state.ui.selectedIds[c.id];
     return (
-      '<button class="card" draggable="true" data-action="open-case" data-id="' + c.id + '">' +
+      '<div class="card' + (checked ? " selected" : "") + '" draggable="true" data-action="open-case" data-id="' + c.id + '" role="button" tabindex="0">' +
+        '<div class="card-top-row">' +
+          '<input type="checkbox" class="card-select" data-select-id="' + c.id + '"' + (checked ? " checked" : "") + ' aria-label="Velg for massesletting" />' +
+          '<button class="icon-btn card-delete" data-action="delete-case-quick" data-id="' + c.id + '" title="Slett sak" aria-label="Slett sak">✕</button>' +
+        "</div>" +
         '<div class="chip-row">' +
           '<span class="chip chip-type-' + c.sakstype + '">' + TYPE_LABELS[c.sakstype] + "</span>" +
           '<span class="chip chip-urg-' + c.hastegrad + '">' + URGENCY_LABELS[c.hastegrad] + "</span>" +
@@ -609,7 +644,7 @@
         '<div class="card-title">' + escapeHtml(c.title || "(uten tittel)") + "</div>" +
         '<div class="card-meta"><span class="avatar">' + initials(c.eier) + "</span><span>" + escapeHtml(c.eier || "Ingen eier") + '</span><span class="meta-due' + (overdue ? " overdue" : "") + '">· ' + due + "</span></div>" +
         '<div class="score-row"><div class="score-meter"><div class="score-fill" style="width:' + score + '%;background:' + scoreColorVar(score) + ';"></div></div><span class="score-num">' + score + "</span></div>" +
-      "</button>"
+      "</div>"
     );
   }
 
@@ -628,15 +663,18 @@
       if (oa !== ob) return oa - ob;
       return computeScore(b.triage, state.weights) - computeScore(a.triage, state.weights);
     });
+    var allSelected = rows.length > 0 && rows.every(function (c) { return state.ui.selectedIds[c.id]; });
     return (
       '<div class="list-wrap"><table class="list-table">' +
-        "<thead><tr><th>Tittel</th><th>Type</th><th>Hastegrad</th><th>Nettsted</th><th>Journalist</th><th>Status</th><th>Frist</th><th>Score</th></tr></thead><tbody>" +
+        "<thead><tr><th><input type=\"checkbox\" data-select-all" + (allSelected ? " checked" : "") + " aria-label=\"Velg alle\" /></th><th>Tittel</th><th>Type</th><th>Hastegrad</th><th>Nettsted</th><th>Journalist</th><th>Status</th><th>Frist</th><th>Score</th><th></th></tr></thead><tbody>" +
         (rows.length ? rows.map(function (c) {
           var score = computeScore(c.triage, state.weights);
           var due = fmtDue(c.frist);
           var overdue = c.frist && daysUntil(c.frist) < 0 && ["publisert", "arkivert", "avvist"].indexOf(c.status) === -1;
+          var checked = !!state.ui.selectedIds[c.id];
           return (
             "<tr>" +
+              '<td><input type="checkbox" data-select-id="' + c.id + '"' + (checked ? " checked" : "") + ' aria-label="Velg" /></td>' +
               '<td class="list-title" data-action="open-case" data-id="' + c.id + '">' + escapeHtml(c.title || "(uten tittel)") + "</td>" +
               '<td><span class="chip chip-type-' + c.sakstype + '">' + TYPE_LABELS[c.sakstype] + "</span></td>" +
               '<td><span class="chip chip-urg-' + c.hastegrad + '">' + URGENCY_LABELS[c.hastegrad] + "</span></td>" +
@@ -645,9 +683,10 @@
               '<td><select data-list-status="' + c.id + '">' + statusOptionsMarkup(c.status) + "</select></td>" +
               '<td class="' + (overdue ? "overdue" : "") + '">' + due + "</td>" +
               '<td class="score-num">' + score + "</td>" +
+              '<td><button class="icon-btn" data-action="delete-case-quick" data-id="' + c.id + '" title="Slett sak" aria-label="Slett sak">✕</button></td>' +
             "</tr>"
           );
-        }).join("") : '<tr><td colspan="8" class="column-empty">Ingen saker</td></tr>') +
+        }).join("") : '<tr><td colspan="10" class="column-empty">Ingen saker</td></tr>') +
         "</tbody></table></div>"
     );
   }
@@ -872,6 +911,27 @@
         toggleSource(el.getAttribute("data-toggle-source"), el.checked);
       });
     });
+    root.querySelectorAll("[data-select-id]").forEach(function (el) {
+      el.addEventListener("click", function (e) { e.stopPropagation(); });
+      el.addEventListener("change", function () {
+        var id = el.getAttribute("data-select-id");
+        if (el.checked) state.ui.selectedIds[id] = true;
+        else delete state.ui.selectedIds[id];
+        render();
+      });
+    });
+    root.querySelectorAll("[data-select-all]").forEach(function (el) {
+      el.addEventListener("change", function () {
+        if (el.checked) state.cases.forEach(function (c) { state.ui.selectedIds[c.id] = true; });
+        else state.ui.selectedIds = {};
+        render();
+      });
+    });
+    root.querySelectorAll('.card[role="button"]').forEach(function (el) {
+      el.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); }
+      });
+    });
   }
 
   async function trySetStatus(c, newStatus, methodLabel) {
@@ -917,6 +977,9 @@
       case "open-weights": state.ui.modal = "weights"; render(); break;
       case "open-about": state.ui.modal = "about"; render(); break;
       case "open-sources": openSources(); break;
+      case "delete-case-quick": e.stopPropagation(); quickDeleteCase(e.currentTarget.getAttribute("data-id")); break;
+      case "delete-selected": deleteSelected(); break;
+      case "clear-selection": state.ui.selectedIds = {}; render(); break;
       case "import-sources": importSources(); break;
       case "delete-source": deleteSource(e.currentTarget.getAttribute("data-id")); break;
       case "close-modal": case "close-modal-bg": state.ui.modal = null; state.ui.activeCaseId = null; render(); break;
@@ -1006,6 +1069,27 @@
     state.ui.modal = null; state.ui.activeCaseId = null;
     await refreshAndRender();
     showToast("Sak slettet");
+  }
+
+  async function quickDeleteCase(id) {
+    var c = getCase(id);
+    if (!window.confirm('Slette "' + (c ? c.title : "denne saken") + '" permanent?')) return;
+    var ok = await deleteCase(id);
+    if (!ok) return;
+    delete state.ui.selectedIds[id];
+    await refreshAndRender();
+    showToast("Sak slettet");
+  }
+
+  async function deleteSelected() {
+    var ids = Object.keys(state.ui.selectedIds);
+    if (!ids.length) return;
+    if (!window.confirm("Slette " + ids.length + " valgte sak(er) permanent? Dette kan ikke angres.")) return;
+    var ok = await deleteCases(ids);
+    if (!ok) return;
+    state.ui.selectedIds = {};
+    await refreshAndRender();
+    showToast(ids.length + " sak(er) slettet");
   }
 
   function addKildeRow() { var c = readCaseForm(); if (!c) return; c.kilder.push(""); render(); }
