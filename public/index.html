@@ -288,8 +288,8 @@
   // Fyll inn etter at Supabase-prosjektet er opprettet (Project Settings → API).
   // Dette er anon/public-nøkkelen — den er trygg å ha i frontend-koden,
   // tilgangen styres av RLS-reglene i supabase/schema.sql.
-  var SUPABASE_URL = "https://DITT-PROSJEKT.supabase.co";
-  var SUPABASE_ANON_KEY = "DIN-ANON-KEY";
+  var SUPABASE_URL = "https://ftuqxdblzgrsehzeduow.supabase.co";
+  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ0dXF4ZGJsemdyc2VoemVkdW93Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc2NTg3NDEsImV4cCI6MjEwMzIzNDc0MX0.EFRL2BcEZpgBJkkeQZ0bh9_NNbGn4BiXvtwNoS4CEw0";
 
   var CONFIGURED = SUPABASE_URL.indexOf("DITT-PROSJEKT") === -1 && SUPABASE_ANON_KEY.indexOf("DIN-ANON-KEY") === -1;
   var supabase = CONFIGURED ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
