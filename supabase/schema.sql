@@ -96,9 +96,20 @@ drop policy if exists "innloggede kan lese kilder" on sources;
 create policy "innloggede kan lese kilder" on sources
   for select using (auth.role() = 'authenticated');
 
--- Merk: ingen insert/update/delete-policy for "sources"/"seen_items" for innloggede
--- brukere — det er med vilje. Kilder legges til/endres i dag via Supabase Table Editor.
--- Vurder en enkel admin-UI for dette senere om det blir tungvint.
+drop policy if exists "innloggede kan legge til kilder" on sources;
+create policy "innloggede kan legge til kilder" on sources
+  for insert with check (auth.role() = 'authenticated');
+
+drop policy if exists "innloggede kan oppdatere kilder" on sources;
+create policy "innloggede kan oppdatere kilder" on sources
+  for update using (auth.role() = 'authenticated');
+
+drop policy if exists "innloggede kan slette kilder" on sources;
+create policy "innloggede kan slette kilder" on sources
+  for delete using (auth.role() = 'authenticated');
+
+-- Merk: "seen_items" har fortsatt ingen policy for innloggede brukere — det er
+-- med vilje, kun rss-poll.js (service_role) skal skrive dit.
 
 -- ── Sanntid ─────────────────────────────────────────────────────────
 -- Gjør at teamet ser hverandres endringer live uten å måtte laste siden på nytt.

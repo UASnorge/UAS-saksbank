@@ -53,20 +53,28 @@ Deretter i Netlify: **Add new site → Import an existing project** → velg Git
 **Site settings → Environment variables**, legg til:
 
 - `SUPABASE_URL` → samme som i steg 2
-- `SUPABASE_SERVICE_ROLE_KEY` → `service_role`-nøkkelen fra steg 2 (ikke `anon`-nøkkelen her!)
+- `SUPABASE_ANON_KEY` → `anon`-nøkkelen fra steg 2 (samme verdi som i `public/index.html`)
+- `SUPABASE_SERVICE_ROLE_KEY` → `service_role`-nøkkelen fra steg 2 (kun til `rss-poll.js` — ikke bruk denne som `SUPABASE_ANON_KEY`)
 
 Deploy siden på nytt etter at variablene er lagt til (**Deploys → Trigger deploy**).
 
 ## Steg 6 — Legg til RSS-kildene dere faktisk vil overvåke
 
-I Supabase: **Table Editor → sources**. Slett eksempelraden (NRK) og legg inn egne rader med `name` og `feed_url`. Noen typiske kandidater å sjekke om finnes som RSS (bekreft URL og lisensvilkår selv før dere legger dem inn — jeg har kun verifisert at NRK-eksempelet fungerer, ikke disse):
+Åpne saksbanken i nettleseren → **Kilder**-knappen øverst. Der kan dere legge til mange på én gang, ikke bare én og én:
+
+- Lim inn én lenke per linje, valgfritt med navn foran: `Luftfartstilsynet | https://eksempel.no/rss`
+- Eller lim inn en hel **OPML-eksport** (standardformatet for feed-lister — Feedly, Inoreader og de fleste RSS-lesere kan eksportere til dette under innstillinger/import-eksport)
+
+Trykk **Importer kilder**. Hver lenke sjekkes automatisk mot den ekte feeden før den lagres — ugyldige eller nedlagte feeder vises i feilrapporten i stedet for å bli lagret som søppel. Maks 30 kilder behandles per import; lim inn i flere omganger ved større lister. Eksempelraden i `schema.sql` (NRK toppsaker) er kun for å bevise at rørledningen virker — slett den fra samme panel når dere har lagt inn egne kilder.
+
+Noen typiske kandidater å sjekke om finnes som RSS (bekreft URL og lisensvilkår selv — importfunksjonen forteller dere om lenken faktisk virker, men ikke om dere har lov til å bruke innholdet):
 
 - Luftfartstilsynet sine nyheter/pressemeldinger
 - Avinor sine pressemeldinger
 - EASA (europeisk luftfartsmyndighet)
 - Relevante internasjonale dronenettsteder dere allerede følger manuelt
 
-`rss-poll.js` henter automatisk **alle rader der `active = true`**, hver time.
+`rss-poll.js` henter automatisk **alle kilder markert som aktive**, hver time. Kryss av/av direkte i Kilder-panelet for å skru en kilde av midlertidig uten å slette den.
 
 ## Steg 7 — Test at RSS-henting faktisk fungerer
 
@@ -92,7 +100,8 @@ Sjekk deretter **Table Editor → cases** i Supabase — nye rader med status `i
 uas-saksbank/
 ├── public/index.html          Hele frontend — kanban, liste, saksskjema, STOPP-gate
 ├── netlify/functions/
-│   └── rss-poll.js            Kjører hver time, henter RSS → nye saker i "Idé"
+│   ├── rss-poll.js             Kjører hver time, henter RSS → nye saker i "Idé"
+│   └── add-sources.js          Masseimport av RSS-kilder (lenkeliste eller OPML)
 ├── supabase/schema.sql        Databasetabeller + tilgangsregler
 ├── netlify.toml                Netlify-konfig (publish-mappe, funksjonsmappe)
 └── .env.example                Mal for lokale miljøvariabler

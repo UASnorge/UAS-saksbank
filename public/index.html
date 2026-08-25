@@ -259,6 +259,19 @@
   .login-status { font-size: 0.82rem; }
   .login-status.error { color: var(--red-fg); }
   .login-status.ok { color: var(--green-fg); }
+
+  /* kilder */
+  .source-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.83rem; }
+  .source-row:last-child { border-bottom: none; }
+  .source-main { flex: 1; min-width: 0; }
+  .source-name { font-weight: 650; }
+  .source-url { color: var(--text-muted); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .source-meta { font-size: 0.68rem; color: var(--text-muted); font-family: var(--font-mono); }
+  .import-report { display: flex; flex-direction: column; gap: 8px; font-size: 0.82rem; }
+  .import-report .ok-line { color: var(--green-fg); }
+  .import-report .warn-line { color: var(--amber-fg); }
+  .import-report .fail-line { color: var(--red-fg); }
+  .import-report ul { margin: 4px 0 0; padding-left: 18px; }
 </style>
 </head>
 <body>
@@ -361,8 +374,9 @@
 
   var state = {
     cases: [],
+    sources: [],
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, modal: null, activeCaseId: null, view: "board" },
+    ui: { asideOpen: false, modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null },
     session: null,
     realtimeOk: false
   };
@@ -405,6 +419,12 @@
   async function refreshAndRender() {
     await fetchCases();
     render();
+  }
+
+  async function fetchSources() {
+    var res = await supabase.from("sources").select("*").order("name");
+    if (res.error) { showToast("Kunne ikke hente kilder: " + res.error.message); return; }
+    state.sources = res.data || [];
   }
 
   async function createCase(fields) {
@@ -464,6 +484,7 @@
           '<button class="btn-view' + (state.ui.view === "list" ? " active" : "") + '" data-action="set-view" data-view="list">Liste</button>' +
         "</div>" +
         '<div class="topbar-actions">' +
+          '<button class="btn" data-action="open-sources">Kilder</button>' +
           '<button class="btn" data-action="open-weights">Prioriteringsmodell</button>' +
           '<button class="btn" data-action="open-newsletter">Nyhetsbrevutkast</button>' +
           '<button class="btn btn-ghost" data-action="toggle-aside" aria-label="Aktivitet">Aktivitet ' + (alertCount ? '<span class="badge-count">' + alertCount + "</span>" : "") + "</button>" +
@@ -503,6 +524,54 @@
               '<li class="about-missing">✗ Ekte Mailchimp-sending — utkastet må kopieres inn manuelt</li>' +
               '<li class="about-missing">✗ Doffin, eventkalender, omtaleovervåkning</li>' +
             "</ul></div>" +
+          "</div>" +
+          '<div class="panel-footer"><button class="btn btn-primary" data-action="close-modal">Lukk</button></div>' +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderSourcesModal() {
+    var report = state.ui.importReport;
+    var reportHtml = "";
+    if (report) {
+      reportHtml =
+        '<div class="import-report">' +
+          (report.added.length ? '<div class="ok-line">✓ ' + report.added.length + " kilde(r) lagt til</div>" : "") +
+          (report.skipped.length ? '<div class="warn-line">– ' + report.skipped.length + " fantes allerede, hoppet over</div>" : "") +
+          (report.overflow ? '<div class="warn-line">– ' + report.overflow + " kilde(r) ble ikke behandlet (maks 30 per import — lim inn resten i en ny runde)</div>" : "") +
+          (report.failed.length ? (
+            '<div class="fail-line">✗ ' + report.failed.length + " feilet (ugyldig eller utilgjengelig feed):<ul>" +
+              report.failed.map(function (f) { return "<li>" + escapeHtml(f.url) + " — " + escapeHtml(f.error) + "</li>"; }).join("") +
+            "</ul></div>"
+          ) : "") +
+        "</div>";
+    }
+
+    return (
+      '<div class="overlay center" data-action="close-modal-bg">' +
+        '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="sources-title">' +
+          '<div class="panel-header"><h2 id="sources-title">RSS-kilder</h2><button class="icon-btn" data-action="close-modal">✕</button></div>' +
+          '<div class="panel-body">' +
+            '<div class="section-label">Importer flere på én gang</div>' +
+            '<p class="helper">Lim inn én lenke per linje (valgfritt «Navn | lenke»), eller lim inn en OPML-eksport fra Feedly/Inoreader. Hver lenke sjekkes automatisk — ugyldige eller døde feeder legges ikke til.</p>' +
+            '<textarea id="bulk-sources-input" rows="6" placeholder="https://eksempel.no/rss&#10;Luftfartstilsynet | https://eksempel.no/nyheter/rss&#10;… eller lim inn en hel OPML-fil"></textarea>' +
+            '<button class="btn btn-primary" data-action="import-sources"' + (state.ui.importBusy ? " disabled" : "") + '>' +
+              (state.ui.importBusy ? "Importerer …" : "Importer kilder") +
+            "</button>" +
+            reportHtml +
+            '<div class="section-label">Aktive og inaktive kilder (' + state.sources.length + ")</div>" +
+            (state.sources.length ? state.sources.map(function (s) {
+              return (
+                '<div class="source-row">' +
+                  '<input type="checkbox" data-toggle-source="' + s.id + '"' + (s.active ? " checked" : "") + ' title="Aktiv" />' +
+                  '<div class="source-main"><div class="source-name">' + escapeHtml(s.name || "(uten navn)") + '</div>' +
+                    '<div class="source-url">' + escapeHtml(s.feed_url) + "</div></div>" +
+                  '<span class="source-meta">' + (s.last_polled_at ? "sist hentet " + fmtTime(s.last_polled_at) : "ikke hentet ennå") + "</span>" +
+                  '<button class="icon-btn" data-action="delete-source" data-id="' + s.id + '" title="Slett">✕</button>' +
+                "</div>"
+              );
+            }).join("") : '<p class="aside-empty">Ingen kilder lagt til ennå.</p>') +
           "</div>" +
           '<div class="panel-footer"><button class="btn btn-primary" data-action="close-modal">Lukk</button></div>' +
         "</div>" +
@@ -629,6 +698,7 @@
     if (m === "newsletter") return renderNewsletterModal();
     if (m === "weights") return renderWeightsModal();
     if (m === "about") return renderAboutModal();
+    if (m === "sources") return renderSourcesModal();
     return "";
   }
 
@@ -797,6 +867,11 @@
         if (c) trySetStatus(c, el.value, "listevisning");
       });
     });
+    root.querySelectorAll("[data-toggle-source]").forEach(function (el) {
+      el.addEventListener("change", function () {
+        toggleSource(el.getAttribute("data-toggle-source"), el.checked);
+      });
+    });
   }
 
   async function trySetStatus(c, newStatus, methodLabel) {
@@ -841,6 +916,9 @@
       case "open-newsletter": state.ui.modal = "newsletter"; render(); break;
       case "open-weights": state.ui.modal = "weights"; render(); break;
       case "open-about": state.ui.modal = "about"; render(); break;
+      case "open-sources": openSources(); break;
+      case "import-sources": importSources(); break;
+      case "delete-source": deleteSource(e.currentTarget.getAttribute("data-id")); break;
       case "close-modal": case "close-modal-bg": state.ui.modal = null; state.ui.activeCaseId = null; render(); break;
       case "submit-new-tip": submitNewTip(); break;
       case "save-case": saveCaseFromForm(); break;
@@ -938,6 +1016,64 @@
     persistWeights();
     state.ui.modal = null; render();
     showToast("Vekting lagret");
+  }
+
+  async function openSources() {
+    state.ui.modal = "sources";
+    state.ui.importReport = null;
+    render();
+    await fetchSources();
+    render();
+  }
+
+  async function importSources() {
+    var textarea = document.getElementById("bulk-sources-input");
+    var text = textarea ? textarea.value.trim() : "";
+    if (!text) { showToast("Lim inn minst én RSS-lenke først"); return; }
+    if (!state.session) { showToast("Du må være innlogget"); return; }
+
+    state.ui.importBusy = true;
+    render();
+
+    try {
+      var res = await fetch("/.netlify/functions/add-sources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + state.session.access_token },
+        body: JSON.stringify({ text: text })
+      });
+      var data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || "Import feilet");
+        state.ui.importBusy = false;
+        render();
+        return;
+      }
+      state.ui.importReport = data;
+      state.ui.importBusy = false;
+      await fetchSources();
+      render();
+      showToast(data.added.length + " kilde(r) lagt til");
+    } catch (err) {
+      state.ui.importBusy = false;
+      render();
+      showToast("Import feilet: " + err.message);
+    }
+  }
+
+  async function toggleSource(id, active) {
+    var res = await supabase.from("sources").update({ active: active }).eq("id", id);
+    if (res.error) { showToast("Kunne ikke oppdatere: " + res.error.message); return; }
+    await fetchSources();
+    render();
+  }
+
+  async function deleteSource(id) {
+    if (!window.confirm("Slette denne RSS-kilden? Tidligere innhentede saker beholdes.")) return;
+    var res = await supabase.from("sources").delete().eq("id", id);
+    if (res.error) { showToast("Kunne ikke slette: " + res.error.message); return; }
+    await fetchSources();
+    render();
+    showToast("Kilde slettet");
   }
 
   async function generateNewsletter() {
