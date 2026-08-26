@@ -9,6 +9,7 @@
   "dependencies": {
     "@netlify/functions": "^2.8.1",
     "@supabase/supabase-js": "^2.45.4",
-    "rss-parser": "^3.13.0"
+    "rss-parser": "^3.13.0",
+    "docx": "^9.7.1"
   }
 }

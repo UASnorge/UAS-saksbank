@@ -34,6 +34,8 @@
     --yellow-fg: #7a6008;
     --slate-bg: rgba(16, 24, 32, 0.07);
     --slate-fg: #55605f;
+    --violet-bg: rgba(108, 79, 172, 0.14);
+    --violet-fg: #5b3fa0;
 
     --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
@@ -49,6 +51,7 @@
       --red-bg: rgba(214, 120, 103, 0.18); --red-fg: #e08d7c;
       --yellow-bg: rgba(224, 196, 84, 0.2); --yellow-fg: #e0c454;
       --slate-bg: rgba(231, 236, 233, 0.08); --slate-fg: #9aa6a2;
+      --violet-bg: rgba(167, 139, 250, 0.18); --violet-fg: #c4b5fd;
     }
   }
 
@@ -172,7 +175,7 @@
   .chip { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
   .chip-type-redaksjonell { background: var(--slate-bg); color: var(--slate-fg); }
   .chip-type-content { background: var(--amber-bg); color: var(--amber-fg); }
-  .chip-type-ai { background: transparent; color: var(--text-muted); border: 1px dashed var(--border); }
+  .chip-type-ai { background: var(--violet-bg); color: var(--violet-fg); }
   .chip-site { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
   .chip-urg-akutt { background: var(--red-bg); color: var(--red-fg); }
   .chip-urg-planlagt { background: var(--yellow-bg); color: var(--yellow-fg); }
@@ -312,14 +315,14 @@
 
   var STATUSES = [
     { id: "ide", label: "Idé" },
-    { id: "godkjent", label: "Godkjent" },
+    { id: "godkjent", label: "Godkjente idéer" },
     { id: "i-arbeid", label: "I arbeid" },
     { id: "utkast-klart", label: "Utkast klart" },
     { id: "wp-utkast", label: "WP-utkast opprettet" },
     { id: "publisert", label: "Publisert" }
   ];
   var SIDE_STATUSES = { arkivert: "Arkivert", avvist: "Avvist" };
-  var TYPE_LABELS = { redaksjonell: "Redaksjonell", content: "INFO", ai: "Redaksjonen / ChatGPT" };
+  var TYPE_LABELS = { redaksjonell: "Dronemagasin", content: "INFO", ai: "Kommentar" };
   var URGENCY_LABELS = { akutt: "Akutt", planlagt: "Planlagt", tidlos: "Tidløs" };
   var SITES = ["dronemag.no", "uasnorway.no"];
   var SITE_LABELS = { "dronemag.no": "DRONEMAGASINET", "uasnorway.no": "UAS NORWAY" };
@@ -369,6 +372,8 @@
       malgruppe: row.malgruppe || "Ikke satt", nettsted: row.nettsted, triage: row.triage,
       stoppGodkjent: !!row.stopp_godkjent, publisertAv: row.publisert_av || "",
       nyhetsbrevInkludert: !!row.nyhetsbrev_inkludert, historikk: row.historikk || [],
+      oppsummering: row.oppsummering || "", manusUrl: row.manus_url || "",
+      manusGenerertTs: row.manus_generert_ts || "", eventId: row.event_id || null,
       isRss: (row.historikk || []).some(function (h) { return /RSS-kilde/.test(h.text || ""); })
     };
   }
@@ -378,7 +383,8 @@
       title: c.title, sakstype: c.sakstype, hastegrad: c.hastegrad, status: c.status, eier: c.eier,
       frist: c.frist || null, neste_handling: c.nesteHandling, kilder: c.kilder, kategori: c.kategori,
       malgruppe: c.malgruppe, nettsted: c.nettsted, triage: c.triage, stopp_godkjent: c.stoppGodkjent,
-      publisert_av: c.publisertAv, nyhetsbrev_inkludert: c.nyhetsbrevInkludert, historikk: c.historikk
+      publisert_av: c.publisertAv, nyhetsbrev_inkludert: c.nyhetsbrevInkludert, historikk: c.historikk,
+      oppsummering: c.oppsummering
     };
   }
 
@@ -391,11 +397,21 @@
   var state = {
     cases: [],
     sources: [],
+    events: [],
+    eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {} },
+    ui: { asideOpen: false, modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, aiBulkBusy: false },
     session: null,
     realtimeOk: false
   };
+
+  // Statuser i rekkefølge — brukes til å avgjøre om en sak har nådd et gitt steg.
+  function statusAtOrAfter(status, target) {
+    var order = STATUSES.map(function (s) { return s.id; });
+    var si = order.indexOf(status), ti = order.indexOf(target);
+    if (si === -1 || ti === -1) return false;
+    return si >= ti;
+  }
 
   var draggedId = null;
 
@@ -435,6 +451,14 @@
   async function refreshAndRender() {
     await fetchCases();
     render();
+  }
+
+  async function fetchEvents() {
+    var res = await supabase.from("events").select("*").order("starts_on");
+    if (res.error) { showToast("Kunne ikke hente eventkalender: " + res.error.message); return; }
+    state.events = res.data || [];
+    state.eventsById = {};
+    state.events.forEach(function (e) { state.eventsById[e.id] = e; });
   }
 
   async function fetchSources() {
@@ -521,6 +545,7 @@
         "</div>" +
         '<div class="topbar-actions">' +
           '<button class="btn" data-action="open-sources">Kilder</button>' +
+          '<button class="btn" data-action="run-ai-triage-bulk"' + (state.ui.aiBulkBusy ? " disabled" : "") + ">" + (state.ui.aiBulkBusy ? "Vurderer …" : "Kjør AI-vurdering (nye idéer)") + "</button>" +
           '<button class="btn" data-action="open-weights">Prioriteringsmodell</button>' +
           '<button class="btn" data-action="open-newsletter">Nyhetsbrevutkast</button>' +
           '<button class="btn btn-ghost" data-action="toggle-aside" aria-label="Aktivitet">Aktivitet ' + (alertCount ? '<span class="badge-count">' + alertCount + "</span>" : "") + "</button>" +
@@ -617,7 +642,9 @@
 
   function renderBoard() {
     var cols = STATUSES.map(function (s) {
-      var items = state.cases.filter(function (c) { return c.status === s.id; });
+      var items = state.cases.filter(function (c) { return c.status === s.id; }).sort(function (a, b) {
+        return computeScore(b.triage, state.weights) - computeScore(a.triage, state.weights);
+      });
       return (
         '<div class="column">' +
           '<div class="column-header"><span class="column-title">' + escapeHtml(s.label) + '</span><span class="column-count">' + items.length + "</span></div>" +
@@ -800,6 +827,12 @@
               '<div class="field"><label for="c-frist">Frist</label><input id="c-frist" type="date" data-field="frist" value="' + escapeHtml(c.frist) + '" /></div>' +
             "</div>" +
             '<div class="field"><label for="c-neste">Neste handling</label><input id="c-neste" data-field="nesteHandling" value="' + escapeHtml(c.nesteHandling) + '" /></div>' +
+
+            '<div class="section-label">AI-vurdering</div>' +
+            '<div class="field"><label for="c-oppsummering">Sammendrag</label><textarea id="c-oppsummering" data-field="oppsummering" placeholder="Ikke vurdert av AI ennå">' + escapeHtml(c.oppsummering) + "</textarea></div>" +
+            (c.eventId && state.eventsById[c.eventId] ? '<p class="helper">📅 Koblet til arrangement: <b>' + escapeHtml(state.eventsById[c.eventId].title) + "</b> (" + escapeHtml(state.eventsById[c.eventId].starts_on) + ")</p>" : "") +
+            '<button class="btn" data-action="run-ai-triage-one" data-id="' + c.id + '"' + (state.ui.aiBusy[c.id] ? " disabled" : "") + ">" + (state.ui.aiBusy[c.id] ? "Vurderer …" : "Kjør AI-vurdering") + "</button>" +
+
             '<div class="field-row">' +
               '<div class="field"><label for="c-malgruppe">Målgruppe</label><select id="c-malgruppe" data-field="malgruppe">' +
                 AUDIENCES.map(function (a) { return "<option" + (a === c.malgruppe ? " selected" : "") + ">" + escapeHtml(a) + "</option>"; }).join("") +
@@ -831,6 +864,16 @@
                 )) +
               "</div>"
             ) : "") +
+            (statusAtOrAfter(c.status, "godkjent") ? (
+              '<div class="section-label">Manus</div>' +
+              '<p class="helper">Genererer et førsteutkast (.docx) i UAS Norways malformat, basert på kildeteksten — les alltid gjennom og korriger før det lastes opp til WordPress.</p>' +
+              '<button class="btn" data-action="generate-manus" data-id="' + c.id + '"' + (state.ui.manusBusy[c.id] ? " disabled" : "") + ">" + (state.ui.manusBusy[c.id] ? "Genererer …" : (c.manusUrl ? "Generer nytt manus" : "Generer manus (.docx)")) + "</button>" +
+              (c.manusUrl ? (
+                ' <button class="btn btn-primary" data-action="download-manus" data-id="' + c.id + '" data-path="' + escapeHtml(c.manusUrl) + '">Last ned manus</button>' +
+                '<p class="helper">Sist generert: ' + fmtTime(c.manusGenerertTs) + "</p>"
+              ) : "")
+            ) : "") +
+
             '<div class="section-label">Historikk</div>' +
             '<div>' + c.historikk.map(function (h) {
               return '<div class="history-item"><span class="history-time">' + fmtTime(h.ts) + "</span><br />" + escapeHtml(h.text) + "</div>";
@@ -988,6 +1031,10 @@
       case "clear-selection": state.ui.selectedIds = {}; render(); break;
       case "import-sources": importSources(); break;
       case "delete-source": deleteSource(e.currentTarget.getAttribute("data-id")); break;
+      case "run-ai-triage-bulk": runAiTriageBulk(); break;
+      case "run-ai-triage-one": runAiTriage([e.currentTarget.getAttribute("data-id")]); break;
+      case "generate-manus": generateManuscriptForCase(e.currentTarget.getAttribute("data-id")); break;
+      case "download-manus": downloadManus(e.currentTarget.getAttribute("data-id"), e.currentTarget.getAttribute("data-path")); break;
       case "close-modal": case "close-modal-bg": state.ui.modal = null; state.ui.activeCaseId = null; render(); break;
       case "submit-new-tip": submitNewTip(); break;
       case "save-case": saveCaseFromForm(); break;
@@ -1166,6 +1213,75 @@
     showToast("Kilde slettet");
   }
 
+  function authHeader() {
+    return { "Content-Type": "application/json", "Authorization": "Bearer " + state.session.access_token };
+  }
+
+  async function runAiTriageBulk() {
+    var ids = state.cases.filter(function (c) { return c.status === "ide"; }).map(function (c) { return c.id; });
+    if (!ids.length) { showToast("Ingen idéer å vurdere"); return; }
+    state.ui.aiBulkBusy = true;
+    render();
+    await runAiTriage(ids, true);
+    state.ui.aiBulkBusy = false;
+    render();
+  }
+
+  async function runAiTriage(ids, quiet) {
+    ids.forEach(function (id) { state.ui.aiBusy[id] = true; });
+    if (!quiet) render();
+    try {
+      var res = await fetch("/.netlify/functions/ai-triage", {
+        method: "POST", headers: authHeader(), body: JSON.stringify({ caseIds: ids })
+      });
+      var data = await res.json();
+      if (!res.ok) { showToast(data.error || "AI-vurdering feilet"); return; }
+      var msg = data.vurdert + " sak(er) vurdert";
+      if (data.feilet && data.feilet.length) msg += ", " + data.feilet.length + " feilet";
+      showToast(msg);
+      await fetchEvents();
+      await refreshAndRender();
+    } catch (err) {
+      showToast("AI-vurdering feilet: " + err.message);
+    } finally {
+      ids.forEach(function (id) { delete state.ui.aiBusy[id]; });
+      render();
+    }
+  }
+
+  async function generateManuscriptForCase(id) {
+    state.ui.manusBusy[id] = true;
+    render();
+    try {
+      var res = await fetch("/.netlify/functions/generate-manuscript", {
+        method: "POST", headers: authHeader(), body: JSON.stringify({ caseId: id })
+      });
+      var data = await res.json();
+      if (!res.ok) { showToast(data.error || "Kunne ikke generere manus"); return; }
+      var msg = "Manus generert" + (data.harBilde ? "" : " (uten bilde — sett inn manuelt)");
+      showToast(msg);
+      if (data.usikkerhetsnotat) showToast("⚠️ " + data.usikkerhetsnotat);
+      await refreshAndRender();
+    } catch (err) {
+      showToast("Kunne ikke generere manus: " + err.message);
+    } finally {
+      delete state.ui.manusBusy[id];
+      render();
+    }
+  }
+
+  async function downloadManus(id, path) {
+    var res = await supabase.storage.from("manus").download(path);
+    if (res.error) { showToast("Kunne ikke laste ned manus: " + res.error.message); return; }
+    var c = getCase(id);
+    var filename = (c ? c.title.replace(/[^a-z0-9æøå]+/gi, "-").toLowerCase().slice(0, 60) : "manus") + ".docx";
+    var url = URL.createObjectURL(res.data);
+    var a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   async function generateNewsletter() {
     var ids = Array.prototype.slice.call(root.querySelectorAll("[data-nl-id]")).filter(function (el) { return el.checked; }).map(function (el) { return el.getAttribute("data-nl-id"); });
     var cases = ids.map(getCase).filter(Boolean);
@@ -1269,7 +1385,8 @@
 
     loadWeights();
     subscribeRealtime();
-    await refreshAndRender();
+    await Promise.all([refreshAndRender(), fetchEvents()]);
+    render();
   }
 
   boot();

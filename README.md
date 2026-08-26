@@ -2,9 +2,9 @@
 
 Delt redaksjonell saksbank med automatisk RSS-innhenting. Statisk frontend (ingen build-steg) + Netlify-funksjon som poller RSS-kilder + Supabase som delt database og innlogging.
 
-**Testet i denne omgang:** RSS-parsing er verifisert til å fungere mot en ekte feed (se `netlify/functions/rss-poll.js`). Databasekobling, innlogging og selve Netlify-driften er ikke testet live ennå, siden det krever et Supabase- og Netlify-prosjekt som ikke finnes fra før.
+**Nå koblet på og verifisert:** RSS-innhenting (delt saksbank, live innlogging), massimport av RSS-kilder, og AI-vurdering + AI-generert manus via OpenAI. AI-delene er testet direkte mot den ekte OpenAI-API-en (strukturert JSON-svar) og docx-strukturen er verifisert til å matche malen "WordPress Infosak Batch Administrator" nøyaktig (feltrekkefølge, bilde rett under BILDE:-linjen, tom linje mellom avsnitt).
 
-**Fortsatt ikke koblet på:** WordPress-utkast, Mailchimp-sending, AI-triage, Doffin, eventkalender, omtaleovervåkning. Se banneret "Om piloten" i selve verktøyet for full status.
+**Fortsatt ikke koblet på:** selve WordPress-opplastingen (skjer i det eksisterende Infosak-verktøyet, dere laster opp `.docx`-en dit selv), Mailchimp-sending, Doffin, eventkalender-synk (events.uasnorway.no har intet åpent API — se `events`-tabellen), omtaleovervåkning. Se banneret "Om piloten" i selve verktøyet for full status.
 
 ---
 
@@ -92,6 +92,17 @@ Sjekk deretter **Table Editor → cases** i Supabase — nye rader med status `i
 
 Åpne Netlify-adressen → skriv inn e-postadressen din → sjekk innboksen for lenken → du er inne. Gjenta med en kollegas e-post for å bekrefte at dere ser den samme saksbanken og samme RSS-funn.
 
+## Steg 9 — AI-vurdering og manusgenerering (OpenAI)
+
+Krever at `supabase/schema.sql` er kjørt på nytt (v2-delen nederst i filen legger til `oppsummering`, `manus_url`, `events`-tabellen og en privat Storage-bucket kalt `manus` — trygt å kjøre hele filen på nytt, den rører ikke eksisterende data).
+
+1. Legg til én miljøvariabel til i Netlify: `OPENAI_API_KEY` → nøkkelen fra [platform.openai.com/api-keys](https://platform.openai.com/api-keys). Trigger en ny deploy etterpå.
+2. **Kjør AI-vurdering (nye idéer)** i toppmenyen vurderer alle saker i «Idé»-kolonnen samtidig: setter sakstype (Dronemagasin/INFO/Kommentar), hastegrad, prioriteringsscore, et kort sammendrag, og — for INFO-saker — kobler til riktig kommende arrangement fra `events`-tabellen. De mest aktuelle sorteres automatisk øverst i hver kolonne.
+3. Når en sak flyttes til **Godkjente idéer** (eller senere), dukker en **«Generer manus»**-knapp opp inne på saken. Den henter kildeartikkelen, skriver et førsteutkast i Dronemagasinet-stil (kun basert på fakta fra kilden — usikre opplysninger flagges, aldri diktet opp), forsøker å finne kildeartikkelens eget bilde med kreditering, og laster opp et `.docx` i nøyaktig formatet «WordPress Infosak Batch Administrator» leser.
+4. **Last ned manus** henter `.docx`-filen — last den opp i det eksisterende WordPress-importverktøyet deres. Manuset er alltid et førsteutkast: les gjennom, korriger, og sett inn bilde manuelt hvis det ikke ble funnet automatisk, før dere laster det opp.
+
+**Eventkalenderen** (`events`-tabellen) er vedlikeholdt manuelt siden events.uasnorway.no blokkerer automatisk henting (403 på vanlig sideoppslag). Oppdater den via Supabase Table Editor når nye kurs/konferanser legges til.
+
 ---
 
 ## Prosjektstruktur
@@ -101,15 +112,17 @@ uas-saksbank/
 ├── public/index.html          Hele frontend — kanban, liste, saksskjema, STOPP-gate
 ├── netlify/functions/
 │   ├── rss-poll.js             Kjører hver time, henter RSS → nye saker i "Idé"
-│   └── add-sources.js          Masseimport av RSS-kilder (lenkeliste eller OPML)
-├── supabase/schema.sql        Databasetabeller + tilgangsregler
+│   ├── add-sources.js          Masseimport av RSS-kilder (lenkeliste eller OPML)
+│   ├── ai-triage.js            AI-vurdering: kategori, hastegrad, score, sammendrag, eventkobling
+│   └── generate-manuscript.js  AI-generert .docx-manus i UAS Norways malformat
+├── supabase/schema.sql        Databasetabeller + tilgangsregler (v1 + v2)
 ├── netlify.toml                Netlify-konfig (publish-mappe, funksjonsmappe)
 └── .env.example                Mal for lokale miljøvariabler
 ```
 
 ## Neste steg (krever tilganger jeg ikke har ennå)
 
-- **WordPress:** REST API-tilgang + testmiljø, for å faktisk sende utkast (ikke bare statusetikett)
 - **Mailchimp:** API-nøkkel, for å bygge nyhetsbrevutkastet direkte i Mailchimp i stedet for kopier/lim
-- **Claude API-nøkkel:** for AI-genererte triage-forslag og førsteutkast — kan legges til som en egen Netlify-funksjon etter samme mønster som `rss-poll.js`
-- **Doffin, eventkalender, omtaleovervåkning:** egne pollefunksjoner, samme arkitektur som RSS
+- **Doffin, omtaleovervåkning:** egne pollefunksjoner, samme arkitektur som RSS
+- **Automatisk eventkalender-synk:** krever enten et API fra events.uasnorway.no (finnes ikke i dag) eller at noen der åpner for det — inntil videre vedlikeholdes `events`-tabellen manuelt
+- **Ekte WordPress REST API-tilgang** er ikke nødvendig — dere har allerede «WordPress Infosak Batch Administrator» som leser `.docx`-manusene appen genererer
