@@ -128,8 +128,13 @@ function computeLenkekontroll(fields, linkResults) {
   return { status: "IKKE_BEKREFTET", detalj: "Lenke(r) feilet ved faktisk test: " + brokenNote };
 }
 
-// supabase: klient autentisert SOM den innloggede brukeren (RLS gjelder).
-async function checkSource(supabase, openaiKey, caseId) {
+// supabase: klient autentisert SOM den innloggede brukeren (RLS gjelder), ELLER
+// service_role ved automatisk kjøring fra lib/sourceGate.js (ingen innlogget
+// bruker å knytte kallet til der).
+// extraContext (valgfritt): ekstra, faktisk kjent kontekst å gi AI-en — f.eks.
+// hvilken RSS-kilde saken kom inn via. Brukes KUN som hjelp til modellen, ikke
+// noe modellen selv skal late som om den fant.
+async function checkSource(supabase, openaiKey, caseId, extraContext) {
   var caseRes = await supabase.from("cases").select("*").eq("id", caseId).maybeSingle();
   if (caseRes.error || !caseRes.data) throw new Error("Fant ikke saken.");
   var c = caseRes.data;
@@ -139,7 +144,8 @@ async function checkSource(supabase, openaiKey, caseId) {
     "Vurder denne saken:\n\n" +
     "Tittel: " + c.title + "\n" +
     "Kilde-URL: " + (sourceUrl || "(ingen oppgitt — søk opp saken basert på tittelen)") + "\n" +
-    (c.oppsummering ? "Tidligere AI-sammendrag: " + c.oppsummering + "\n" : "");
+    (c.oppsummering ? "Tidligere AI-sammendrag: " + c.oppsummering + "\n" : "") +
+    (extraContext ? extraContext + "\n" : "");
 
   var fields = await callOpenAI(openaiKey, userPrompt);
 

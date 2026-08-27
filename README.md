@@ -159,6 +159,21 @@ Ingen ny miljøvariabel — bruker samme `OPENAI_API_KEY` som resten. Kjør `sup
 
 Begge er også tilgjengelige som verktøy for AI-assistenten (`check_source`/`research_images` i Steg 11) — spør den «kjør kildevurdering på saken om …» eller «finn bilder til saken om …».
 
+## Steg 14 — Automatisk kildekontroll FØR en RSS-idé i det hele tatt vises
+
+Utover knappen i Steg 13 (som du selv trykker på), kjører appen nå kildevurderingen **automatisk** på alle nye RSS-oppdagede idéer — og fjerner dem helt fra «Idé» dersom AI-kontrollen konkluderer med «🔴 Bør ikke brukes», akkurat som relevansfilteret (Steg 10) allerede fjerner ikke-dronerelevante saker før de blir en idé. Tanken er den samme: dere skal aldri måtte bruke tid på å vurdere en sak som allerede er avklart som lite troverdig.
+
+Ingen ny miljøvariabel og ingen ny knapp å trykke på — dette kjører av seg selv, forutsatt at `OPENAI_API_KEY` allerede er satt (Steg 9).
+
+**Hvorfor to nye funksjoner, ikke bare lagt inn i RSS-pollingen (Steg 6/7)?** Netlifys vanlige "scheduled functions" (som RSS-pollingen bruker) har en hard grense på 30 sekunder — og et eneste ekte websøk-kall for kildevurdering tar normalt 15–30 sekunder alene. Det ville vært for tregt/skjørt å gjøre inni selve RSS-pollingen, spesielt med flere nye idéer i samme kjøring. Løsningen er den samme to-funksjons-arkitekturen Netlify selv anbefaler for denne typen jobb:
+
+- `source-gate-trigger.js` — en vanlig, rask scheduled function (kjører hver time, akkurat som RSS-pollingen) som bare sender ett HTTP-kall videre og returnerer umiddelbart.
+- `source-gate-background.js` — en **Background Function** (kjenner du igjen på "-background" i filnavnet) med opptil 15 minutters kjøretid, som gjør selve arbeidet: henter nye "Idé"-saker som kom inn via RSS og ikke er kildevurdert ennå (maks 15 om gangen — flere tas neste time), kjører kildevurdering på dem parallelt, og sletter dem som får «Bør ikke brukes».
+
+**Viktig om timing:** Netlify garanterer ingen kjørerekkefølge mellom to uavhengige timelige funksjoner, så en splitter ny idé kan i verste fall vente til NESTE times kjøring før den blir kildekontrollert — regn med kildekontroll innen 1–2 timer etter at en RSS-idé dukker opp, ikke nødvendigvis med det samme. Saker et menneske selv har lagt inn manuelt (ikke via RSS), eller allerede har flyttet videre fra «Idé», røres aldri av denne automatikken.
+
+Idéer som blir liggende (fordi de får en mer usikker anbefaling enn «Bør ikke brukes» — «Kun tips», «Bør verifiseres» eller «Trygg») viser den fulle kildevurderingsrapporten inne på saken, akkurat som om du hadde trykket knappen selv (Steg 13) — dere slipper bare å trykke på den for RSS-saker.
+
 ---
 
 ## Prosjektstruktur
@@ -176,12 +191,15 @@ uas-saksbank/
 │   ├── publish-to-wordpress.js Oppretter WordPress-UTKAST fra en sak sitt manus
 │   ├── check-source.js         Kildevurdering (troverdighet, originalkilde, lenkekontroll)
 │   ├── research-images.js      Bilderesearch (rettighetsavklarte bildealternativer)
+│   ├── source-gate-trigger.js  Rask scheduled function — utløser kildekontroll-pass hver time
+│   ├── source-gate-background.js  Background function — kjører faktisk kildekontroll på nye RSS-idéer
 │   └── lib/
 │       ├── relevance.js        Delt AI-relevanssjekk (rss-poll + cleanup)
 │       ├── triage.js           Delt AI-vurderingslogikk (ai-triage + assistant-chat)
 │       ├── manuscript.js       Delt manusgenerering (generate-manuscript + assistant-chat)
 │       ├── wordpress.js        WordPress REST API-klient (portert fra wordpress-infosak)
-│       ├── sourceCheck.js      Delt kildevurdering (check-source + assistant-chat)
+│       ├── sourceCheck.js      Delt kildevurdering (check-source + assistant-chat + sourceGate)
+│       ├── sourceGate.js       Automatisk kildekontroll-fjerning av nye RSS-idéer
 │       ├── imageResearch.js    Delt bilderesearch (research-images + assistant-chat)
 │       └── linkCheck.js        Ekte HTTP-verifisering av lenker (brukt av begge over)
 ├── supabase/schema.sql        Databasetabeller + tilgangsregler (v1–v4)

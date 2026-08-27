@@ -92,6 +92,14 @@ async function pollAllSources(supabase) {
       }
 
       const nowIso = new Date().toISOString();
+      // Kilder: artikkelens egen lenke først (kilder[0] — det er den resten
+      // av appen, f.eks. kildevurdering/manusgenerering, alltid leser), og
+      // deretter selve RSS-feeden som en egen, synlig og redigerbar kilde-
+      // rad, slik at det alltid er tydelig hvilken feed saken kom inn via —
+      // ikke bare i historikken, men i selve Kilder-listen på saken.
+      const kilder = [item.link || source.feed_url];
+      if (source.feed_url && source.feed_url !== kilder[0]) kilder.push(source.feed_url);
+
       const { error: caseErr } = await supabase.from("cases").insert({
         title: title,
         sakstype: "redaksjonell",
@@ -99,7 +107,7 @@ async function pollAllSources(supabase) {
         status: "ide",
         eier: "Ikke tildelt",
         neste_handling: `Vurder relevans og eier (oppdaget via RSS: ${source.name})`,
-        kilder: [item.link || source.feed_url],
+        kilder: kilder,
         nettsted: "dronemag.no",
         triage: { aktualitet: 2, betydning: 2, innsats: 2, eksklusivitet: 1 },
         historikk: [
