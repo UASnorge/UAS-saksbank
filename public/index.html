@@ -410,6 +410,10 @@
       nyhetsbrevInkludert: !!row.nyhetsbrev_inkludert, historikk: row.historikk || [],
       oppsummering: row.oppsummering || "", manusUrl: row.manus_url || "",
       manusGenerertTs: row.manus_generert_ts || "", eventId: row.event_id || null,
+      manusTittel: row.manus_tittel || "", manusIngress: row.manus_ingress || "",
+      manusHovedtekst: row.manus_hovedtekst || [], manusAltTekst: row.manus_alt_tekst || "",
+      manusBildeUrl: row.manus_bilde_url || "", manusFoto: row.manus_foto || "",
+      wpPostId: row.wp_post_id || null, wpEditLink: row.wp_edit_link || "", wpStatus: row.wp_status || "",
       isRss: (row.historikk || []).some(function (h) { return /RSS-kilde/.test(h.text || ""); })
     };
   }
@@ -436,7 +440,7 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, aiBulkBusy: false, cleanupBusy: false, cleanupReport: null, expandedSummaries: {} },
+    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, cleanupBusy: false, cleanupReport: null, wpReport: null, expandedSummaries: {} },
     chat: { messages: [], busy: false },
     session: null,
     realtimeOk: false
@@ -576,6 +580,7 @@
         '<button class="btn btn-primary" data-action="approve-selected">✓ Godkjenn valgte</button>' +
         '<button class="btn" data-action="run-ai-triage-selected">🤖 Vurder valgte (AI)</button>' +
         '<button class="btn" data-action="generate-manus-selected">📄 Generer manus (valgte)</button>' +
+        '<button class="btn" data-action="publish-wordpress-selected">🌐 Publiser til WordPress (valgte)</button>' +
         '<select id="bulk-status-select" aria-label="Flytt valgte til status">' + moveOptions + "</select>" +
         '<button class="btn" data-action="move-selected">Flytt</button>' +
         '<div class="pilot-banner-spacer"></div>' +
@@ -721,6 +726,34 @@
                 "</ul></div>"
               ) : "") +
               (r.overflow ? '<div class="warn-line">– ' + r.overflow + " sak(er) til i «Idé» ble ikke sjekket denne runden (maks 60 per kjøring) — trykk knappen igjen for å ta resten.</div>" : "") +
+            "</div>" +
+          "</div>" +
+          '<div class="panel-footer"><button class="btn btn-primary" data-action="close-modal">Lukk</button></div>' +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderWpReportModal() {
+    var r = state.ui.wpReport || { published: [], failed: [] };
+    return (
+      '<div class="overlay center" data-action="close-modal-bg">' +
+        '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="wp-report-title">' +
+          '<div class="panel-header"><h2 id="wp-report-title">WordPress-utkast — rapport</h2><button class="icon-btn" data-action="close-modal">✕</button></div>' +
+          '<div class="panel-body">' +
+            '<div class="import-report">' +
+              (r.published.length ? (
+                '<div class="ok-line">✓ ' + r.published.length + " utkast opprettet:<ul>" +
+                  r.published.map(function (p) { return "<li><b>" + escapeHtml(p.title) + '</b> — <a href="' + escapeHtml(p.editLink) + '" target="_blank" rel="noopener noreferrer">Åpne i WordPress ↗</a></li>'; }).join("") +
+                "</ul></div>"
+              ) : '<div class="helper">Ingen ble opprettet denne runden.</div>') +
+              (r.failed.length ? (
+                '<div class="fail-line">✗ ' + r.failed.length + " feilet:<ul>" +
+                  r.failed.map(function (f) {
+                    return "<li><b>" + escapeHtml(f.title) + "</b> — " + (f.missingFields && f.missingFields.length ? "mangler: " + escapeHtml(f.missingFields.join(", ")) : escapeHtml(f.error)) + "</li>";
+                  }).join("") +
+                "</ul></div>"
+              ) : "") +
             "</div>" +
           "</div>" +
           '<div class="panel-footer"><button class="btn btn-primary" data-action="close-modal">Lukk</button></div>' +
@@ -925,6 +958,7 @@
     if (m === "about") return renderAboutModal();
     if (m === "sources") return renderSourcesModal();
     if (m === "cleanup-report") return renderCleanupReportModal();
+    if (m === "wp-report") return renderWpReportModal();
     return "";
   }
 
@@ -1030,6 +1064,12 @@
               (c.manusUrl ? (
                 ' <button class="btn btn-primary" data-action="download-manus" data-id="' + c.id + '" data-path="' + escapeHtml(c.manusUrl) + '">Last ned manus</button>' +
                 '<p class="helper">Sist generert: ' + fmtTime(c.manusGenerertTs) + "</p>"
+              ) : "") +
+              (c.manusTittel ? (
+                '<div class="section-label" style="border-top:none;padding-top:0;">Publiser til WordPress</div>' +
+                '<p class="helper">Oppretter et UTKAST på uasnorway.no (aldri publisert direkte) — kontroller alltid saken i WordPress før dere trykker Publiser der.</p>' +
+                '<button class="btn' + (c.wpPostId ? "" : " btn-primary") + '" data-action="publish-wordpress" data-id="' + c.id + '"' + (state.ui.wpBusy[c.id] ? " disabled" : "") + ">" + (state.ui.wpBusy[c.id] ? "Sender til WordPress …" : (c.wpPostId ? "Send oppdatert utkast på nytt" : "🌐 Publiser til WordPress (utkast)")) + "</button>" +
+                (c.wpPostId ? ' <a class="btn" href="' + escapeHtml(c.wpEditLink) + '" target="_blank" rel="noopener noreferrer">Åpne i WordPress ↗</a><p class="helper">WordPress-utkast #' + c.wpPostId + "</p>" : "")
               ) : "")
             ) : "") +
 
@@ -1229,6 +1269,8 @@
         break;
       }
       case "generate-manus-selected": e.stopPropagation(); generateManuscriptsForSelected(); break;
+      case "publish-wordpress": e.stopPropagation(); publishToWordPress(e.currentTarget.getAttribute("data-id")); break;
+      case "publish-wordpress-selected": e.stopPropagation(); publishToWordPressSelected(); break;
       case "toggle-summary": {
         e.stopPropagation();
         var sid = e.currentTarget.getAttribute("data-id");
@@ -1390,6 +1432,62 @@
     if (failed.length) msg += ", " + failed.length + " feilet";
     showToast(msg);
     if (failed.length) console.warn("Manus feilet for:", failed);
+  }
+
+  async function publishToWordPress(id) {
+    state.ui.wpBusy[id] = true;
+    render();
+    try {
+      var res = await fetch("/.netlify/functions/publish-to-wordpress", {
+        method: "POST", headers: authHeader(), body: JSON.stringify({ caseId: id })
+      });
+      var data = await parseFunctionResponse(res);
+      if (!res.ok) {
+        if (data.missingFields && data.missingFields.length) {
+          window.alert("Kan ikke opprette WordPress-utkast — saken mangler:\n\n• " + data.missingFields.join("\n• ") + "\n\nRediger saken (eller generer manus på nytt) og prøv igjen.");
+        } else {
+          showToast(data.error || "Kunne ikke publisere til WordPress");
+        }
+        return;
+      }
+      showToast("WordPress-utkast opprettet: " + data.title);
+      await refreshAndRender();
+    } catch (err) {
+      showToast("Kunne ikke publisere til WordPress: " + err.message);
+    } finally {
+      delete state.ui.wpBusy[id];
+      render();
+    }
+  }
+
+  async function publishToWordPressSelected() {
+    var ids = Object.keys(state.ui.selectedIds);
+    if (!ids.length) return;
+    state.ui.selectedIds = {};
+    ids.forEach(function (id) { state.ui.wpBusy[id] = true; });
+    render();
+
+    var results = await Promise.allSettled(ids.map(async function (id) {
+      var res = await fetch("/.netlify/functions/publish-to-wordpress", {
+        method: "POST", headers: authHeader(), body: JSON.stringify({ caseId: id })
+      });
+      var data = await parseFunctionResponse(res);
+      if (!res.ok) { var err = new Error(data.error || "ukjent feil"); err.missingFields = data.missingFields; throw err; }
+      return data;
+    }));
+
+    var published = [], failed = [];
+    results.forEach(function (r, i) {
+      var c = getCase(ids[i]);
+      var title = c ? c.title : ids[i];
+      if (r.status === "fulfilled") published.push({ title: r.value.title, editLink: r.value.editLink });
+      else failed.push({ title: title, error: r.reason ? r.reason.message : "ukjent feil", missingFields: r.reason && r.reason.missingFields });
+    });
+
+    ids.forEach(function (id) { delete state.ui.wpBusy[id]; });
+    state.ui.wpReport = { published: published, failed: failed };
+    state.ui.modal = "wp-report";
+    await refreshAndRender();
   }
 
   async function moveSelected(targetStatus) {

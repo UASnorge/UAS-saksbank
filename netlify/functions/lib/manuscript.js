@@ -199,6 +199,15 @@ async function generateManuscript(supabase, openaiKey, caseId) {
   const updateRes = await supabase.from("cases").update({
     manus_url: path,
     manus_generert_ts: new Date().toISOString(),
+    // Strukturerte felt ved siden av .docx-filen — slik at "Publiser til
+    // WordPress" kan lese innholdet direkte, uten å parse dokumentet på nytt,
+    // og slik at manglende felt kan sjekkes FØR noe sendes til WordPress.
+    manus_tittel: fields.tittel || "",
+    manus_ingress: fields.ingress || "",
+    manus_hovedtekst: fields.hovedtekst_avsnitt || [],
+    manus_alt_tekst: fields.alt_tekst_bilde || "",
+    manus_bilde_url: (source.ok && source.imageUrl) ? source.imageUrl : "",
+    manus_foto: fields.fotoKreditering || "",
     historikk: historikk
   }).eq("id", c.id);
   if (updateRes.error) throw new Error(updateRes.error.message);

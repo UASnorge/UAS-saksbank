@@ -117,6 +117,17 @@ Trykk **💬 Assistent** i toppmenyen. En samtale-assistent med verktøytilgang 
 
 Bruker samme `OPENAI_API_KEY` som resten av AI-funksjonene — ingen ekstra oppsett om du allerede har gjort steg 9.
 
+## Steg 12 — Publiser til WordPress (utkast)
+
+Porter fra det allerede eksisterende «WordPress Infosak Batch Administrator»-verktøyet (samme ACF-felt for uasnorway.no, samme «kun utkast»-prinsipp) — se `netlify/functions/lib/wordpress.js` for hvor koblingen kommer fra.
+
+1. I WordPress (uasnorway.no): **Brukere → Din profil → Application Passwords** → opprett en ny, gjerne kalt noe som «UAS Saksbank» (egen, separat fra den wordpress-infosak allerede bruker — enklere å tilbakekalle én uten å påvirke den andre).
+2. Legg til tre miljøvariabler i Netlify: `WP_URL` (`https://www.uasnorway.no`), `WP_USERNAME`, `WP_APP_PASSWORD` → trigger ny deploy.
+3. Kjør `supabase/schema.sql` på nytt i Supabase (v3-delen nederst legger til strukturerte manusfelt + WP-kobling på `cases` — idempotent, som resten av filen).
+4. Åpne en sak med generert manus → **«🌐 Publiser til WordPress (utkast)»**. Mangler saken tittel, ingress, hovedtekst eller bilde, stoppes den FØR noe sendes til WordPress, med en tydelig feilmelding om nøyaktig hva som mangler. Samme handling finnes som batch i verktøylinjen for valgte saker.
+
+**Ufravikelig grense, samme som ellers i appen:** oppretter alltid status `draft` i WordPress — aldri `publish`. Selve publiseringen på uasnorway.no skjer fortsatt manuelt, enten direkte i WordPress eller i Oversikt-fanen i wordpress-infosak-verktøyet, med et menneske som faktisk har lest gjennom saken. Dette er en egen, separat kontroll fra saksbankens interne STOPP-regel for status «Publisert» — de erstatter ikke hverandre.
+
 ---
 
 ## Prosjektstruktur
@@ -131,10 +142,12 @@ uas-saksbank/
 │   ├── generate-manuscript.js  AI-generert .docx-manus i UAS Norways malformat
 │   ├── cleanup-irrelevant.js   Rydder bort ikke-dronerelevante idéer fra "Idé"
 │   ├── assistant-chat.js       AI-chat med verktøytilgang til hele saksbanken
+│   ├── publish-to-wordpress.js Oppretter WordPress-UTKAST fra en sak sitt manus
 │   └── lib/
 │       ├── relevance.js        Delt AI-relevanssjekk (rss-poll + cleanup)
 │       ├── triage.js           Delt AI-vurderingslogikk (ai-triage + assistant-chat)
-│       └── manuscript.js       Delt manusgenerering (generate-manuscript + assistant-chat)
+│       ├── manuscript.js       Delt manusgenerering (generate-manuscript + assistant-chat)
+│       └── wordpress.js        WordPress REST API-klient (portert fra wordpress-infosak)
 ├── supabase/schema.sql        Databasetabeller + tilgangsregler (v1 + v2)
 ├── netlify.toml                Netlify-konfig (publish-mappe, funksjonsmappe)
 └── .env.example                Mal for lokale miljøvariabler
@@ -145,4 +158,3 @@ uas-saksbank/
 - **Mailchimp:** API-nøkkel, for å bygge nyhetsbrevutkastet direkte i Mailchimp i stedet for kopier/lim
 - **Doffin, omtaleovervåkning:** egne pollefunksjoner, samme arkitektur som RSS
 - **Automatisk eventkalender-synk:** krever enten et API fra events.uasnorway.no (finnes ikke i dag) eller at noen der åpner for det — inntil videre vedlikeholdes `events`-tabellen manuelt
-- **Ekte WordPress REST API-tilgang** er ikke nødvendig — dere har allerede «WordPress Infosak Batch Administrator» som leser `.docx`-manusene appen genererer

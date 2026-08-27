@@ -204,3 +204,22 @@ create policy "innloggede kan oppdatere manus" on storage.objects
 drop policy if exists "innloggede kan slette manus" on storage.objects;
 create policy "innloggede kan slette manus" on storage.objects
   for delete using (bucket_id = 'manus' and auth.role() = 'authenticated');
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v3 — Strukturerte manusfelt (for WordPress-utkast) + WP-kobling
+-- ═══════════════════════════════════════════════════════════════════
+
+-- Samme innhold som .docx-manuset, men som strukturerte felt — slik at
+-- "Publiser til WordPress" ikke trenger å parse .docx-filen på nytt, og slik
+-- at manglende felt kan sjekkes FØR noe sendes til WordPress.
+alter table cases add column if not exists manus_tittel text default '';
+alter table cases add column if not exists manus_ingress text default '';
+alter table cases add column if not exists manus_hovedtekst jsonb default '[]'::jsonb;
+alter table cases add column if not exists manus_alt_tekst text default '';
+alter table cases add column if not exists manus_bilde_url text default '';
+alter table cases add column if not exists manus_foto text default '';
+
+-- Kobling til det opprettede WordPress-utkastet.
+alter table cases add column if not exists wp_post_id integer;
+alter table cases add column if not exists wp_edit_link text default '';
+alter table cases add column if not exists wp_status text default '';
