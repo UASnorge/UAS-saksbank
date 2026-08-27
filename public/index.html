@@ -450,6 +450,15 @@
     return si >= ti;
   }
 
+  // Neste steg i den vanlige produksjonsflyten — men ALDRI fram til "publisert".
+  // Den overgangen skal alltid gå via enkeltsak-visningen med STOPP-kontroll.
+  function nextAdvanceableStatus(status) {
+    var order = STATUSES.map(function (s) { return s.id; });
+    var idx = order.indexOf(status);
+    if (idx === -1 || idx >= order.length - 2) return null;
+    return order[idx + 1];
+  }
+
   var draggedId = null;
 
   function loadWeights() {
@@ -566,6 +575,7 @@
         "<span>" + ids.length + " valgt</span>" +
         '<button class="btn btn-primary" data-action="approve-selected">✓ Godkjenn valgte</button>' +
         '<button class="btn" data-action="run-ai-triage-selected">🤖 Vurder valgte (AI)</button>' +
+        '<button class="btn" data-action="generate-manus-selected">📄 Generer manus (valgte)</button>' +
         '<select id="bulk-status-select" aria-label="Flytt valgte til status">' + moveOptions + "</select>" +
         '<button class="btn" data-action="move-selected">Flytt</button>' +
         '<div class="pilot-banner-spacer"></div>' +
@@ -755,10 +765,13 @@
     var actionsHtml = "";
     if (c.status === "ide") {
       actionsHtml = '<div class="card-actions"><button class="btn btn-primary" data-action="approve-case-quick" data-id="' + c.id + '">✓ Godkjenn</button></div>';
-    } else if (statusAtOrAfter(c.status, "godkjent") && c.status !== "publisert") {
-      actionsHtml = c.manusUrl
-        ? '<div class="card-actions"><button class="btn" data-action="download-manus" data-id="' + c.id + '" data-path="' + escapeHtml(c.manusUrl) + '">⬇ Last ned manus</button></div>'
-        : '<div class="card-actions"><button class="btn" data-action="generate-manus" data-id="' + c.id + '"' + (state.ui.manusBusy[c.id] ? " disabled" : "") + ">" + (state.ui.manusBusy[c.id] ? "Genererer …" : "📄 Generer manus") + "</button></div>";
+    } else if (statusAtOrAfter(c.status, "godkjent") && c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist") {
+      var manusBtn = c.manusUrl
+        ? '<button class="btn" data-action="download-manus" data-id="' + c.id + '" data-path="' + escapeHtml(c.manusUrl) + '">⬇ Manus</button>'
+        : '<button class="btn" data-action="generate-manus" data-id="' + c.id + '"' + (state.ui.manusBusy[c.id] ? " disabled" : "") + ">" + (state.ui.manusBusy[c.id] ? "Genererer …" : "📄 Manus") + "</button>";
+      var nextStatus = nextAdvanceableStatus(c.status);
+      var nextBtn = nextStatus ? '<button class="btn" data-action="advance-status-quick" data-id="' + c.id + '" data-next="' + nextStatus + '">→ ' + escapeHtml(statusLabel(nextStatus)) + "</button>" : "";
+      actionsHtml = '<div class="card-actions">' + manusBtn + nextBtn + "</div>";
     }
 
     return (
@@ -975,6 +988,7 @@
             '<button class="btn" data-action="run-ai-triage-one" data-id="' + c.id + '"' + (state.ui.aiBusy[c.id] ? " disabled" : "") + ">" + (state.ui.aiBusy[c.id] ? "Vurderer …" : "Kjør AI-vurdering") + "</button>" +
 
             (c.status === "ide" ? '<button class="btn btn-primary" data-action="approve-case-quick" data-id="' + c.id + '" style="width:100%;">✓ Godkjenn idé → flytt til «Godkjente idéer»</button>' : "") +
+            (c.status !== "ide" && nextAdvanceableStatus(c.status) ? '<button class="btn btn-primary" data-action="advance-status-quick" data-id="' + c.id + '" data-next="' + nextAdvanceableStatus(c.status) + '" style="width:100%;">→ Flytt videre til «' + escapeHtml(statusLabel(nextAdvanceableStatus(c.status))) + '»</button>' : "") +
 
             '<div class="field-row">' +
               '<div class="field"><label for="c-malgruppe">Målgruppe</label><select id="c-malgruppe" data-field="malgruppe">' +
@@ -1206,6 +1220,15 @@
       case "generate-manus": e.stopPropagation(); generateManuscriptForCase(e.currentTarget.getAttribute("data-id")); break;
       case "download-manus": e.stopPropagation(); downloadManus(e.currentTarget.getAttribute("data-id"), e.currentTarget.getAttribute("data-path")); break;
       case "approve-case-quick": e.stopPropagation(); approveCaseQuick(e.currentTarget.getAttribute("data-id")); break;
+      case "advance-status-quick": {
+        e.stopPropagation();
+        var advId = e.currentTarget.getAttribute("data-id");
+        var advNext = e.currentTarget.getAttribute("data-next");
+        var advCase = getCase(advId);
+        if (advCase) trySetStatus(advCase, advNext, "hurtigknapp");
+        break;
+      }
+      case "generate-manus-selected": e.stopPropagation(); generateManuscriptsForSelected(); break;
       case "toggle-summary": {
         e.stopPropagation();
         var sid = e.currentTarget.getAttribute("data-id");
@@ -1336,6 +1359,37 @@
     var c = getCase(id);
     if (!c) return;
     await trySetStatus(c, "godkjent", "godkjenn-knapp");
+  }
+
+  async function generateManuscriptsForSelected() {
+    var ids = Object.keys(state.ui.selectedIds);
+    if (!ids.length) return;
+    state.ui.selectedIds = {};
+    ids.forEach(function (id) { state.ui.manusBusy[id] = true; });
+    render();
+
+    var results = await Promise.allSettled(ids.map(async function (id) {
+      var res = await fetch("/.netlify/functions/generate-manuscript", {
+        method: "POST", headers: authHeader(), body: JSON.stringify({ caseId: id })
+      });
+      var data = await parseFunctionResponse(res);
+      if (!res.ok) throw new Error(data.error || "ukjent feil");
+      return data;
+    }));
+
+    var ok = 0, failed = [];
+    results.forEach(function (r, i) {
+      if (r.status === "fulfilled") ok++;
+      else failed.push({ id: ids[i], error: r.reason ? r.reason.message : "ukjent feil" });
+    });
+
+    ids.forEach(function (id) { delete state.ui.manusBusy[id]; });
+    await refreshAndRender();
+
+    var msg = ok + " manus generert";
+    if (failed.length) msg += ", " + failed.length + " feilet";
+    showToast(msg);
+    if (failed.length) console.warn("Manus feilet for:", failed);
   }
 
   async function moveSelected(targetStatus) {
