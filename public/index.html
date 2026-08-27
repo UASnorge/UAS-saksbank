@@ -179,6 +179,8 @@
     padding: 3px 8px; border-radius: 999px; color: var(--accent); font-size: 0.7rem; font-weight: 600; align-self: flex-start;
   }
   .card-source-link:hover { background: var(--bg-sunken); }
+  .card-source-host { color: var(--text-muted); font-weight: 500; }
+  .list-source-host { font-size: 0.72rem; color: var(--text-muted); margin-left: 4px; }
   .card-actions { display: flex; gap: 6px; margin-top: 2px; }
   .card-actions .btn { padding: 5px 9px; font-size: 0.76rem; flex: 1; justify-content: center; }
   .chip-event { background: transparent; color: var(--accent); border: 1px dashed var(--accent); }
@@ -396,6 +398,12 @@
     if (!name || name === "Ikke tildelt") return "–";
     var parts = name.trim().split(/\s+/);
     return (parts[0][0] + (parts[1] ? parts[1][0] : "")).toUpperCase();
+  }
+  // Domenet en kildelenke peker til, uten "www." — for å se raskt hvem som
+  // faktisk har publisert saken (NRK, TWZ, osv.) uten å måtte åpne lenken.
+  function sourceHostname(url) {
+    try { return new URL(url).hostname.replace(/^www\./, ""); }
+    catch (e) { return ""; }
   }
 
   /* ---------- DB ↔ app-modell ---------- */
@@ -791,8 +799,9 @@
       ? '<button class="card-summary-toggle' + (summaryOpen ? " open" : "") + '" data-action="toggle-summary" data-id="' + c.id + '"><span class="chev">▸</span>' + (summaryOpen ? "Skjul sammendrag" : "Vis sammendrag") + "</button>" +
         (summaryOpen ? '<div class="card-summary">' + escapeHtml(c.oppsummering) + "</div>" : "")
       : "";
+    var sourceHost = c.kilder && c.kilder.length ? sourceHostname(c.kilder[0]) : "";
     var sourceLinkHtml = c.kilder && c.kilder.length
-      ? '<button class="card-source-link" data-action="open-source" data-url="' + escapeHtml(c.kilder[0]) + '">🔗 Åpne kilde</button>'
+      ? '<button class="card-source-link" data-action="open-source" data-url="' + escapeHtml(c.kilder[0]) + '">🔗 Åpne kilde' + (sourceHost ? ' <span class="card-source-host">(' + escapeHtml(sourceHost) + ")</span>" : "") + "</button>"
       : "";
 
     var actionsHtml = "";
@@ -866,7 +875,7 @@
               '<td class="' + (overdue ? "overdue" : "") + '">' + due + "</td>" +
               '<td class="score-num">' + score + "</td>" +
               '<td>' +
-                (c.kilder && c.kilder.length ? '<button class="icon-btn" data-action="open-source" data-url="' + escapeHtml(c.kilder[0]) + '" title="Åpne kilde">🔗</button>' : "") +
+                (c.kilder && c.kilder.length ? '<button class="icon-btn" data-action="open-source" data-url="' + escapeHtml(c.kilder[0]) + '" title="Åpne kilde">🔗</button><span class="list-source-host">' + escapeHtml(sourceHostname(c.kilder[0])) + "</span>" : "") +
                 '<button class="icon-btn" data-action="delete-case-quick" data-id="' + c.id + '" title="Slett sak" aria-label="Slett sak">✕</button>' +
               "</td>" +
             "</tr>"
@@ -1032,8 +1041,10 @@
             "</div>" +
             '<div class="field"><label>Kilder</label><div class="kilder-list" id="kilder-list">' +
               (c.kilder.length ? c.kilder.map(function (k, i) {
+                var isLink = /^https?:\/\//i.test(k);
                 return '<div class="kilde-row"><input data-kilde-idx="' + i + '" value="' + escapeHtml(k) + '" />' +
-                  (/^https?:\/\//i.test(k) ? '<button class="icon-btn" data-action="open-source" data-url="' + escapeHtml(k) + '" title="Åpne lenke">↗</button>' : "") +
+                  (isLink ? '<span class="list-source-host">' + escapeHtml(sourceHostname(k)) + "</span>" : "") +
+                  (isLink ? '<button class="icon-btn" data-action="open-source" data-url="' + escapeHtml(k) + '" title="Åpne lenke">↗</button>' : "") +
                   '<button class="icon-btn" data-action="remove-kilde" data-idx="' + i + '">✕</button></div>';
               }).join("") : "") +
             "</div><button class=\"btn\" data-action=\"add-kilde\" type=\"button\">+ Legg til kilde</button></div>" +
