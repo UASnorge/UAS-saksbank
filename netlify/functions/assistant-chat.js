@@ -14,6 +14,7 @@
 const { createClient } = require("@supabase/supabase-js");
 const { runTriage } = require("./lib/triage.js");
 const { generateManuscript } = require("./lib/manuscript.js");
+const { cleanupIrrelevantCases } = require("./lib/cleanup.js");
 
 const MODEL = "gpt-5.5";
 const MAX_ROUNDS = 6;
@@ -31,6 +32,10 @@ kanban-app for droneideer, fra tips til publisering. Du snakker norsk, kort og k
 Du har verktøy til å slå opp, opprette, endre, flytte og slette saker, kjøre AI-vurdering, generere manus,
 og lese RSS-kilder og eventkalenderen. Bruk verktøy aktivt i stedet for å gjette — brukeren kan spørre om
 hva som helst i saksbanken, og forvente at du faktisk sjekker i stedet for å anta.
+
+Ber brukeren om å rydde bort/fjerne flere eller alle ikke-relevante idéer samtidig: bruk ALLTID
+cleanup_irrelevant_cases som gjør hele jobben i ett kall. Ikke list opp saker selv og kall delete_case
+gjentatte ganger for hver enkelt — det er tregt, bruker unødvendig mange runder, og kan tidsavbrytes.
 
 ÉN REGEL ER UFRAVIKELIG, uansett hva brukeren ber deg om: du kan ALDRI sette en sak til status "publisert".
 move_case_status avviser dette forsøket automatisk — forklar da brukeren at publisering krever at et
@@ -146,6 +151,14 @@ const TOOLS = [
   {
     type: "function",
     function: {
+      name: "cleanup_irrelevant_cases",
+      description: "Sjekk ALLE saker i status 'ide' mot drone-/UAS-relevans og slett de som ikke er relevante, i ÉN samlet operasjon. Bruk ALLTID denne når brukeren ber om å rydde/fjerne flere eller alle ikke-relevante idéer samtidig — ikke prøv å vurdere og slette saker én og én selv, det er tregt og kan tidsavbrytes ved mange saker (maks 60 behandles per kjøring; kjør på nytt om det er flere).",
+      parameters: { type: "object", properties: {}, required: [] }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "list_sources",
       description: "List RSS-kildene som overvåkes.",
       parameters: { type: "object", properties: {}, required: [] }
@@ -242,6 +255,13 @@ async function executeTool(supabase, openaiKey, name, args) {
       try {
         var result = await generateManuscript(supabase, openaiKey, args.caseId);
         return result;
+      } catch (err) {
+        return { error: err.message };
+      }
+    }
+    case "cleanup_irrelevant_cases": {
+      try {
+        return await cleanupIrrelevantCases(supabase, openaiKey);
       } catch (err) {
         return { error: err.message };
       }

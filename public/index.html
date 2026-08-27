@@ -698,6 +698,7 @@
                   r.feilet.map(function (f) { return "<li>" + escapeHtml(f.title) + " — " + escapeHtml(f.error) + "</li>"; }).join("") +
                 "</ul></div>"
               ) : "") +
+              (r.overflow ? '<div class="warn-line">– ' + r.overflow + " sak(er) til i «Idé» ble ikke sjekket denne runden (maks 60 per kjøring) — trykk knappen igjen for å ta resten.</div>" : "") +
             "</div>" +
           "</div>" +
           '<div class="panel-footer"><button class="btn btn-primary" data-action="close-modal">Lukk</button></div>' +
@@ -1356,7 +1357,7 @@
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + state.session.access_token },
         body: JSON.stringify({ text: text })
       });
-      var data = await res.json();
+      var data = await parseFunctionResponse(res);
       if (!res.ok) {
         showToast(data.error || "Import feilet");
         state.ui.importBusy = false;
@@ -1395,6 +1396,23 @@
     return { "Content-Type": "application/json", "Authorization": "Bearer " + state.session.access_token };
   }
 
+  // Netlify-funksjoner returnerer alltid JSON når de faktisk kjører — men ved
+  // tidsavbrudd (for store/trege forespørsler) eller andre serverfeil svarer
+  // Netlify selv med en HTML-feilside i stedet. Uten dette gir et slikt svar
+  // en kryptisk "Unexpected token '<'"-feil i stedet for noe brukbart.
+  async function parseFunctionResponse(res) {
+    var text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      throw new Error(
+        res.ok
+          ? "Fikk et uventet svar fra serveren (ikke gyldig JSON)."
+          : "Serverfunksjonen svarte ikke som forventet (HTTP " + res.status + ") — sannsynligvis tidsavbrudd fordi forespørselen tok for lang tid. Prøv med færre saker om gangen."
+      );
+    }
+  }
+
   async function runAiTriageBulk() {
     var ids = state.cases.filter(function (c) { return c.status === "ide"; }).map(function (c) { return c.id; });
     if (!ids.length) { showToast("Ingen idéer å vurdere"); return; }
@@ -1412,7 +1430,7 @@
       var res = await fetch("/.netlify/functions/ai-triage", {
         method: "POST", headers: authHeader(), body: JSON.stringify({ caseIds: ids })
       });
-      var data = await res.json();
+      var data = await parseFunctionResponse(res);
       if (!res.ok) { showToast(data.error || "AI-vurdering feilet"); return; }
       var msg = data.vurdert + " sak(er) vurdert";
       if (data.feilet && data.feilet.length) msg += ", " + data.feilet.length + " feilet";
@@ -1445,7 +1463,7 @@
         method: "POST", headers: authHeader(),
         body: JSON.stringify({ message: text, history: history })
       });
-      var data = await res.json();
+      var data = await parseFunctionResponse(res);
       if (!res.ok) {
         state.chat.messages.push({ role: "error", content: data.error || "Assistenten svarte ikke." });
       } else {
@@ -1469,7 +1487,7 @@
       var res = await fetch("/.netlify/functions/cleanup-irrelevant", {
         method: "POST", headers: authHeader(), body: "{}"
       });
-      var data = await res.json();
+      var data = await parseFunctionResponse(res);
       if (!res.ok) { showToast(data.error || "Rydding feilet"); return; }
       state.ui.cleanupReport = data;
       state.ui.cleanupBusy = false;
@@ -1491,7 +1509,7 @@
       var res = await fetch("/.netlify/functions/generate-manuscript", {
         method: "POST", headers: authHeader(), body: JSON.stringify({ caseId: id })
       });
-      var data = await res.json();
+      var data = await parseFunctionResponse(res);
       if (!res.ok) { showToast(data.error || "Kunne ikke generere manus"); return; }
       var msg = "Manus generert" + (data.harBilde ? "" : " (uten bilde — sett inn manuelt)");
       showToast(msg);
