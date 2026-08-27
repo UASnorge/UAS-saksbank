@@ -167,6 +167,18 @@
   .card-delete:hover { opacity: 1; color: var(--red-fg); }
   .card-summary { font-size: 0.76rem; color: var(--text-muted); line-height: 1.4; }
   .card-summary.empty { font-style: italic; opacity: 0.7; }
+  .card-summary-toggle {
+    display: flex; align-items: center; gap: 4px; border: none; background: transparent; padding: 0;
+    color: var(--text-muted); font-size: 0.72rem; font-weight: 600; align-self: flex-start;
+  }
+  .card-summary-toggle:hover { color: var(--accent); }
+  .card-summary-toggle .chev { display: inline-block; transition: transform 0.15s ease; font-size: 0.65rem; }
+  .card-summary-toggle.open .chev { transform: rotate(90deg); }
+  .card-source-link {
+    display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); background: transparent;
+    padding: 3px 8px; border-radius: 999px; color: var(--accent); font-size: 0.7rem; font-weight: 600; align-self: flex-start;
+  }
+  .card-source-link:hover { background: var(--bg-sunken); }
   .card-actions { display: flex; gap: 6px; margin-top: 2px; }
   .card-actions .btn { padding: 5px 9px; font-size: 0.76rem; flex: 1; justify-content: center; }
   .chip-event { background: transparent; color: var(--accent); border: 1px dashed var(--accent); }
@@ -424,7 +436,7 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, aiBulkBusy: false, cleanupBusy: false, cleanupReport: null },
+    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, aiBulkBusy: false, cleanupBusy: false, cleanupReport: null, expandedSummaries: {} },
     chat: { messages: [], busy: false },
     session: null,
     realtimeOk: false
@@ -731,6 +743,15 @@
     var checked = !!state.ui.selectedIds[c.id];
     var ev = c.eventId ? state.eventsById[c.eventId] : null;
 
+    var summaryOpen = !!state.ui.expandedSummaries[c.id];
+    var summaryToggleHtml = c.oppsummering
+      ? '<button class="card-summary-toggle' + (summaryOpen ? " open" : "") + '" data-action="toggle-summary" data-id="' + c.id + '"><span class="chev">▸</span>' + (summaryOpen ? "Skjul sammendrag" : "Vis sammendrag") + "</button>" +
+        (summaryOpen ? '<div class="card-summary">' + escapeHtml(c.oppsummering) + "</div>" : "")
+      : "";
+    var sourceLinkHtml = c.kilder && c.kilder.length
+      ? '<button class="card-source-link" data-action="open-source" data-url="' + escapeHtml(c.kilder[0]) + '">🔗 Åpne kilde</button>'
+      : "";
+
     var actionsHtml = "";
     if (c.status === "ide") {
       actionsHtml = '<div class="card-actions"><button class="btn btn-primary" data-action="approve-case-quick" data-id="' + c.id + '">✓ Godkjenn</button></div>';
@@ -754,7 +775,8 @@
           (ev ? '<span class="chip chip-event">📅 ' + escapeHtml(ev.title) + "</span>" : "") +
         "</div>" +
         '<div class="card-title">' + escapeHtml(c.title || "(uten tittel)") + "</div>" +
-        (c.oppsummering ? '<div class="card-summary">' + escapeHtml(c.oppsummering) + "</div>" : "") +
+        summaryToggleHtml +
+        (sourceLinkHtml ? '<div>' + sourceLinkHtml + "</div>" : "") +
         '<div class="card-meta"><span class="avatar">' + initials(c.eier) + "</span><span>" + escapeHtml(c.eier || "Ingen eier") + '</span><span class="meta-due' + (overdue ? " overdue" : "") + '">· ' + due + "</span></div>" +
         '<div class="score-row"><div class="score-meter"><div class="score-fill" style="width:' + score + '%;background:' + scoreColorVar(score) + ';"></div></div><span class="score-num">' + score + "</span></div>" +
         actionsHtml +
@@ -797,7 +819,10 @@
               '<td><select data-list-status="' + c.id + '">' + statusOptionsMarkup(c.status) + "</select></td>" +
               '<td class="' + (overdue ? "overdue" : "") + '">' + due + "</td>" +
               '<td class="score-num">' + score + "</td>" +
-              '<td><button class="icon-btn" data-action="delete-case-quick" data-id="' + c.id + '" title="Slett sak" aria-label="Slett sak">✕</button></td>' +
+              '<td>' +
+                (c.kilder && c.kilder.length ? '<button class="icon-btn" data-action="open-source" data-url="' + escapeHtml(c.kilder[0]) + '" title="Åpne kilde">🔗</button>' : "") +
+                '<button class="icon-btn" data-action="delete-case-quick" data-id="' + c.id + '" title="Slett sak" aria-label="Slett sak">✕</button>' +
+              "</td>" +
             "</tr>"
           );
         }).join("") : '<tr><td colspan="10" class="column-empty">Ingen saker</td></tr>') +
@@ -959,7 +984,9 @@
             "</div>" +
             '<div class="field"><label>Kilder</label><div class="kilder-list" id="kilder-list">' +
               (c.kilder.length ? c.kilder.map(function (k, i) {
-                return '<div class="kilde-row"><input data-kilde-idx="' + i + '" value="' + escapeHtml(k) + '" /><button class="icon-btn" data-action="remove-kilde" data-idx="' + i + '">✕</button></div>';
+                return '<div class="kilde-row"><input data-kilde-idx="' + i + '" value="' + escapeHtml(k) + '" />' +
+                  (/^https?:\/\//i.test(k) ? '<button class="icon-btn" data-action="open-source" data-url="' + escapeHtml(k) + '" title="Åpne lenke">↗</button>' : "") +
+                  '<button class="icon-btn" data-action="remove-kilde" data-idx="' + i + '">✕</button></div>';
               }).join("") : "") +
             "</div><button class=\"btn\" data-action=\"add-kilde\" type=\"button\">+ Legg til kilde</button></div>" +
             '<div class="section-label">Prioriteringsmodell (forklarbar, kan justeres)</div>' +
@@ -1179,6 +1206,20 @@
       case "generate-manus": e.stopPropagation(); generateManuscriptForCase(e.currentTarget.getAttribute("data-id")); break;
       case "download-manus": e.stopPropagation(); downloadManus(e.currentTarget.getAttribute("data-id"), e.currentTarget.getAttribute("data-path")); break;
       case "approve-case-quick": e.stopPropagation(); approveCaseQuick(e.currentTarget.getAttribute("data-id")); break;
+      case "toggle-summary": {
+        e.stopPropagation();
+        var sid = e.currentTarget.getAttribute("data-id");
+        if (state.ui.expandedSummaries[sid]) delete state.ui.expandedSummaries[sid];
+        else state.ui.expandedSummaries[sid] = true;
+        render();
+        break;
+      }
+      case "open-source": {
+        e.stopPropagation();
+        var url = e.currentTarget.getAttribute("data-url");
+        if (url) window.open(url, "_blank", "noopener,noreferrer");
+        break;
+      }
       case "approve-selected": e.stopPropagation(); moveSelected("godkjent"); break;
       case "move-selected": e.stopPropagation(); moveSelected(document.getElementById("bulk-status-select").value); break;
       case "close-modal": case "close-modal-bg": state.ui.modal = null; state.ui.activeCaseId = null; render(); break;
