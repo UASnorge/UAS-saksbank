@@ -117,16 +117,33 @@ Trykk **💬 Assistent** i toppmenyen. En samtale-assistent med verktøytilgang 
 
 Bruker samme `OPENAI_API_KEY` som resten av AI-funksjonene — ingen ekstra oppsett om du allerede har gjort steg 9.
 
-## Steg 12 — Publiser til WordPress (utkast)
+## Steg 12 — Publiser til WordPress (utkast) — begge nettsteder
 
-Porter fra det allerede eksisterende «WordPress Infosak Batch Administrator»-verktøyet (samme ACF-felt for uasnorway.no, samme «kun utkast»-prinsipp) — se `netlify/functions/lib/wordpress.js` for hvor koblingen kommer fra.
+Porter fra det allerede eksisterende «WordPress Infosak Batch Administrator»-verktøyet (samme ACF-felt for uasnorway.no, samme «kun utkast»-prinsipp) — se `netlify/functions/lib/wordpress.js` for hvor koblingen kommer fra. Støtter **begge** nettstedene deres — appen ser på saken sitt eget «Nettsted»-felt (dronemag.no/uasnorway.no) og velger riktig WordPress-installasjon automatisk. Du trenger bare sette opp nøklene for det nettstedet du faktisk skal teste/bruke først.
 
-1. I WordPress (uasnorway.no): **Brukere → Din profil → Application Passwords** → opprett en ny, gjerne kalt noe som «UAS Saksbank» (egen, separat fra den wordpress-infosak allerede bruker — enklere å tilbakekalle én uten å påvirke den andre).
-2. Legg til tre miljøvariabler i Netlify: `WP_URL` (`https://www.uasnorway.no`), `WP_USERNAME`, `WP_APP_PASSWORD` → trigger ny deploy.
+1. I WordPress **for hvert nettsted** (uasnorway.no og/eller dronemag.no, hver har sin egen wp-admin): **Brukere → Din profil → Application Passwords** → opprett en ny, gjerne kalt noe som «UAS Saksbank» (egen, separat fra det wordpress-infosak allerede bruker).
+2. Legg til miljøvariablene i Netlify (kun settet for nettstedet/-ene dere setter opp nå):
+
+   | Nettsted | Nøkler |
+   |---|---|
+   | uasnorway.no | `WP_UASNORWAY_URL` (`https://www.uasnorway.no`), `WP_UASNORWAY_USERNAME`, `WP_UASNORWAY_APP_PASSWORD` |
+   | dronemag.no | `WP_DRONEMAG_URL` (`https://www.dronemag.no`), `WP_DRONEMAG_USERNAME`, `WP_DRONEMAG_APP_PASSWORD` |
+
+   → trigger ny deploy etterpå.
 3. Kjør `supabase/schema.sql` på nytt i Supabase (v3-delen nederst legger til strukturerte manusfelt + WP-kobling på `cases` — idempotent, som resten av filen).
 4. Åpne en sak med generert manus → **«🌐 Publiser til WordPress (utkast)»**. Mangler saken tittel, ingress, hovedtekst eller bilde, stoppes den FØR noe sendes til WordPress, med en tydelig feilmelding om nøyaktig hva som mangler. Samme handling finnes som batch i verktøylinjen for valgte saker.
 
-**Ufravikelig grense, samme som ellers i appen:** oppretter alltid status `draft` i WordPress — aldri `publish`. Selve publiseringen på uasnorway.no skjer fortsatt manuelt, enten direkte i WordPress eller i Oversikt-fanen i wordpress-infosak-verktøyet, med et menneske som faktisk har lest gjennom saken. Dette er en egen, separat kontroll fra saksbankens interne STOPP-regel for status «Publisert» — de erstatter ikke hverandre.
+### Om dronemag.no bruker egendefinerte visningsfelt (ukjent ennå)
+
+uasnorway.no bruker Advanced Custom Fields (ACF) for selve visningen — det er *bekreftet*, feltnøklene ligger hardkodet i `lib/wordpress.js`. Om dronemag.no gjør det samme er **ikke bekreftet**, og jeg har bevisst ikke gjettet på feltnavn. Inntil videre opprettes dronemag.no-utkast med kun WordPress sine standardfelt (tittel/innhold/ingress/hovedbilde) — trygt, men saken vises kanskje ikke helt likt som en manuelt lagt inn sak om temaet faktisk bruker egendefinerte felt der.
+
+Slik sjekker dere det:
+1. Åpne et eksisterende innlegg i dronemag.no sin wp-admin
+2. Høyreklikk på hvert visningsfelt (Bilde, Bildetekst, Foto, Byline, Ingress, Innhold) → **«Inspiser»** i nettleseren
+3. Se etter `data-name`-attributtet på elementet (samme fremgangsmåte som ble brukt for å finne uasnorway.no sine feltnavn)
+4. Finner dere egendefinerte felt: fyll inn de seks `WP_DRONEMAG_ACF_*`-miljøvariablene i `.env.example` med riktige feltnøkler → trigger ny deploy. Finner dere ingen: ikke gjør noe, standardfeltene fungerer fint som de er.
+
+**Ufravikelig grense, samme som ellers i appen:** oppretter alltid status `draft` i WordPress — aldri `publish`, uansett hvilket av de to nettstedene. Selve publiseringen skjer fortsatt manuelt, enten direkte i WordPress eller i Oversikt-fanen i wordpress-infosak-verktøyet, med et menneske som faktisk har lest gjennom saken. Dette er en egen, separat kontroll fra saksbankens interne STOPP-regel for status «Publisert» — de erstatter ikke hverandre.
 
 ---
 

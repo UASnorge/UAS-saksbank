@@ -1,6 +1,9 @@
-// Oppretter et WordPress-UTKAST på uasnorway.no fra en sak sitt genererte manus.
-// Bruker "WordPress Infosak Batch Administrator" sin allerede testede
-// integrasjon (portert til lib/wordpress.js — samme ACF-felt, samme prinsipp).
+// Oppretter et WordPress-UTKAST fra en sak sitt genererte manus — på riktig
+// nettsted (dronemag.no ELLER uasnorway.no), styrt av saken sitt eget
+// "nettsted"-felt. Bruker "WordPress Infosak Batch Administrator" sin
+// allerede testede integrasjon (portert til lib/wordpress.js) for
+// uasnorway.no; dronemag.no bruker WordPress sine standardfelt inntil
+// eventuelle egendefinerte felt der er bekreftet (se lib/wordpress.js).
 //
 // VIKTIG, ufravikelig: oppretter ALLTID status "draft" i WordPress. Aldri
 // "publish" — den overgangen skal skje manuelt, enten i WordPress sin egen
@@ -12,12 +15,13 @@
 // WordPress — ingen WP-kall gjøres i det hele tatt om noe obligatorisk
 // mangler. Kalles fra "🌐 Publiser til WordPress"-knappen(e) i saksbanken.
 //
-// Krever innlogget bruker (Bearer-token). Krever miljøvariablene WP_URL,
-// WP_USERNAME, WP_APP_PASSWORD (WordPress Application Password) i tillegg
-// til de eksisterende SUPABASE_URL/SUPABASE_ANON_KEY.
+// Krever innlogget bruker (Bearer-token). Krever miljøvariablene
+// WP_UASNORWAY_URL/USERNAME/APP_PASSWORD og/eller WP_DRONEMAG_URL/USERNAME/
+// APP_PASSWORD (kun det nettstedet saken faktisk peker på trenger å være
+// satt), i tillegg til de eksisterende SUPABASE_URL/SUPABASE_ANON_KEY.
 
 const { createClient } = require("@supabase/supabase-js");
-const { uploadMedia, createDraftPost } = require("./lib/wordpress.js");
+const { uploadMediaForSite, createDraftPost } = require("./lib/wordpress.js");
 
 function getSupabaseForUser(token) {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
@@ -59,13 +63,13 @@ async function publishOneCase(supabase, caseId) {
   }
 
   const img = await fetchImageForUpload(c.manus_bilde_url);
-  const media = await uploadMedia({
+  const media = await uploadMediaForSite(c.nettsted, {
     buffer: img.buffer, filename: img.filename, mimeType: img.mimeType,
     altText: c.manus_alt_tekst || "", caption: c.manus_alt_tekst || ""
   });
 
   const byline = c.eier && c.eier !== "Ikke tildelt" ? c.eier : "";
-  const post = await createDraftPost({
+  const post = await createDraftPost(c.nettsted, {
     title: c.manus_tittel || c.title,
     ingress: c.manus_ingress,
     hovedtekstAvsnitt: c.manus_hovedtekst,
@@ -78,7 +82,8 @@ async function publishOneCase(supabase, caseId) {
 
   const historikk = [{
     ts: new Date().toISOString(),
-    text: "WordPress-utkast opprettet (automatisk, via saksbanken) — post-ID " + post.id
+    text: "WordPress-utkast opprettet på " + c.nettsted + " (automatisk, via saksbanken) — post-ID " + post.id +
+      (post.usedAcfFields === false ? " — OBS: opprettet med kun standardfelt, ingen bekreftede egendefinerte visningsfelt for dette nettstedet ennå" : "")
   }].concat(c.historikk || []);
 
   const newStatus = c.status === "ide" || c.status === "godkjent" || c.status === "i-arbeid" || c.status === "utkast-klart"
@@ -94,7 +99,7 @@ async function publishOneCase(supabase, caseId) {
   }).eq("id", c.id);
   if (updateRes.error) throw new Error(updateRes.error.message);
 
-  return { ok: true, wpPostId: post.id, editLink: post.editLink, title: c.manus_tittel || c.title };
+  return { ok: true, wpPostId: post.id, editLink: post.editLink, title: c.manus_tittel || c.title, nettsted: c.nettsted, usedAcfFields: post.usedAcfFields };
 }
 
 // Eksportert for testbarhet — Netlify bruker kun exports.handler.
@@ -108,9 +113,6 @@ exports.handler = async function (event) {
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return { statusCode: 401, body: JSON.stringify({ error: "Mangler innlogging." }) };
 
-  if (!process.env.WP_URL || !process.env.WP_USERNAME || !process.env.WP_APP_PASSWORD) {
-    return { statusCode: 500, body: JSON.stringify({ error: "WP_URL / WP_USERNAME / WP_APP_PASSWORD er ikke satt som miljøvariabler i Netlify ennå." }) };
-  }
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
     return { statusCode: 500, body: JSON.stringify({ error: "SUPABASE_URL/SUPABASE_ANON_KEY mangler som miljøvariabler." }) };
   }

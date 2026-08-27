@@ -1,17 +1,18 @@
-// Klient mot WordPress REST API (uasnorway.no) — Basic Auth via et WordPress
-// Application Password (ikke hovedpassordet). Portert fra det allerede testede
+// Klient mot WordPress REST API — Basic Auth via et WordPress Application
+// Password (ikke hovedpassordet). Portert fra det allerede testede
 // "WordPress Infosak Batch Administrator"-verktøyet (github.com/UASnorge/wordpress,
-// netlify/functions/lib/wp.js + create-post.js) — samme ACF-feltnøkler, samme
-// "kun utkast, aldri automatisk publisert"-prinsipp. Hold denne i sync med den
-// kilden om ACF-feltene på uasnorway.no noensinne endres der.
+// netlify/functions/lib/wp.js + create-post.js) — samme ACF-feltnøkler for
+// uasnorway.no, samme "kun utkast, aldri automatisk publisert"-prinsipp.
 //
-// Miljøvariabler: WP_URL, WP_USERNAME, WP_APP_PASSWORD.
+// Støtter TO nettsteder (uasnorway.no og dronemag.no), hvert med egne
+// WordPress-innlogging og egen (valgfri) ACF-feltoppsett — se SITES under.
 
-// ACF-feltnøkler for "Innlegg"-feltgruppen på uasnorway.no (bekreftet 18.08.2026
-// i wordpress-infosak-verktøyet). Disse styrer den faktiske visningen på
-// nettsiden — IKKE WordPress sine native content/excerpt/featured_media, som
-// settes i tillegg for Yoast SEO-fallback og andre systemer som leser dem.
-const ACF_FIELD_KEYS = {
+// ACF-feltnøkler for "Innlegg"-feltgruppen på uasnorway.no (bekreftet
+// 18.08.2026 i wordpress-infosak-verktøyet). Disse styrer den faktiske
+// visningen på nettsiden — IKKE WordPress sine native content/excerpt/
+// featured_media, som settes i tillegg for Yoast SEO-fallback og andre
+// systemer som leser dem. Hold i sync med kilden om feltene endres der.
+const UASNORWAY_ACF_FIELD_KEYS = {
   image: "field_58ac635e3fd79", // Bilde
   imageTxt: "field_58ad5800ad8f8", // Bildetekst
   photoCredits: "field_58ad5816549da", // Foto
@@ -20,30 +21,61 @@ const ACF_FIELD_KEYS = {
   content: "field_58aca298266bf", // Innhold
 };
 
-function wpBaseUrl() {
-  const raw = process.env.WP_URL || "";
-  return raw.replace(/\/+$/, "");
+// dronemag.no sine ACF-feltnøkler er IKKE bekreftet ennå (ukjent om siden i
+// det hele tatt bruker egendefinerte felt for visningen — mange WordPress-
+// temaer gjør ikke det). Sett disse seks miljøvariablene i Netlify KUN hvis
+// dronemag.no faktisk trenger dem — se README, avsnittet om flere nettsteder,
+// for fremgangsmåten (høyreklikk → Inspiser i wp-admin, se etter data-name).
+// Er de ikke satt: posten opprettes med kun WordPress sine standardfelt
+// (tittel/innhold/ingress/hovedbilde), som er en trygg standard for et tema
+// uten egendefinerte visningsfelt.
+function dronemagAcfFieldKeys() {
+  var keys = {
+    image: process.env.WP_DRONEMAG_ACF_IMAGE,
+    imageTxt: process.env.WP_DRONEMAG_ACF_IMAGE_TXT,
+    photoCredits: process.env.WP_DRONEMAG_ACF_PHOTO_CREDITS,
+    byline: process.env.WP_DRONEMAG_ACF_BYLINE,
+    excerpt: process.env.WP_DRONEMAG_ACF_EXCERPT,
+    content: process.env.WP_DRONEMAG_ACF_CONTENT,
+  };
+  var anySet = Object.keys(keys).some(function (k) { return !!keys[k]; });
+  return anySet ? keys : null;
 }
 
-function assertConfigured() {
-  if (!process.env.WP_URL || !process.env.WP_USERNAME || !process.env.WP_APP_PASSWORD) {
-    throw new Error("WP_URL / WP_USERNAME / WP_APP_PASSWORD er ikke satt som miljøvariabler i Netlify.");
+// nettsted (saksbankens felt, "dronemag.no" | "uasnorway.no") → hvilke
+// miljøvariabler som skal brukes for URL/innlogging, og ACF-feltnøklene.
+const SITES = {
+  "uasnorway.no": {
+    urlEnv: "WP_UASNORWAY_URL", userEnv: "WP_UASNORWAY_USERNAME", passEnv: "WP_UASNORWAY_APP_PASSWORD",
+    acfFieldKeys: UASNORWAY_ACF_FIELD_KEYS,
+  },
+  "dronemag.no": {
+    urlEnv: "WP_DRONEMAG_URL", userEnv: "WP_DRONEMAG_USERNAME", passEnv: "WP_DRONEMAG_APP_PASSWORD",
+    get acfFieldKeys() { return dronemagAcfFieldKeys(); },
+  },
+};
+
+function getSiteConfig(nettsted) {
+  const site = SITES[nettsted];
+  if (!site) throw new Error("Ukjent nettsted: " + nettsted + ". Støttet: " + Object.keys(SITES).join(", "));
+  const url = process.env[site.urlEnv];
+  const user = process.env[site.userEnv];
+  const pass = process.env[site.passEnv];
+  if (!url || !user || !pass) {
+    throw new Error(site.urlEnv + " / " + site.userEnv + " / " + site.passEnv + " er ikke satt som miljøvariabler i Netlify (kreves for å publisere til " + nettsted + ").");
   }
+  return {
+    baseUrl: url.replace(/\/+$/, ""),
+    authHeader: "Basic " + Buffer.from(`${user}:${pass}`).toString("base64"),
+    acfFieldKeys: site.acfFieldKeys, // kan være null (dronemag.no uten kjente ACF-felt) — håndteres i createDraftPost
+  };
 }
 
-function authHeader() {
-  const user = process.env.WP_USERNAME;
-  const pass = process.env.WP_APP_PASSWORD;
-  const token = Buffer.from(`${user}:${pass}`).toString("base64");
-  return `Basic ${token}`;
-}
-
-async function wpFetch(path, options = {}) {
-  assertConfigured();
-  const url = `${wpBaseUrl()}/wp-json${path}`;
+async function wpFetch(site, path, options = {}) {
+  const url = `${site.baseUrl}/wp-json${path}`;
   const res = await fetch(url, {
     ...options,
-    headers: { Authorization: authHeader(), ...(options.headers || {}) },
+    headers: { Authorization: site.authHeader, ...(options.headers || {}) },
   });
   const text = await res.text();
   let data;
@@ -58,18 +90,18 @@ async function wpFetch(path, options = {}) {
   return data;
 }
 
-async function getTags(search) {
+async function getTags(site, search) {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
-  return wpFetch(`/wp/v2/tags?per_page=100${q}&_fields=id,name,slug`);
+  return wpFetch(site, `/wp/v2/tags?per_page=100${q}&_fields=id,name,slug`);
 }
 
-async function findOrCreateTag(name) {
+async function findOrCreateTag(site, name) {
   const clean = (name || "").trim();
   if (!clean) return null;
-  const found = await getTags(clean);
+  const found = await getTags(site, clean);
   const exact = found.find((t) => t.name.toLowerCase() === clean.toLowerCase());
   if (exact) return exact.id;
-  const created = await wpFetch("/wp/v2/tags", {
+  const created = await wpFetch(site, "/wp/v2/tags", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: clean }),
@@ -77,17 +109,17 @@ async function findOrCreateTag(name) {
   return created.id;
 }
 
-async function resolveTagIds(names) {
+async function resolveTagIds(site, names) {
   const ids = [];
   for (const name of names || []) {
-    const id = await findOrCreateTag(name);
+    const id = await findOrCreateTag(site, name);
     if (id) ids.push(id);
   }
   return ids;
 }
 
-async function uploadMedia({ buffer, filename, mimeType, altText, caption }) {
-  const media = await wpFetch("/wp/v2/media", {
+async function uploadMedia(site, { buffer, filename, mimeType, altText, caption }) {
+  const media = await wpFetch(site, "/wp/v2/media", {
     method: "POST",
     headers: {
       "Content-Type": mimeType,
@@ -99,7 +131,7 @@ async function uploadMedia({ buffer, filename, mimeType, altText, caption }) {
     const patch = {};
     if (altText) patch.alt_text = altText;
     if (caption) patch.caption = caption;
-    await wpFetch(`/wp/v2/media/${media.id}`, {
+    await wpFetch(site, `/wp/v2/media/${media.id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
@@ -116,28 +148,31 @@ function paragraphsToHtml(paragraphs) {
     .join("\n");
 }
 
-// Oppretter et WordPress-innlegg. status er ALLTID "draft" med mindre noe
-// eksplisitt (og bevisst) sender inn noe annet — ingen kallere i denne appen
-// gjør det. Publisering skjer kun manuelt, i WordPress selv eller i
-// wordpress-infosak sin Oversikt-fane, aldri herfra.
-async function createDraftPost({ title, ingress, hovedtekstAvsnitt, byline, photoCredit, caption, featuredMediaId, tagNames }) {
+// Oppretter et WordPress-innlegg på det gitte nettstedet. status er ALLTID
+// "draft" — ingen kallere i denne appen sender noe annet. Publisering skjer
+// kun manuelt, i WordPress selv eller i wordpress-infosak sin Oversikt-fane.
+async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, byline, photoCredit, caption, featuredMediaId, tagNames }) {
+  const site = getSiteConfig(nettsted);
   const contentHtml = paragraphsToHtml(hovedtekstAvsnitt);
-  const tagIds = await resolveTagIds(tagNames);
+  const tagIds = await resolveTagIds(site, tagNames);
 
   const meta = {
     "_yoast_wpseo_title": title,
     "_yoast_wpseo_metadesc": ingress || "",
-    content: contentHtml,
-    _content: ACF_FIELD_KEYS.content,
-    excerpt: ingress || "",
-    _excerpt: ACF_FIELD_KEYS.excerpt,
   };
-  if (byline) { meta.byline = byline; meta._byline = ACF_FIELD_KEYS.byline; }
-  if (caption) { meta.imageTxt = caption; meta._imageTxt = ACF_FIELD_KEYS.imageTxt; }
-  if (photoCredit) { meta.photoCredits = photoCredit; meta._photoCredits = ACF_FIELD_KEYS.photoCredits; }
-  if (featuredMediaId) { meta.image = String(featuredMediaId); meta._image = ACF_FIELD_KEYS.image; }
+  const acf = site.acfFieldKeys;
+  if (acf) {
+    // Egendefinerte felt styrer selve visningen på siden (bekreftet for
+    // uasnorway.no) — sett disse i tillegg til WordPress sine standardfelt.
+    meta.content = contentHtml; meta._content = acf.content;
+    meta.excerpt = ingress || ""; meta._excerpt = acf.excerpt;
+    if (byline) { meta.byline = byline; meta._byline = acf.byline; }
+    if (caption) { meta.imageTxt = caption; meta._imageTxt = acf.imageTxt; }
+    if (photoCredit) { meta.photoCredits = photoCredit; meta._photoCredits = acf.photoCredits; }
+    if (featuredMediaId) { meta.image = String(featuredMediaId); meta._image = acf.image; }
+  }
 
-  const post = await wpFetch("/wp/v2/posts", {
+  const post = await wpFetch(site, "/wp/v2/posts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -153,8 +188,14 @@ async function createDraftPost({ title, ingress, hovedtekstAvsnitt, byline, phot
 
   return {
     id: post.id,
-    editLink: `${wpBaseUrl()}/wp-admin/post.php?post=${post.id}&action=edit`,
+    editLink: `${site.baseUrl}/wp-admin/post.php?post=${post.id}&action=edit`,
+    usedAcfFields: !!acf,
   };
 }
 
-module.exports = { wpFetch, uploadMedia, resolveTagIds, createDraftPost, ACF_FIELD_KEYS };
+async function uploadMediaForSite(nettsted, args) {
+  const site = getSiteConfig(nettsted);
+  return uploadMedia(site, args);
+}
+
+module.exports = { getSiteConfig, uploadMediaForSite, createDraftPost, UASNORWAY_ACF_FIELD_KEYS };

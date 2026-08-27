@@ -744,7 +744,7 @@
             '<div class="import-report">' +
               (r.published.length ? (
                 '<div class="ok-line">✓ ' + r.published.length + " utkast opprettet:<ul>" +
-                  r.published.map(function (p) { return "<li><b>" + escapeHtml(p.title) + '</b> — <a href="' + escapeHtml(p.editLink) + '" target="_blank" rel="noopener noreferrer">Åpne i WordPress ↗</a></li>'; }).join("") +
+                  r.published.map(function (p) { return "<li><b>" + escapeHtml(p.title) + "</b> (" + escapeHtml(p.nettsted || "") + ') — <a href="' + escapeHtml(p.editLink) + '" target="_blank" rel="noopener noreferrer">Åpne i WordPress ↗</a></li>'; }).join("") +
                 "</ul></div>"
               ) : '<div class="helper">Ingen ble opprettet denne runden.</div>') +
               (r.failed.length ? (
@@ -1067,7 +1067,7 @@
               ) : "") +
               (c.manusTittel ? (
                 '<div class="section-label" style="border-top:none;padding-top:0;">Publiser til WordPress</div>' +
-                '<p class="helper">Oppretter et UTKAST på uasnorway.no (aldri publisert direkte) — kontroller alltid saken i WordPress før dere trykker Publiser der.</p>' +
+                '<p class="helper">Oppretter et UTKAST på ' + escapeHtml(c.nettsted) + ' (aldri publisert direkte) — kontroller alltid saken i WordPress før dere trykker Publiser der.</p>' +
                 '<button class="btn' + (c.wpPostId ? "" : " btn-primary") + '" data-action="publish-wordpress" data-id="' + c.id + '"' + (state.ui.wpBusy[c.id] ? " disabled" : "") + ">" + (state.ui.wpBusy[c.id] ? "Sender til WordPress …" : (c.wpPostId ? "Send oppdatert utkast på nytt" : "🌐 Publiser til WordPress (utkast)")) + "</button>" +
                 (c.wpPostId ? ' <a class="btn" href="' + escapeHtml(c.wpEditLink) + '" target="_blank" rel="noopener noreferrer">Åpne i WordPress ↗</a><p class="helper">WordPress-utkast #' + c.wpPostId + "</p>" : "")
               ) : "")
@@ -1450,7 +1450,7 @@
         }
         return;
       }
-      showToast("WordPress-utkast opprettet: " + data.title);
+      showToast("WordPress-utkast opprettet: " + data.title + (data.usedAcfFields === false ? " (kun standardfelt — sjekk visningen i WP)" : ""));
       await refreshAndRender();
     } catch (err) {
       showToast("Kunne ikke publisere til WordPress: " + err.message);
@@ -1480,7 +1480,7 @@
     results.forEach(function (r, i) {
       var c = getCase(ids[i]);
       var title = c ? c.title : ids[i];
-      if (r.status === "fulfilled") published.push({ title: r.value.title, editLink: r.value.editLink });
+      if (r.status === "fulfilled") published.push({ title: r.value.title, editLink: r.value.editLink, nettsted: r.value.nettsted });
       else failed.push({ title: title, error: r.reason ? r.reason.message : "ukjent feil", missingFields: r.reason && r.reason.missingFields });
     });
 
