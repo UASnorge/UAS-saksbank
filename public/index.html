@@ -165,11 +165,17 @@
   .card-top-row { display: flex; align-items: center; justify-content: space-between; }
   .card-delete { padding: 3px; opacity: 0.55; }
   .card-delete:hover { opacity: 1; color: var(--red-fg); }
+  .card-summary { font-size: 0.76rem; color: var(--text-muted); line-height: 1.4; }
+  .card-summary.empty { font-style: italic; opacity: 0.7; }
+  .card-actions { display: flex; gap: 6px; margin-top: 2px; }
+  .card-actions .btn { padding: 5px 9px; font-size: 0.76rem; flex: 1; justify-content: center; }
+  .chip-event { background: transparent; color: var(--accent); border: 1px dashed var(--accent); }
 
   .selection-bar {
-    display: flex; align-items: center; gap: 10px; flex-shrink: 0; padding: 8px 20px;
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0; padding: 8px 20px; flex-wrap: wrap;
     background: var(--bg-sunken); border-bottom: 1px solid var(--border); font-size: 0.82rem; font-weight: 600;
   }
+  .selection-bar select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-elevated); color: var(--text); font-weight: 600; font-size: 0.82rem; }
   .column-body.drag-over { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--bg-elevated); border-radius: 8px; }
   .chip-row { display: flex; gap: 5px; flex-wrap: wrap; }
   .chip { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
@@ -519,9 +525,18 @@
   function renderSelectionBar() {
     var ids = Object.keys(state.ui.selectedIds);
     if (!ids.length) return "";
+    var moveOptions = STATUSES.filter(function (s) { return s.id !== "publisert"; }).map(function (s) {
+      return '<option value="' + s.id + '">' + s.label + "</option>";
+    }).join("") + Object.keys(SIDE_STATUSES).map(function (k) {
+      return '<option value="' + k + '">' + SIDE_STATUSES[k] + "</option>";
+    }).join("");
     return (
       '<div class="selection-bar">' +
         "<span>" + ids.length + " valgt</span>" +
+        '<button class="btn btn-primary" data-action="approve-selected">✓ Godkjenn valgte</button>' +
+        '<button class="btn" data-action="run-ai-triage-selected">🤖 Vurder valgte (AI)</button>' +
+        '<select id="bulk-status-select" aria-label="Flytt valgte til status">' + moveOptions + "</select>" +
+        '<button class="btn" data-action="move-selected">Flytt</button>' +
         '<div class="pilot-banner-spacer"></div>' +
         '<button class="btn btn-ghost" data-action="clear-selection">Nullstill valg</button>' +
         '<button class="btn btn-danger" data-action="delete-selected">Slett valgte</button>' +
@@ -559,7 +574,7 @@
   function renderPilotBanner() {
     return (
       '<div class="pilot-banner">' +
-        "🗂️ <span><strong>Pilot.</strong> Saksbank og RSS-innhenting er ekte og delt mellom alle innloggede. WordPress, Mailchimp og AI-triage er fortsatt ikke koblet på.</span>" +
+        "🗂️ <span><strong>Pilot.</strong> Saksbank, RSS-innhenting og AI-vurdering/manus (OpenAI) er ekte og delt mellom alle innloggede. Selve WordPress-opplastingen og Mailchimp-sendingen skjer fortsatt manuelt.</span>" +
         '<div class="pilot-banner-spacer"></div>' +
         '<button class="btn" data-action="open-about">Om piloten</button>' +
       "</div>"
@@ -576,14 +591,16 @@
               '<li class="about-ok">✓ Delt saksbank — alle innloggede ser samme data, i sanntid</li>' +
               '<li class="about-ok">✓ Innlogging via e-post (magic link)</li>' +
               '<li class="about-ok">✓ Automatisk RSS-innhenting hver time, nye funn havner i «Idé»</li>' +
+              '<li class="about-ok">✓ AI-vurdering: kategori, hastegrad, score, sammendrag og eventkobling (OpenAI)</li>' +
+              '<li class="about-ok">✓ AI-generert manus (.docx) i UAS Norways malformat, med kildeartikkelens bilde</li>' +
+              '<li class="about-ok">✓ Massehandlinger: godkjenn/flytt/slett/vurder flere saker samtidig</li>' +
               '<li class="about-ok">✓ STOPP-gate: ingen sak kan settes Publisert uten kontroll og godkjenner</li>' +
               '<li class="about-ok">✓ Nyhetsbrevutkast som kun henter status Publisert, uten duplikater</li>' +
             "</ul></div>" +
             '<div class="about-section"><h3>Mangler fortsatt</h3><ul>' +
-              '<li class="about-missing">✗ AI-genererte triage-forslag — sakstype/hastegrad/score settes manuelt</li>' +
-              '<li class="about-missing">✗ Ekte WordPress-utkast — status er kun en etikett</li>' +
+              '<li class="about-missing">✗ Selve WordPress-opplastingen — dere laster opp det genererte manuset selv i «WordPress Infosak Batch Administrator»</li>' +
               '<li class="about-missing">✗ Ekte Mailchimp-sending — utkastet må kopieres inn manuelt</li>' +
-              '<li class="about-missing">✗ Doffin, eventkalender, omtaleovervåkning</li>' +
+              '<li class="about-missing">✗ Doffin, automatisk eventkalender-synk, omtaleovervåkning</li>' +
             "</ul></div>" +
           "</div>" +
           '<div class="panel-footer"><button class="btn btn-primary" data-action="close-modal">Lukk</button></div>' +
@@ -662,10 +679,21 @@
     var due = fmtDue(c.frist);
     var overdue = c.frist && daysUntil(c.frist) < 0 && c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist";
     var checked = !!state.ui.selectedIds[c.id];
+    var ev = c.eventId ? state.eventsById[c.eventId] : null;
+
+    var actionsHtml = "";
+    if (c.status === "ide") {
+      actionsHtml = '<div class="card-actions"><button class="btn btn-primary" data-action="approve-case-quick" data-id="' + c.id + '">✓ Godkjenn</button></div>';
+    } else if (statusAtOrAfter(c.status, "godkjent") && c.status !== "publisert") {
+      actionsHtml = c.manusUrl
+        ? '<div class="card-actions"><button class="btn" data-action="download-manus" data-id="' + c.id + '" data-path="' + escapeHtml(c.manusUrl) + '">⬇ Last ned manus</button></div>'
+        : '<div class="card-actions"><button class="btn" data-action="generate-manus" data-id="' + c.id + '"' + (state.ui.manusBusy[c.id] ? " disabled" : "") + ">" + (state.ui.manusBusy[c.id] ? "Genererer …" : "📄 Generer manus") + "</button></div>";
+    }
+
     return (
       '<div class="card' + (checked ? " selected" : "") + '" draggable="true" data-action="open-case" data-id="' + c.id + '" role="button" tabindex="0">' +
         '<div class="card-top-row">' +
-          '<input type="checkbox" class="card-select" data-select-id="' + c.id + '"' + (checked ? " checked" : "") + ' aria-label="Velg for massesletting" />' +
+          '<input type="checkbox" class="card-select" data-select-id="' + c.id + '"' + (checked ? " checked" : "") + ' aria-label="Velg for massehandling" />' +
           '<button class="icon-btn card-delete" data-action="delete-case-quick" data-id="' + c.id + '" title="Slett sak" aria-label="Slett sak">✕</button>' +
         "</div>" +
         '<div class="chip-row">' +
@@ -673,10 +701,13 @@
           '<span class="chip chip-urg-' + c.hastegrad + '">' + URGENCY_LABELS[c.hastegrad] + "</span>" +
           '<span class="chip chip-site">' + (SITE_LABELS[c.nettsted] || c.nettsted) + "</span>" +
           (c.isRss ? '<span class="chip chip-rss">RSS</span>' : "") +
+          (ev ? '<span class="chip chip-event">📅 ' + escapeHtml(ev.title) + "</span>" : "") +
         "</div>" +
         '<div class="card-title">' + escapeHtml(c.title || "(uten tittel)") + "</div>" +
+        (c.oppsummering ? '<div class="card-summary">' + escapeHtml(c.oppsummering) + "</div>" : "") +
         '<div class="card-meta"><span class="avatar">' + initials(c.eier) + "</span><span>" + escapeHtml(c.eier || "Ingen eier") + '</span><span class="meta-due' + (overdue ? " overdue" : "") + '">· ' + due + "</span></div>" +
         '<div class="score-row"><div class="score-meter"><div class="score-fill" style="width:' + score + '%;background:' + scoreColorVar(score) + ';"></div></div><span class="score-num">' + score + "</span></div>" +
+        actionsHtml +
       "</div>"
     );
   }
@@ -832,6 +863,8 @@
             '<div class="field"><label for="c-oppsummering">Sammendrag</label><textarea id="c-oppsummering" data-field="oppsummering" placeholder="Ikke vurdert av AI ennå">' + escapeHtml(c.oppsummering) + "</textarea></div>" +
             (c.eventId && state.eventsById[c.eventId] ? '<p class="helper">📅 Koblet til arrangement: <b>' + escapeHtml(state.eventsById[c.eventId].title) + "</b> (" + escapeHtml(state.eventsById[c.eventId].starts_on) + ")</p>" : "") +
             '<button class="btn" data-action="run-ai-triage-one" data-id="' + c.id + '"' + (state.ui.aiBusy[c.id] ? " disabled" : "") + ">" + (state.ui.aiBusy[c.id] ? "Vurderer …" : "Kjør AI-vurdering") + "</button>" +
+
+            (c.status === "ide" ? '<button class="btn btn-primary" data-action="approve-case-quick" data-id="' + c.id + '" style="width:100%;">✓ Godkjenn idé → flytt til «Godkjente idéer»</button>' : "") +
 
             '<div class="field-row">' +
               '<div class="field"><label for="c-malgruppe">Målgruppe</label><select id="c-malgruppe" data-field="malgruppe">' +
@@ -1033,8 +1066,12 @@
       case "delete-source": deleteSource(e.currentTarget.getAttribute("data-id")); break;
       case "run-ai-triage-bulk": runAiTriageBulk(); break;
       case "run-ai-triage-one": runAiTriage([e.currentTarget.getAttribute("data-id")]); break;
-      case "generate-manus": generateManuscriptForCase(e.currentTarget.getAttribute("data-id")); break;
-      case "download-manus": downloadManus(e.currentTarget.getAttribute("data-id"), e.currentTarget.getAttribute("data-path")); break;
+      case "run-ai-triage-selected": e.stopPropagation(); runAiTriageSelected(); break;
+      case "generate-manus": e.stopPropagation(); generateManuscriptForCase(e.currentTarget.getAttribute("data-id")); break;
+      case "download-manus": e.stopPropagation(); downloadManus(e.currentTarget.getAttribute("data-id"), e.currentTarget.getAttribute("data-path")); break;
+      case "approve-case-quick": e.stopPropagation(); approveCaseQuick(e.currentTarget.getAttribute("data-id")); break;
+      case "approve-selected": e.stopPropagation(); moveSelected("godkjent"); break;
+      case "move-selected": e.stopPropagation(); moveSelected(document.getElementById("bulk-status-select").value); break;
       case "close-modal": case "close-modal-bg": state.ui.modal = null; state.ui.activeCaseId = null; render(); break;
       case "submit-new-tip": submitNewTip(); break;
       case "save-case": saveCaseFromForm(); break;
@@ -1143,6 +1180,39 @@
     state.ui.selectedIds = {};
     await refreshAndRender();
     showToast(ids.length + " sak(er) slettet");
+  }
+
+  async function approveCaseQuick(id) {
+    var c = getCase(id);
+    if (!c) return;
+    await trySetStatus(c, "godkjent", "godkjenn-knapp");
+  }
+
+  async function moveSelected(targetStatus) {
+    var ids = Object.keys(state.ui.selectedIds);
+    if (!ids.length) return;
+    if (targetStatus === "publisert") {
+      showToast("Publisering krever STOPP-kontroll per sak — åpne saken enkeltvis for å publisere");
+      return;
+    }
+    var cases = ids.map(getCase).filter(Boolean);
+    if (!cases.length) return;
+    for (var i = 0; i < cases.length; i++) {
+      var c = cases[i];
+      if (c.status === targetStatus) continue;
+      var historikk = [{ ts: nowIso(), text: "Status endret (massehandling): " + statusLabel(c.status) + " → " + statusLabel(targetStatus) }].concat(c.historikk);
+      await updateCase(c.id, { status: targetStatus, historikk: historikk });
+    }
+    state.ui.selectedIds = {};
+    await refreshAndRender();
+    showToast(cases.length + " sak(er) flyttet til «" + statusLabel(targetStatus) + "»");
+  }
+
+  async function runAiTriageSelected() {
+    var ids = Object.keys(state.ui.selectedIds);
+    if (!ids.length) return;
+    state.ui.selectedIds = {};
+    await runAiTriage(ids);
   }
 
   function addKildeRow() { var c = readCaseForm(); if (!c) return; c.kilder.push(""); render(); }
