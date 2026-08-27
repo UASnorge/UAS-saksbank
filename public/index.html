@@ -213,6 +213,24 @@
   .activity-body b { font-weight: 700; }
   .activity-time { display: block; margin-top: 2px; font-size: 0.68rem; color: var(--text-muted); font-family: var(--font-mono); }
 
+  .aside-tabs { display: flex; gap: 2px; padding: 0 12px 10px; }
+  .aside-tab { flex: 1; border: none; background: var(--bg-sunken); color: var(--text-muted); padding: 6px 10px; border-radius: 7px; font-weight: 600; font-size: 0.76rem; }
+  .aside-tab.active { background: var(--accent); color: var(--accent-contrast); }
+
+  .chat-messages { flex: 1; overflow-y: auto; padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+  .chat-msg { max-width: 92%; padding: 8px 11px; border-radius: 10px; font-size: 0.83rem; line-height: 1.45; white-space: pre-wrap; }
+  .chat-msg.user { align-self: flex-end; background: var(--accent); color: var(--accent-contrast); }
+  .chat-msg.assistant { align-self: flex-start; background: var(--bg-sunken); color: var(--text); }
+  .chat-msg.error { align-self: center; background: var(--red-bg); color: var(--red-fg); font-size: 0.76rem; }
+  .chat-actions { margin-top: 6px; font-size: 0.7rem; opacity: 0.75; }
+  .chat-actions summary { cursor: pointer; }
+  .chat-actions ul { margin: 4px 0 0; padding-left: 16px; }
+  .chat-typing { align-self: flex-start; font-size: 0.78rem; color: var(--text-muted); font-style: italic; }
+  .chat-input-row { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); flex-shrink: 0; }
+  .chat-input-row textarea { flex: 1; resize: none; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated); color: var(--text); font-size: 0.85rem; min-height: 38px; max-height: 100px; }
+  .chat-input-row .btn { align-self: flex-end; }
+  .chat-empty { font-size: 0.8rem; color: var(--text-muted); padding: 16px 8px; text-align: center; line-height: 1.5; }
+
   /* Skrivebord: panelet skal faktisk kunne lukkes med ✕, ikke bare på mobil */
   @media (min-width: 861px) {
     .aside { display: none; }
@@ -406,7 +424,8 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, aiBulkBusy: false, cleanupBusy: false, cleanupReport: null },
+    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, aiBulkBusy: false, cleanupBusy: false, cleanupReport: null },
+    chat: { messages: [], busy: false },
     session: null,
     realtimeOk: false
   };
@@ -565,6 +584,7 @@
           '<button class="btn" data-action="open-weights">Prioriteringsmodell</button>' +
           '<button class="btn" data-action="open-newsletter">Nyhetsbrevutkast</button>' +
           '<button class="btn btn-ghost" data-action="toggle-aside" aria-label="Aktivitet">Aktivitet ' + (alertCount ? '<span class="badge-count">' + alertCount + "</span>" : "") + "</button>" +
+          '<button class="btn btn-ghost" data-action="open-chat" aria-label="Assistent">💬 Assistent</button>' +
           '<button class="btn btn-primary" data-action="open-new-tip">+ Nytt tips</button>' +
           '<button class="btn btn-ghost" data-action="sign-out" title="' + escapeHtml(email) + '">Logg ut</button>' +
         "</div>" +
@@ -810,15 +830,49 @@
     });
     feed.sort(function (a, b) { return new Date(b.ts) - new Date(a.ts); });
     feed = feed.slice(0, 30);
+
+    var tabs =
+      '<div class="aside-tabs">' +
+        '<button class="aside-tab' + (state.ui.asideTab === "activity" ? " active" : "") + '" data-action="set-aside-tab" data-tab="activity">Aktivitet</button>' +
+        '<button class="aside-tab' + (state.ui.asideTab === "chat" ? " active" : "") + '" data-action="set-aside-tab" data-tab="chat">💬 Assistent</button>' +
+      "</div>";
+
+    var body = state.ui.asideTab === "chat" ? renderChatBody() : (
+      '<div class="aside-list">' +
+        (feed.length ? feed.map(function (f) {
+          return '<div class="activity-item' + (f.alert ? " alert" : "") + '"><span class="activity-icon">' + f.icon + '</span><span class="activity-body">' + f.html + '<span class="activity-time">' + fmtTime(f.ts) + "</span></span></div>";
+        }).join("") : '<div class="aside-empty">Ingen aktivitet ennå</div>') +
+      "</div>"
+    );
+
     return (
       '<aside class="aside' + (state.ui.asideOpen ? " open" : "") + '">' +
-        '<div class="aside-header"><span class="aside-title">Aktivitet</span><button class="icon-btn" data-action="toggle-aside" aria-label="Lukk">✕</button></div>' +
-        '<div class="aside-list">' +
-          (feed.length ? feed.map(function (f) {
-            return '<div class="activity-item' + (f.alert ? " alert" : "") + '"><span class="activity-icon">' + f.icon + '</span><span class="activity-body">' + f.html + '<span class="activity-time">' + fmtTime(f.ts) + "</span></span></div>";
-          }).join("") : '<div class="aside-empty">Ingen aktivitet ennå</div>') +
-        "</div>" +
+        '<div class="aside-header"><span class="aside-title">' + (state.ui.asideTab === "chat" ? "Assistent" : "Aktivitet") + '</span><button class="icon-btn" data-action="toggle-aside" aria-label="Lukk">✕</button></div>' +
+        tabs +
+        body +
       "</aside>"
+    );
+  }
+
+  function renderChatBody() {
+    var msgs = state.chat.messages;
+    var msgsHtml = msgs.length ? msgs.map(function (m) {
+      if (m.role === "error") return '<div class="chat-msg error">⚠️ ' + escapeHtml(m.content) + "</div>";
+      var actionsHtml = "";
+      if (m.actions && m.actions.length) {
+        actionsHtml = '<details class="chat-actions"><summary>' + m.actions.length + " handling(er) utført</summary><ul>" +
+          m.actions.map(function (a) { return "<li>" + escapeHtml(a.tool) + (a.result && a.result.error ? " — avvist: " + escapeHtml(a.result.error) : "") + "</li>"; }).join("") +
+          "</ul></details>";
+      }
+      return '<div class="chat-msg ' + (m.role === "user" ? "user" : "assistant") + '">' + escapeHtml(m.content) + actionsHtml + "</div>";
+    }).join("") : '<div class="chat-empty">Spør om hva som helst i saksbanken — «hva står i Idé nå?», «opprett en sak om …», «godkjenn saken om antidrone-radar». Kan aldri publisere direkte — det krever alltid STOPP-kontroll i appen.</div>';
+
+    return (
+      '<div class="chat-messages" id="chat-messages">' + msgsHtml + (state.chat.busy ? '<div class="chat-typing">Tenker …</div>' : "") + "</div>" +
+      '<form class="chat-input-row" id="chat-form">' +
+        '<textarea id="chat-input" placeholder="Skriv en melding …" rows="1"' + (state.chat.busy ? " disabled" : "") + "></textarea>" +
+        '<button class="btn btn-primary" type="submit"' + (state.chat.busy ? " disabled" : "") + ">Send</button>" +
+      "</form>"
     );
   }
 
@@ -1044,6 +1098,27 @@
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); }
       });
     });
+
+    var chatForm = document.getElementById("chat-form");
+    if (chatForm) {
+      chatForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        sendChatMessage();
+      });
+      var chatInput = document.getElementById("chat-input");
+      chatInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+      });
+    }
+    var chatMessagesEl = document.getElementById("chat-messages");
+    if (chatMessagesEl) chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  }
+
+  function focusChatInput() {
+    setTimeout(function () {
+      var el = document.getElementById("chat-input");
+      if (el) el.focus();
+    }, 0);
   }
 
   async function trySetStatus(c, newStatus, methodLabel) {
@@ -1083,6 +1158,8 @@
     switch (action) {
       case "set-view": state.ui.view = e.currentTarget.getAttribute("data-view"); render(); break;
       case "toggle-aside": state.ui.asideOpen = !state.ui.asideOpen; render(); break;
+      case "open-chat": state.ui.asideOpen = true; state.ui.asideTab = "chat"; render(); focusChatInput(); break;
+      case "set-aside-tab": state.ui.asideTab = e.currentTarget.getAttribute("data-tab"); render(); if (state.ui.asideTab === "chat") focusChatInput(); break;
       case "open-new-tip": state.ui.modal = "new-tip"; render(); break;
       case "open-case": state.ui.activeCaseId = e.currentTarget.getAttribute("data-id"); state.ui.modal = "case"; render(); break;
       case "open-newsletter": state.ui.modal = "newsletter"; render(); break;
@@ -1347,6 +1424,40 @@
     } finally {
       ids.forEach(function (id) { delete state.ui.aiBusy[id]; });
       render();
+    }
+  }
+
+  async function sendChatMessage() {
+    var input = document.getElementById("chat-input");
+    var text = input ? input.value.trim() : "";
+    if (!text || state.chat.busy) return;
+
+    var history = state.chat.messages
+      .filter(function (m) { return m.role === "user" || m.role === "assistant"; })
+      .map(function (m) { return { role: m.role, content: m.content }; });
+
+    state.chat.messages.push({ role: "user", content: text });
+    state.chat.busy = true;
+    render();
+
+    try {
+      var res = await fetch("/.netlify/functions/assistant-chat", {
+        method: "POST", headers: authHeader(),
+        body: JSON.stringify({ message: text, history: history })
+      });
+      var data = await res.json();
+      if (!res.ok) {
+        state.chat.messages.push({ role: "error", content: data.error || "Assistenten svarte ikke." });
+      } else {
+        state.chat.messages.push({ role: "assistant", content: data.reply || "(tomt svar)", actions: data.actions || [] });
+        if (data.actions && data.actions.length) await fetchCases();
+      }
+    } catch (err) {
+      state.chat.messages.push({ role: "error", content: err.message });
+    } finally {
+      state.chat.busy = false;
+      render();
+      focusChatInput();
     }
   }
 

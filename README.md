@@ -109,6 +109,14 @@ RSS-innhentingen kjører nå automatisk en AI-relevanssjekk på hvert eneste tre
 
 For å rydde i det som allerede ligger i «Idé» fra før filteret ble slått på: trykk **🧹 Fjern ikke-relevante (AI)** i toppmenyen. Den vurderer alle idéer på nytt og sletter de som ikke handler om droner — du får en rapport med tittel og begrunnelse for hver som fjernes. Rører kun status «Idé»; saker dere allerede har godkjent eller jobbet videre med, lar den stå urørt uansett.
 
+## Steg 11 — AI-assistent (chat)
+
+Trykk **💬 Assistent** i toppmenyen. En samtale-assistent med verktøytilgang til hele saksbanken — den kan slå opp saker, opprette nye, endre felter, flytte status, slette, kjøre AI-vurdering og generere manus, alt via vanlig norsk tekst i stedet for å klikke seg gjennom grensesnittet. Eksempler: «hva står i Idé nå?», «opprett en sak om ny motdrone-teknologi», «godkjend saken om antidrone-radar og generer manus for den».
+
+**Ufravikelig grense:** assistenten kan aldri sette en sak til status Publisert — det krever alltid at et menneske åpner saken i appen selv, krysser av STOPP-kontrollen og velger godkjenner. Dette er hardkodet i verktøyet den bruker (`move_case_status`), ikke bare en instruks den kan overtales til å ignorere — testet eksplisitt med et forsøk på å overstyre den, se commit-historikken for `assistant-chat.js`.
+
+Bruker samme `OPENAI_API_KEY` som resten av AI-funksjonene — ingen ekstra oppsett om du allerede har gjort steg 9.
+
 ---
 
 ## Prosjektstruktur
@@ -122,7 +130,11 @@ uas-saksbank/
 │   ├── ai-triage.js            AI-vurdering: kategori, hastegrad, score, sammendrag, eventkobling
 │   ├── generate-manuscript.js  AI-generert .docx-manus i UAS Norways malformat
 │   ├── cleanup-irrelevant.js   Rydder bort ikke-dronerelevante idéer fra "Idé"
-│   └── lib/relevance.js        Delt AI-relevanssjekk (brukt av rss-poll og cleanup)
+│   ├── assistant-chat.js       AI-chat med verktøytilgang til hele saksbanken
+│   └── lib/
+│       ├── relevance.js        Delt AI-relevanssjekk (rss-poll + cleanup)
+│       ├── triage.js           Delt AI-vurderingslogikk (ai-triage + assistant-chat)
+│       └── manuscript.js       Delt manusgenerering (generate-manuscript + assistant-chat)
 ├── supabase/schema.sql        Databasetabeller + tilgangsregler (v1 + v2)
 ├── netlify.toml                Netlify-konfig (publish-mappe, funksjonsmappe)
 └── .env.example                Mal for lokale miljøvariabler
