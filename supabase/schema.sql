@@ -223,3 +223,20 @@ alter table cases add column if not exists manus_foto text default '';
 alter table cases add column if not exists wp_post_id integer;
 alter table cases add column if not exists wp_edit_link text default '';
 alter table cases add column if not exists wp_status text default '';
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v4 — Kildevurdering ("kildekontrollør") + bilderesearch, på forespørsel
+-- ═══════════════════════════════════════════════════════════════════
+
+-- Fullt strukturert resultat fra netlify/functions/lib/sourceCheck.js —
+-- inkluderer AI-ens kildekontroll OG serverens egne, faktiske HTTP-sjekker av
+-- hver oppgitte lenke (lenke_verifisering). Se den filen for feltbetydning.
+alter table cases add column if not exists kildevurdering jsonb;
+alter table cases add column if not exists kildevurdering_ts timestamptz;
+
+-- Fullt strukturert resultat fra netlify/functions/lib/imageResearch.js —
+-- hvert alternativ har et "verifisering"-underobjekt som viser om den
+-- foreslåtte bildelenken faktisk ble bekreftet med en ekte HTTP-forespørsel
+-- (eller hentet automatisk fra kildesiden som fallback), aldri kun antatt.
+alter table cases add column if not exists bildeforslag jsonb;
+alter table cases add column if not exists bildeforslag_ts timestamptz;

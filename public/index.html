@@ -276,6 +276,9 @@
   .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .helper { font-size: 0.72rem; color: var(--text-muted); }
   .section-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 14px; margin-top: 2px; }
+  .kildevurdering-report { background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; font-size: 0.85rem; }
+  .kildevurdering-report p { margin: 6px 0; }
+  .kildevurdering-report ul { margin: 4px 0 4px 18px; padding: 0; }
 
   .slider-row { display: flex; align-items: center; gap: 10px; }
   .slider-row label { flex: 0 0 110px; font-size: 0.78rem; color: var(--text); font-weight: 600; text-transform: none; letter-spacing: 0; }
@@ -422,6 +425,8 @@
       manusHovedtekst: row.manus_hovedtekst || [], manusAltTekst: row.manus_alt_tekst || "",
       manusBildeUrl: row.manus_bilde_url || "", manusFoto: row.manus_foto || "",
       wpPostId: row.wp_post_id || null, wpEditLink: row.wp_edit_link || "", wpStatus: row.wp_status || "",
+      kildevurdering: row.kildevurdering || null, kildevurderingTs: row.kildevurdering_ts || "",
+      bildeforslag: row.bildeforslag || null, bildeforslagTs: row.bildeforslag_ts || "",
       isRss: (row.historikk || []).some(function (h) { return /RSS-kilde/.test(h.text || ""); })
     };
   }
@@ -448,7 +453,7 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, cleanupBusy: false, cleanupReport: null, wpReport: null, expandedSummaries: {} },
+    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, cleanupBusy: false, cleanupReport: null, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {} },
     chat: { messages: [], busy: false },
     session: null,
     realtimeOk: false
@@ -995,6 +1000,128 @@
     );
   }
 
+  var SAKEN_ER_LABELS = { NY: "NY", FORTSATT_AKTUELL: "FORTSATT AKTUELL", ELDRE_SAK: "ELDRE SAK", UKLART: "UKLART" };
+  var ANBEFALING_LABELS = {
+    TRYGG: "✅ Trygg å arbeide videre med",
+    BOR_VERIFISERES: "🟡 Brukbar, men bør verifiseres ytterligere",
+    KUN_TIPS: "🟠 Kun tips – ikke bruk som dokumentasjon ennå",
+    BOR_IKKE_BRUKES: "🔴 Bør ikke brukes uten ny og bedre kilde"
+  };
+  var LENKEKONTROLL_LABELS = { BEKREFTET: "✅ Bekreftet", DELVIS_BEKREFTET: "⚠️ Delvis bekreftet", IKKE_BEKREFTET: "❌ Ikke bekreftet" };
+  var TROVERDIGHET_EMOJI = { 5: "🟢", 4: "🟢", 3: "🟡", 2: "🟠", 1: "🔴" };
+  var BRUKSRETT_LABELS = {
+    A: "🟢 A – Dokumentert tilgjengelig for redaksjonell bruk",
+    B: "🟢 B – Åpen lisens med klare vilkår",
+    C: "🟡 C – Sannsynlig pressemateriale, vilkår uklare — ⚠️ MÅ AVKLARES FØR PUBLISERING",
+    D: "🟠 D – Copyrightbeskyttet / ingen tillatelse funnet — kun referanse",
+    E: "🔴 E – Bør ikke brukes"
+  };
+
+  function linkHtml(url, label) {
+    if (!url) return "";
+    return '<button class="icon-btn" data-action="open-source" data-url="' + escapeHtml(url) + '" title="Åpne lenke" style="margin-left:6px;">' + escapeHtml(label || "↗ Åpne") + "</button>";
+  }
+
+  function renderKildevurdering(c) {
+    var kv = c.kildevurdering;
+    var busy = state.ui.kildeBusy[c.id];
+    var btn = '<button class="btn" data-action="check-source" data-id="' + c.id + '"' + (busy ? " disabled" : "") + ">" + (busy ? "Kontrollerer kilde (kan ta et halvt minutt) …" : (kv ? "Kjør kildevurdering på nytt" : "🔍 Kjør kildevurdering")) + "</button>";
+    if (!kv) {
+      return (
+        '<div class="section-label">Kildevurdering</div>' +
+        '<p class="helper">Undersøker hvem som faktisk står bak saken, finner originalkilden og verifiserer at lenkene faktisk fungerer — før noen bruker tid på saken.</p>' +
+        btn
+      );
+    }
+    var em = TROVERDIGHET_EMOJI[kv.troverdighet_score] || "⚪";
+    var rodeFlaggHtml = (kv.rode_flagg || []).length
+      ? "<ul>" + kv.rode_flagg.map(function (f) { return "<li>🚩 " + escapeHtml(f) + "</li>"; }).join("") + "</ul>"
+      : '<p class="helper">Ingen røde flagg funnet.</p>';
+    var forbeholdHtml = (kv.forbehold || []).length
+      ? "<ul>" + kv.forbehold.map(function (f) { return "<li>" + escapeHtml(f) + "</li>"; }).join("") + "</ul>"
+      : '<p class="helper">Ingen.</p>';
+    var uavhengigHtml = kv.uavhengig_bekreftelse_funnet
+      ? "Ja" + ((kv.uavhengig_bekreftelse_kilder || []).length ? ": <ul>" + kv.uavhengig_bekreftelse_kilder.map(function (k) { return "<li>" + escapeHtml(k) + "</li>"; }).join("") + "</ul>" : "")
+      : "Nei — ikke funnet.";
+
+    return (
+      '<div class="section-label">Kildevurdering</div>' +
+      '<div class="kildevurdering-report">' +
+        '<p><b>Troverdighet: ' + em + " " + kv.troverdighet_score + "/5 – " + escapeHtml(kv.troverdighet_label) + "</b></p>" +
+        "<p><b>Publisert av:</b> " + escapeHtml(kv.publisert_av_navn || "Ikke verifisert") + (kv.url ? linkHtml(kv.url, "↗ Åpne saken") : "") + "</p>" +
+        "<p><b>Type kilde:</b> " + escapeHtml(kv.publisert_av_type || "ukjent") + (kv.publisert_av_redaktorstyrt === true ? " (redaktørstyrt)" : kv.publisert_av_redaktorstyrt === false ? " (ikke redaktørstyrt)" : "") + "</p>" +
+        "<p><b>Forfatter:</b> " + escapeHtml(kv.forfatter || "Ikke oppgitt") + "</p>" +
+        "<p><b>Originalkilde:</b> " + escapeHtml(kv.originalkilde_navn || "Ikke verifisert") + (kv.originalkilde_url ? linkHtml(kv.originalkilde_url, "↗ Åpne originalkilde") : "") + (kv.originalkilde_type ? " — " + escapeHtml(kv.originalkilde_type) : "") + "</p>" +
+        "<p><b>Publisert:</b> " + escapeHtml(kv.publisert_dato || "Ikke verifisert") + (kv.sist_oppdatert ? " · sist oppdatert " + escapeHtml(kv.sist_oppdatert) : "") + " · <b>Land:</b> " + escapeHtml(kv.land || "Ukjent") + "</p>" +
+        "<p><b>Hendelsen gjelder:</b> " + escapeHtml(kv.hendelse_dato || "Kunne ikke fastslås") + " — <b>Saken er:</b> " + escapeHtml(SAKEN_ER_LABELS[kv.saken_er] || kv.saken_er) + "</p>" +
+        "<p><b>Kontroll av lenker:</b> " + escapeHtml(LENKEKONTROLL_LABELS[kv.lenkekontroll] || kv.lenkekontroll) + '<br /><span class="helper">' + escapeHtml(kv.lenkekontroll_detalj || "") + " (faktisk HTTP-sjekk utført av appen — ikke bare AI-ens egen påstand.)</span></p>" +
+        "<p><b>Uavhengig bekreftelse:</b> " + uavhengigHtml + "</p>" +
+        "<p><b>Røde flagg:</b></p>" + rodeFlaggHtml +
+        "<p><b>Kort vurdering:</b> " + escapeHtml(kv.kort_vurdering || "") + "</p>" +
+        "<p><b>Redaksjonell anbefaling:</b> " + escapeHtml(ANBEFALING_LABELS[kv.anbefaling] || kv.anbefaling) + "</p>" +
+        "<p><b>Viktige forbehold:</b></p>" + forbeholdHtml +
+        '<p class="helper">Kjørt ' + fmtTime(c.kildevurderingTs) + "</p>" +
+      "</div>" + btn
+    );
+  }
+
+  function renderBildeforslag(c) {
+    var bf = c.bildeforslag;
+    var busy = state.ui.bildeBusy[c.id];
+    var btn = '<button class="btn" data-action="research-images" data-id="' + c.id + '"' + (busy ? " disabled" : "") + ">" + (busy ? "Søker etter bilder (kan ta et halvt minutt) …" : (bf ? "Finn bilder på nytt" : "🖼️ Finn bilder")) + "</button>";
+    if (!bf) {
+      return (
+        '<div class="section-label">Bildeforslag</div>' +
+        '<p class="helper">Foreslår rettighetsavklarte bildealternativer — hver lenke kontrolleres faktisk (HTTP) av appen selv før den vises, aldri kun tatt på AI-ens ord.</p>' +
+        btn
+      );
+    }
+    var altsHtml = (bf.alternativer || []).map(function (alt, i) {
+      var v = alt.verifisering || {};
+      var isBest = i === bf.beste_valg_index;
+      var displayUrl = v.lenke_virker ? v.verifisert_bilde_url : (alt.bilde_url || "");
+      var previewHtml = v.lenke_virker
+        ? '<img src="' + escapeHtml(v.verifisert_bilde_url) + '" alt="" style="max-width:240px;max-height:160px;border-radius:8px;display:block;margin:6px 0;object-fit:cover;" loading="lazy" />'
+        : "";
+      var lenkeStatusHtml = v.lenke_virker
+        ? '<span style="color:var(--ok,#2a7)">✅ Lenke bekreftet automatisk (' + escapeHtml(v.verifiseringsmetode || "") + ")</span>"
+        : '<span style="color:var(--danger,#c33)">❌ Lenken kunne IKKE bekreftes automatisk — ' + escapeHtml(v.detalj || "sjekk manuelt før bruk") + "</span>";
+      return (
+        '<div class="kildevurdering-report" style="border-top:1px solid var(--border,#3333);padding-top:10px;margin-top:10px;">' +
+          "<p><b>Alternativ " + (i + 1) + (isBest ? " – ANBEFALT" : "") + "</b></p>" +
+          previewHtml +
+          "<p><b>Motiv:</b> " + escapeHtml(alt.motiv || "") + "</p>" +
+          "<p><b>Hvorfor relevant:</b> " + escapeHtml(alt.hvorfor_relevant || "") + "</p>" +
+          "<p><b>Originalkilde:</b> " + escapeHtml(alt.originalkilde_navn || "Ukjent") + (alt.kildeside_url ? linkHtml(alt.kildeside_url, "↗ Åpne kildeside") : "") + "</p>" +
+          "<p><b>Direkte bilde-/mediebanklenke:</b> " + (displayUrl ? escapeHtml(displayUrl) + linkHtml(displayUrl, "↗ Åpne bilde") : "(ingen)") + "<br />" + lenkeStatusHtml + "</p>" +
+          "<p><b>Rettighetshaver:</b> " + escapeHtml(alt.rettighetshaver || "Ikke oppgitt") + " · <b>Fotograf:</b> " + escapeHtml(alt.fotograf || "Ikke oppgitt") + "</p>" +
+          "<p><b>Foreslått kreditering:</b> " + escapeHtml(alt.foreslatt_kreditering || "Ikke oppgitt") + "</p>" +
+          "<p><b>Bruksrett:</b> " + escapeHtml(BRUKSRETT_LABELS[alt.bruksrett] || alt.bruksrett) + (v.lenke_virker ? "" : ' <span style="color:var(--danger,#c33)">— ⚠️ BRUKSRETT/BILDE IKKE VERIFISERT (lenken virker ikke) – MÅ AVKLARES FØR PUBLISERING</span>') + "</p>" +
+          "<p><b>Dokumentasjon på rettighet:</b> " + (alt.dokumentasjon_url ? escapeHtml(alt.dokumentasjon_url) + linkHtml(alt.dokumentasjon_url, "↗ Åpne") : "Ikke oppgitt") + "</p>" +
+          (alt.eldre_enn_saken ? '<p style="color:var(--warn,#c90)">⚠️ Bildet kan være eldre enn den aktuelle saken og vise en tidligere versjon av produkt/system.</p>' : "") +
+          "<p><b>Kommentar:</b> " + escapeHtml(alt.kommentar || "") + "</p>" +
+        "</div>"
+      );
+    }).join("");
+
+    var idx = function (i) { return (bf.alternativer && bf.alternativer[i]) ? (i + 1) + ". " + escapeHtml(bf.alternativer[i].motiv || "") : "—"; };
+    var manuellListe = (bf.manuell_avklaring_indekser || []).length
+      ? "<ul>" + bf.manuell_avklaring_indekser.map(function (i) { return "<li>" + idx(i) + "</li>"; }).join("") + "</ul>"
+      : '<p class="helper">Ingen.</p>';
+
+    return (
+      '<div class="section-label">Bildeforslag</div>' +
+      '<div class="kildevurdering-report">' +
+        "<p><b>Beste valg:</b> " + idx(bf.beste_valg_index) + "</p>" +
+        "<p><b>Sikrest juridisk:</b> " + idx(bf.sikrest_juridisk_index) + "</p>" +
+        "<p><b>Best visuelt:</b> " + idx(bf.best_visuelt_index) + "</p>" +
+        "<p><b>Manuell avklaring nødvendig:</b></p>" + manuellListe +
+        '<p class="helper">Kjørt ' + fmtTime(c.bildeforslagTs) + "</p>" +
+      "</div>" +
+      altsHtml + btn
+    );
+  }
+
   function renderCaseModal(c) {
     if (!c) return "";
     var score = computeScore(c.triage, state.weights);
@@ -1048,6 +1175,8 @@
                   '<button class="icon-btn" data-action="remove-kilde" data-idx="' + i + '">✕</button></div>';
               }).join("") : "") +
             "</div><button class=\"btn\" data-action=\"add-kilde\" type=\"button\">+ Legg til kilde</button></div>" +
+            renderKildevurdering(c) +
+            renderBildeforslag(c) +
             '<div class="section-label">Prioriteringsmodell (forklarbar, kan justeres)</div>' +
             triageSlider("aktualitet", "Aktualitet", c.triage.aktualitet) +
             triageSlider("betydning", "Betydning", c.triage.betydning) +
@@ -1269,6 +1398,8 @@
       case "run-ai-triage-one": runAiTriage([e.currentTarget.getAttribute("data-id")]); break;
       case "run-ai-triage-selected": e.stopPropagation(); runAiTriageSelected(); break;
       case "generate-manus": e.stopPropagation(); generateManuscriptForCase(e.currentTarget.getAttribute("data-id")); break;
+      case "check-source": e.stopPropagation(); checkSourceForCase(e.currentTarget.getAttribute("data-id")); break;
+      case "research-images": e.stopPropagation(); researchImagesForCase(e.currentTarget.getAttribute("data-id")); break;
       case "download-manus": e.stopPropagation(); downloadManus(e.currentTarget.getAttribute("data-id"), e.currentTarget.getAttribute("data-path")); break;
       case "approve-case-quick": e.stopPropagation(); approveCaseQuick(e.currentTarget.getAttribute("data-id")); break;
       case "advance-status-quick": {
@@ -1723,6 +1854,47 @@
       showToast("Kunne ikke generere manus: " + err.message);
     } finally {
       delete state.ui.manusBusy[id];
+      render();
+    }
+  }
+
+  async function checkSourceForCase(id) {
+    state.ui.kildeBusy[id] = true;
+    render();
+    try {
+      var res = await fetch("/.netlify/functions/check-source", {
+        method: "POST", headers: authHeader(), body: JSON.stringify({ caseId: id })
+      });
+      var data = await parseFunctionResponse(res);
+      if (!res.ok) { showToast(data.error || "Kunne ikke kjøre kildevurdering"); return; }
+      var kv = data.kildevurdering;
+      showToast("Kildevurdering ferdig: " + kv.troverdighet_score + "/5 – " + kv.troverdighet_label);
+      await refreshAndRender();
+    } catch (err) {
+      showToast("Kunne ikke kjøre kildevurdering: " + err.message);
+    } finally {
+      delete state.ui.kildeBusy[id];
+      render();
+    }
+  }
+
+  async function researchImagesForCase(id) {
+    state.ui.bildeBusy[id] = true;
+    render();
+    try {
+      var res = await fetch("/.netlify/functions/research-images", {
+        method: "POST", headers: authHeader(), body: JSON.stringify({ caseId: id })
+      });
+      var data = await parseFunctionResponse(res);
+      if (!res.ok) { showToast(data.error || "Kunne ikke søke etter bilder"); return; }
+      var bf = data.bildeforslag;
+      var verified = (bf.alternativer || []).filter(function (a) { return a.verifisering && a.verifisering.lenke_virker; }).length;
+      showToast("Bildeforslag ferdig: " + bf.alternativer.length + " forslag, " + verified + " med bekreftet fungerende lenke");
+      await refreshAndRender();
+    } catch (err) {
+      showToast("Kunne ikke søke etter bilder: " + err.message);
+    } finally {
+      delete state.ui.bildeBusy[id];
       render();
     }
   }

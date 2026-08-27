@@ -145,6 +145,20 @@ Slik sjekker dere det:
 
 **Ufravikelig grense, samme som ellers i appen:** oppretter alltid status `draft` i WordPress — aldri `publish`, uansett hvilket av de to nettstedene. Selve publiseringen skjer fortsatt manuelt, enten direkte i WordPress eller i Oversikt-fanen i wordpress-infosak-verktøyet, med et menneske som faktisk har lest gjennom saken. Dette er en egen, separat kontroll fra saksbankens interne STOPP-regel for status «Publisert» — de erstatter ikke hverandre.
 
+## Steg 13 — Kildevurdering og bilderesearch (på forespørsel, per sak)
+
+To nye knapper inne på hver sak, bygget etter to detaljerte redaksjonelle spesifikasjoner dere ga: **🔍 Kjør kildevurdering** og **🖼️ Finn bilder**. Begge bruker `gpt-5-search-api` (et søkekapabelt OpenAI-verktøy) til å faktisk gjøre research, ikke bare gjette — kjøres på forespørsel per sak (samme avveining som AI-vurdering/manusgenerering: et websøk-kall tar litt tid og har en kostnad, så det skjer ikke automatisk på alle 100+ idéer).
+
+Ingen ny miljøvariabel — bruker samme `OPENAI_API_KEY` som resten. Kjør `supabase/schema.sql` på nytt (v4-delen legger til `kildevurdering`/`bildeforslag`-feltene på `cases`, idempotent som resten av filen).
+
+**🔍 Kildevurdering** (`lib/sourceCheck.js`) — undersøker hvem som faktisk står bak saken (utgiver vs. originalkilde), finner originalkilden med direkte lenke, sjekker om saken egentlig er en gammel hendelse som fremstår som ny, gir en troverdighetsscore 1–5 for avsenderen, og lister røde flagg (manglende originalkilde, produktpåstander kun fra leverandør, flere nettsteder som bare kopierer samme svake kilde, osv.). Ender i en tydelig redaksjonell anbefaling: ✅ Trygg / 🟡 Bør verifiseres / 🟠 Kun tips / 🔴 Bør ikke brukes.
+
+**🖼️ Finn bilder** (`lib/imageResearch.js`) — foreslår 3–6 bildealternativer i prioritert rekkefølge (originalkildens eget pressemateriale først, så offisielle mediebanker, så andre produsent-pressebilder, så åpne lisenser sist) med full rettighetskontroll per bilde (kategori 🟢A/🟢B dokumentert brukbart, 🟡C uklare vilkår, 🟠D/🔴E ikke bruksklart) og en tydelig advarsel om at andre nyhetsmedier (NRK, VG, BBC, Reuters …) aldri regnes som et fritt bildebibliotek — bare som spor til den egentlige rettighetshaveren.
+
+**Viktig, ikke bare kosmetisk:** under testing viste det seg at selv et godt søkekapabelt AI-verktøy kan dikte opp en spesifikk bilde-URL som ser ekte ut, mens siden den fant bildet på er ekte. Derfor stoler ingen av knappene på AI-ens egen påstand om at en lenke fungerer eller at et bilde er tilgjengelig — **appen selv sjekker hver oppgitte lenke med en ekte HTTP-forespørsel** (`lib/linkCheck.js`) før noe vises som bekreftet. For bilder: feiler den oppgitte bildelenken den ekte sjekken, forsøker appen automatisk å hente et bilde fra kildesiden i stedet (samme `og:image`-teknikk som manusgenereringen allerede bruker); lykkes ikke det heller, vises alternativet fortsatt (skjules aldri stille — det kan være et nyttig forskningsspor), men tydelig merket «BRUKSRETT/BILDE IKKE VERIFISERT» i stedet for å late som det er klart til bruk.
+
+Begge er også tilgjengelige som verktøy for AI-assistenten (`check_source`/`research_images` i Steg 11) — spør den «kjør kildevurdering på saken om …» eller «finn bilder til saken om …».
+
 ---
 
 ## Prosjektstruktur
@@ -160,12 +174,17 @@ uas-saksbank/
 │   ├── cleanup-irrelevant.js   Rydder bort ikke-dronerelevante idéer fra "Idé"
 │   ├── assistant-chat.js       AI-chat med verktøytilgang til hele saksbanken
 │   ├── publish-to-wordpress.js Oppretter WordPress-UTKAST fra en sak sitt manus
+│   ├── check-source.js         Kildevurdering (troverdighet, originalkilde, lenkekontroll)
+│   ├── research-images.js      Bilderesearch (rettighetsavklarte bildealternativer)
 │   └── lib/
 │       ├── relevance.js        Delt AI-relevanssjekk (rss-poll + cleanup)
 │       ├── triage.js           Delt AI-vurderingslogikk (ai-triage + assistant-chat)
 │       ├── manuscript.js       Delt manusgenerering (generate-manuscript + assistant-chat)
-│       └── wordpress.js        WordPress REST API-klient (portert fra wordpress-infosak)
-├── supabase/schema.sql        Databasetabeller + tilgangsregler (v1 + v2)
+│       ├── wordpress.js        WordPress REST API-klient (portert fra wordpress-infosak)
+│       ├── sourceCheck.js      Delt kildevurdering (check-source + assistant-chat)
+│       ├── imageResearch.js    Delt bilderesearch (research-images + assistant-chat)
+│       └── linkCheck.js        Ekte HTTP-verifisering av lenker (brukt av begge over)
+├── supabase/schema.sql        Databasetabeller + tilgangsregler (v1–v4)
 ├── netlify.toml                Netlify-konfig (publish-mappe, funksjonsmappe)
 └── .env.example                Mal for lokale miljøvariabler
 ```

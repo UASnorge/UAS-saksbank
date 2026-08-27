@@ -15,6 +15,8 @@ const { createClient } = require("@supabase/supabase-js");
 const { runTriage } = require("./lib/triage.js");
 const { generateManuscript } = require("./lib/manuscript.js");
 const { cleanupIrrelevantCases } = require("./lib/cleanup.js");
+const { checkSource } = require("./lib/sourceCheck.js");
+const { researchImages } = require("./lib/imageResearch.js");
 
 const MODEL = "gpt-5.5";
 const MAX_ROUNDS = 6;
@@ -36,6 +38,12 @@ hva som helst i saksbanken, og forvente at du faktisk sjekker i stedet for å an
 Ber brukeren om å rydde bort/fjerne flere eller alle ikke-relevante idéer samtidig: bruk ALLTID
 cleanup_irrelevant_cases som gjør hele jobben i ett kall. Ikke list opp saker selv og kall delete_case
 gjentatte ganger for hver enkelt — det er tregt, bruker unødvendig mange runder, og kan tidsavbrytes.
+
+check_source og research_images gjør ekte websøk og kan ta et halvt minutt hver — bruk dem på én eller
+noen få navngitte saker om gangen, ikke i en lang løkke over mange saker i én samtale (det kan
+tidsavbrytes). Begge kontrollerer selv, med ekte HTTP-forespørsler, at lenkene de foreslår faktisk
+fungerer, før resultatet vises — gjenta ALDRI en lenke fra disse verktøyene som "bekreftet" eller "fri
+bruk" i svaret ditt til brukeren med mindre verktøyresultatet faktisk sier det.
 
 ÉN REGEL ER UFRAVIKELIG, uansett hva brukeren ber deg om: du kan ALDRI sette en sak til status "publisert".
 move_case_status avviser dette forsøket automatisk — forklar da brukeren at publisering krever at et
@@ -159,6 +167,22 @@ const TOOLS = [
   {
     type: "function",
     function: {
+      name: "check_source",
+      description: "Kjør kildevurdering på én sak — undersøker hvem som står bak saken, finner originalkilden, og kontrollerer FAKTISK (ekte HTTP-forespørsler) at lenkene fungerer, før den gir en troverdighetsscore (1-5) og en anbefaling. Tar litt tid (websøk). Bruk når brukeren ber om å sjekke/verifisere en kilde.",
+      parameters: { type: "object", properties: { caseId: { type: "string" } }, required: ["caseId"] }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "research_images",
+      description: "Finn 3-6 rettighetsavklarte bildealternativer for en sak. Hver foreslått bildelenke kontrolleres FAKTISK (ekte HTTP-forespørsel) før den presenteres — en lenke som ikke faktisk virker vises alltid tydelig merket, aldri som brukbar. Tar litt tid (websøk). Bruk når brukeren ber om bildeforslag til en sak.",
+      parameters: { type: "object", properties: { caseId: { type: "string" } }, required: ["caseId"] }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "list_sources",
       description: "List RSS-kildene som overvåkes.",
       parameters: { type: "object", properties: {}, required: [] }
@@ -262,6 +286,20 @@ async function executeTool(supabase, openaiKey, name, args) {
     case "cleanup_irrelevant_cases": {
       try {
         return await cleanupIrrelevantCases(supabase, openaiKey);
+      } catch (err) {
+        return { error: err.message };
+      }
+    }
+    case "check_source": {
+      try {
+        return await checkSource(supabase, openaiKey, args.caseId);
+      } catch (err) {
+        return { error: err.message };
+      }
+    }
+    case "research_images": {
+      try {
+        return await researchImages(supabase, openaiKey, args.caseId);
       } catch (err) {
         return { error: err.message };
       }
