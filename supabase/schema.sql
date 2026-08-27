@@ -113,8 +113,18 @@ create policy "innloggede kan slette kilder" on sources
 
 -- ── Sanntid ─────────────────────────────────────────────────────────
 -- Gjør at teamet ser hverandres endringer live uten å måtte laste siden på nytt.
--- Om denne linjen feiler ("already member"), er det allerede aktivert — helt greit.
-alter publication supabase_realtime add table cases;
+-- Sjekk manuelt om "cases" allerede er medlem — "ALTER PUBLICATION ... ADD TABLE"
+-- har ingen "IF NOT EXISTS", og siden hele skriptet kjøres som én transaksjon i
+-- Supabase sin SQL Editor, ville en feil her rullet tilbake ALT annet i skriptet.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'cases'
+  ) then
+    alter publication supabase_realtime add table cases;
+  end if;
+end $$;
 
 -- ═══════════════════════════════════════════════════════════════════
 -- v2 — AI-vurdering, eventkobling og generert manus
