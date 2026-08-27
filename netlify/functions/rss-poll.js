@@ -8,6 +8,7 @@
 const { schedule } = require("@netlify/functions");
 const Parser = require("rss-parser");
 const { createClient } = require("@supabase/supabase-js");
+const { checkRelevance } = require("./lib/relevance.js");
 
 const parser = new Parser({ timeout: 15000 });
 
@@ -30,7 +31,8 @@ async function pollAllSources(supabase) {
 
   if (error) throw new Error("Kunne ikke hente kildeliste: " + error.message);
 
-  const report = { kilderSjekket: 0, nyeSaker: 0, feil: [] };
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const report = { kilderSjekket: 0, nyeSaker: 0, hoppetOverIkkeRelevant: 0, feil: [] };
 
   for (const source of sources || []) {
     report.kilderSjekket++;
@@ -59,6 +61,24 @@ async function pollAllSources(supabase) {
 
       if (existing) continue;
 
+      const title = (item.title || "(uten tittel)").trim();
+
+      // Sjekk relevans FØR noe lagres som "sett" — feiler kallet (nettverk/
+      // API-feil), skal saken prøves på nytt neste kjøring, ikke gå tapt for
+      // godt. Kun en fullført vurdering (uansett utfall) markeres som sett.
+      let relevant = true;
+      let relevansBegrunnelse = "";
+      if (openaiKey) {
+        try {
+          const verdict = await checkRelevance(openaiKey, title, source.name ? "Kilde: " + source.name : "");
+          relevant = verdict.relevant;
+          relevansBegrunnelse = verdict.begrunnelse;
+        } catch (err) {
+          report.feil.push(`Relevanssjekk feilet for "${title}" (prøves igjen neste kjøring): ${err.message}`);
+          continue; // ikke marker som sett — prøv igjen neste time
+        }
+      }
+
       const { error: seenErr } = await supabase
         .from("seen_items")
         .insert({ source_id: source.id, guid });
@@ -66,9 +86,14 @@ async function pollAllSources(supabase) {
       // det betyr at en annen kjøring allerede har registrert denne.
       if (seenErr) continue;
 
+      if (!relevant) {
+        report.hoppetOverIkkeRelevant++;
+        continue;
+      }
+
       const nowIso = new Date().toISOString();
       const { error: caseErr } = await supabase.from("cases").insert({
-        title: (item.title || "(uten tittel)").trim(),
+        title: title,
         sakstype: "redaksjonell",
         hastegrad: "planlagt",
         status: "ide",
@@ -78,12 +103,12 @@ async function pollAllSources(supabase) {
         nettsted: "dronemag.no",
         triage: { aktualitet: 2, betydning: 2, innsats: 2, eksklusivitet: 1 },
         historikk: [
-          { ts: nowIso, text: `Automatisk oppdaget via RSS-kilde: ${source.name}` },
-        ],
+          { ts: nowIso, text: `Automatisk oppdaget via RSS-kilde: ${source.name}` }
+        ].concat(relevansBegrunnelse ? [{ ts: nowIso, text: "AI-relevanssjekk: " + relevansBegrunnelse }] : []),
       });
 
       if (caseErr) {
-        report.feil.push(`Kunne ikke opprette sak fra "${item.title}": ${caseErr.message}`);
+        report.feil.push(`Kunne ikke opprette sak fra "${title}": ${caseErr.message}`);
         continue;
       }
 

@@ -406,7 +406,7 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, aiBulkBusy: false },
+    ui: { asideOpen: false, modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, aiBulkBusy: false, cleanupBusy: false, cleanupReport: null },
     session: null,
     realtimeOk: false
   };
@@ -561,6 +561,7 @@
         '<div class="topbar-actions">' +
           '<button class="btn" data-action="open-sources">Kilder</button>' +
           '<button class="btn" data-action="run-ai-triage-bulk"' + (state.ui.aiBulkBusy ? " disabled" : "") + ">" + (state.ui.aiBulkBusy ? "Vurderer …" : "Kjør AI-vurdering (nye idéer)") + "</button>" +
+          '<button class="btn" data-action="cleanup-irrelevant"' + (state.ui.cleanupBusy ? " disabled" : "") + ">" + (state.ui.cleanupBusy ? "Rydder …" : "🧹 Fjern ikke-relevante (AI)") + "</button>" +
           '<button class="btn" data-action="open-weights">Prioriteringsmodell</button>' +
           '<button class="btn" data-action="open-newsletter">Nyhetsbrevutkast</button>' +
           '<button class="btn btn-ghost" data-action="toggle-aside" aria-label="Aktivitet">Aktivitet ' + (alertCount ? '<span class="badge-count">' + alertCount + "</span>" : "") + "</button>" +
@@ -650,6 +651,34 @@
                 "</div>"
               );
             }).join("") : '<p class="aside-empty">Ingen kilder lagt til ennå.</p>') +
+          "</div>" +
+          '<div class="panel-footer"><button class="btn btn-primary" data-action="close-modal">Lukk</button></div>' +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderCleanupReportModal() {
+    var r = state.ui.cleanupReport || { fjernet: [], beholdt: 0, feilet: [], sjekket: 0 };
+    return (
+      '<div class="overlay center" data-action="close-modal-bg">' +
+        '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="cleanup-title">' +
+          '<div class="panel-header"><h2 id="cleanup-title">Rydderapport</h2><button class="icon-btn" data-action="close-modal">✕</button></div>' +
+          '<div class="panel-body">' +
+            '<p class="helper">' + r.sjekket + ' idé(er) i «Idé»-kolonnen ble AI-vurdert mot drone-/UAS-relevans.</p>' +
+            '<div class="import-report">' +
+              '<div class="ok-line">✓ ' + r.beholdt + " beholdt (vurdert som dronerelevante)</div>" +
+              (r.fjernet.length ? (
+                '<div class="fail-line">✗ ' + r.fjernet.length + " fjernet (ikke vurdert som relevante):<ul>" +
+                  r.fjernet.map(function (f) { return "<li><b>" + escapeHtml(f.title) + "</b> — " + escapeHtml(f.begrunnelse) + "</li>"; }).join("") +
+                "</ul></div>"
+              ) : '<div class="helper">Ingen ble fjernet denne runden.</div>') +
+              (r.feilet.length ? (
+                '<div class="warn-line">– ' + r.feilet.length + " kunne ikke vurderes (nettverk/API-feil), la stå urørt:<ul>" +
+                  r.feilet.map(function (f) { return "<li>" + escapeHtml(f.title) + " — " + escapeHtml(f.error) + "</li>"; }).join("") +
+                "</ul></div>"
+              ) : "") +
+            "</div>" +
           "</div>" +
           '<div class="panel-footer"><button class="btn btn-primary" data-action="close-modal">Lukk</button></div>' +
         "</div>" +
@@ -802,6 +831,7 @@
     if (m === "weights") return renderWeightsModal();
     if (m === "about") return renderAboutModal();
     if (m === "sources") return renderSourcesModal();
+    if (m === "cleanup-report") return renderCleanupReportModal();
     return "";
   }
 
@@ -1065,6 +1095,7 @@
       case "import-sources": importSources(); break;
       case "delete-source": deleteSource(e.currentTarget.getAttribute("data-id")); break;
       case "run-ai-triage-bulk": runAiTriageBulk(); break;
+      case "cleanup-irrelevant": runCleanupIrrelevant(); break;
       case "run-ai-triage-one": runAiTriage([e.currentTarget.getAttribute("data-id")]); break;
       case "run-ai-triage-selected": e.stopPropagation(); runAiTriageSelected(); break;
       case "generate-manus": e.stopPropagation(); generateManuscriptForCase(e.currentTarget.getAttribute("data-id")); break;
@@ -1315,6 +1346,29 @@
       showToast("AI-vurdering feilet: " + err.message);
     } finally {
       ids.forEach(function (id) { delete state.ui.aiBusy[id]; });
+      render();
+    }
+  }
+
+  async function runCleanupIrrelevant() {
+    if (!window.confirm("Kjør AI-vurdering av alle idéer i «Idé»-kolonnen og fjern de som ikke handler om droner/UAS. Kan ikke angres. Fortsette?")) return;
+    state.ui.cleanupBusy = true;
+    render();
+    try {
+      var res = await fetch("/.netlify/functions/cleanup-irrelevant", {
+        method: "POST", headers: authHeader(), body: "{}"
+      });
+      var data = await res.json();
+      if (!res.ok) { showToast(data.error || "Rydding feilet"); return; }
+      state.ui.cleanupReport = data;
+      state.ui.cleanupBusy = false;
+      state.ui.modal = "cleanup-report";
+      await refreshAndRender();
+      showToast(data.fjernet.length + " fjernet, " + data.beholdt + " beholdt");
+    } catch (err) {
+      showToast("Rydding feilet: " + err.message);
+    } finally {
+      state.ui.cleanupBusy = false;
       render();
     }
   }

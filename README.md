@@ -103,6 +103,12 @@ Krever at `supabase/schema.sql` er kjørt på nytt (v2-delen nederst i filen leg
 
 **Eventkalenderen** (`events`-tabellen) er vedlikeholdt manuelt siden events.uasnorway.no blokkerer automatisk henting (403 på vanlig sideoppslag). Oppdater den via Supabase Table Editor når nye kurs/konferanser legges til.
 
+## Steg 10 — Relevansfilter: kun dronesaker
+
+RSS-innhentingen kjører nå automatisk en AI-relevanssjekk på hvert eneste treff **før** en sak i det hele tatt opprettes — saker uten en tydelig drone-/UAS-kobling havner aldri i «Idé». Testet mot 14 overskrifter (både ekte Dronemagasinet-saker og åpenbart urelaterte) med 14/14 riktig klassifisering — se `netlify/functions/lib/relevance.js` for de nøyaktige kriteriene.
+
+For å rydde i det som allerede ligger i «Idé» fra før filteret ble slått på: trykk **🧹 Fjern ikke-relevante (AI)** i toppmenyen. Den vurderer alle idéer på nytt og sletter de som ikke handler om droner — du får en rapport med tittel og begrunnelse for hver som fjernes. Rører kun status «Idé»; saker dere allerede har godkjent eller jobbet videre med, lar den stå urørt uansett.
+
 ---
 
 ## Prosjektstruktur
@@ -111,10 +117,12 @@ Krever at `supabase/schema.sql` er kjørt på nytt (v2-delen nederst i filen leg
 uas-saksbank/
 ├── public/index.html          Hele frontend — kanban, liste, saksskjema, STOPP-gate
 ├── netlify/functions/
-│   ├── rss-poll.js             Kjører hver time, henter RSS → nye saker i "Idé"
+│   ├── rss-poll.js             Kjører hver time, henter RSS → nye saker i "Idé" (relevansfiltrert)
 │   ├── add-sources.js          Masseimport av RSS-kilder (lenkeliste eller OPML)
 │   ├── ai-triage.js            AI-vurdering: kategori, hastegrad, score, sammendrag, eventkobling
-│   └── generate-manuscript.js  AI-generert .docx-manus i UAS Norways malformat
+│   ├── generate-manuscript.js  AI-generert .docx-manus i UAS Norways malformat
+│   ├── cleanup-irrelevant.js   Rydder bort ikke-dronerelevante idéer fra "Idé"
+│   └── lib/relevance.js        Delt AI-relevanssjekk (brukt av rss-poll og cleanup)
 ├── supabase/schema.sql        Databasetabeller + tilgangsregler (v1 + v2)
 ├── netlify.toml                Netlify-konfig (publish-mappe, funksjonsmappe)
 └── .env.example                Mal for lokale miljøvariabler
