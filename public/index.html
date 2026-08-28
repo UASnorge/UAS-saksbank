@@ -2324,8 +2324,26 @@
       });
   }
 
+  function readAuthErrorFromUrl() {
+    // Etter en mislykket Microsoft-innlogging (f.eks. avvist av domenesperren,
+    // eller avbrutt av brukeren) sender Supabase oss tilbake med feildetaljer
+    // i URL-en (enten som ?error=... eller #error=...) i stedet for å faktisk
+    // logge inn. Uten dette leses feilen aldri — brukeren havner da stille
+    // tilbake på innloggingssiden uten noen forklaring.
+    var raw = (window.location.search || "").replace(/^\?/, "") + "&" + (window.location.hash || "").replace(/^#/, "");
+    var params = new URLSearchParams(raw);
+    var msg = params.get("error_description") || params.get("error");
+    if (msg) {
+      history.replaceState(null, "", window.location.pathname);
+      return msg.replace(/\+/g, " ");
+    }
+    return null;
+  }
+
   async function boot() {
     if (!CONFIGURED) { renderNotConfiguredScreen(); return; }
+
+    var authError = readAuthErrorFromUrl();
 
     var sessionRes = await supabase.auth.getSession();
     state.session = sessionRes.data.session;
@@ -2333,10 +2351,10 @@
     supabase.auth.onAuthStateChange(function (_event, session) {
       state.session = session;
       if (session) { subscribeRealtime(); refreshAndRender(); }
-      else { renderLoginScreen(); }
+      else { renderLoginScreen(authError ? "Innlogging feilet: " + authError : null, authError ? "error" : null); authError = null; }
     });
 
-    if (!state.session) { renderLoginScreen(); return; }
+    if (!state.session) { renderLoginScreen(authError ? "Innlogging feilet: " + authError : null, authError ? "error" : null); return; }
 
     loadWeights();
     subscribeRealtime();
