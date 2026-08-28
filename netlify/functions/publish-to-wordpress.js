@@ -77,7 +77,10 @@ async function publishOneCase(supabase, caseId) {
     photoCredit: c.manus_foto || "",
     caption: c.manus_alt_tekst || "",
     featuredMediaId: media.id,
-    tagNames: c.kategori ? [c.kategori] : []
+    // Emnefelt (AI-foreslåtte kategori-tagger, f.eks. "FORSVAR"/"C-UAS") i
+    // tillegg til saken sitt eget kategori-felt — begge blir vanlige
+    // WP-tagger (se lib/wordpress.js), ikke egendefinerte felt.
+    tagNames: (c.kategori ? [c.kategori] : []).concat(c.manus_emnefelt || [])
   });
 
   const historikk = [{

@@ -140,11 +140,23 @@ async function uploadMedia(site, { buffer, filename, mimeType, altText, caption 
   return { id: media.id, url: media.source_url };
 }
 
+function escapeHtmlText(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Manus-avsnitt kan inneholde to markører satt av lib/manuscript.js sin
+// research-drevne generering: "## " for en mellomtittel og "> " for et
+// fremhevet sitat — tolkes her til <h3>/<blockquote> ved publisering, slik
+// at de vises riktig på selve nettsiden, ikke bare som synlig "## "-tekst.
 function paragraphsToHtml(paragraphs) {
   return (paragraphs || [])
     .map((p) => String(p || "").trim())
     .filter(Boolean)
-    .map((p) => "<p>" + p.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + "</p>")
+    .map((p) => {
+      if (p.indexOf("## ") === 0) return "<h3>" + escapeHtmlText(p.slice(3)) + "</h3>";
+      if (p.indexOf("> ") === 0) return "<blockquote>" + escapeHtmlText(p.slice(2)) + "</blockquote>";
+      return "<p>" + escapeHtmlText(p) + "</p>";
+    })
     .join("\n");
 }
 

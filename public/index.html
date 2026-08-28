@@ -517,6 +517,9 @@
       bildeforslag: row.bildeforslag || null, bildeforslagTs: row.bildeforslag_ts || "",
       kildePublisertDato: row.kilde_publisert_dato || "", manusAiNotat: row.manus_ai_notat || "",
       createdAt: row.created_at || "",
+      manusEmnefelt: row.manus_emnefelt || [], manusTitlerAlternativer: row.manus_titler_alternativer || [],
+      manusTidligereDekning: row.manus_tidligere_dekning || null, manusKilderBrukt: row.manus_kilder_brukt || [],
+      manusKontrollpunkter: row.manus_kontrollpunkter || [], manusBildeErIllustrasjon: !!row.manus_bilde_er_illustrasjon,
       isRss: (row.historikk || []).some(function (h) { return /RSS-kilde/.test(h.text || ""); })
     };
   }
@@ -1213,15 +1216,32 @@
       );
     }
 
+    var emnefeltHtml = (c.manusEmnefelt || []).length
+      ? '<div class="chip-row" style="margin-bottom:2px;">' + c.manusEmnefelt.map(function (e) { return '<span class="chip chip-site">' + escapeHtml(e) + "</span>"; }).join("") + "</div>"
+      : "";
+    var illustrasjonHtml = c.manusBildeErIllustrasjon
+      ? '<p class="helper" style="color:var(--warn,#b56);">⚠️ Illustrasjonsfoto — ikke bekreftet å vise den faktiske situasjonen saken omtaler. Bekreft bruksrett og vurder om et mer spesifikt bilde bør brukes (se Bildeforslag over).</p>'
+      : "";
+    var tidligereDekningHtml = c.manusTidligereDekning
+      ? '<div class="kildevurdering-report"><p><b>📎 Tidligere dekning funnet og verifisert:</b> ' + escapeHtml(c.manusTidligereDekning.tittel) + linkHtml(c.manusTidligereDekning.url, "↗ Åpne") + "</p></div>"
+      : "";
+    var titlerAltHtml = (c.manusTitlerAlternativer || []).length
+      ? '<p class="helper"><b>Alternative titler:</b> ' + c.manusTitlerAlternativer.map(escapeHtml).join(" · ") + "</p>"
+      : "";
+
     var fields =
+      emnefeltHtml +
       '<div class="field"><label for="c-manus-tittel">Tittel</label><input id="c-manus-tittel" data-field="manusTittel" value="' + escapeHtml(c.manusTittel) + '" /></div>' +
+      titlerAltHtml +
       '<div class="field"><label for="c-manus-ingress">Ingress</label><textarea id="c-manus-ingress" data-field="manusIngress" rows="2">' + escapeHtml(c.manusIngress) + "</textarea></div>" +
-      '<div class="field"><label for="c-manus-hovedtekst">Hovedtekst (la det stå en blank linje mellom hvert avsnitt)</label><textarea id="c-manus-hovedtekst">' + escapeHtml((c.manusHovedtekst || []).join("\n\n")) + "</textarea></div>" +
+      '<div class="field"><label for="c-manus-hovedtekst">Hovedtekst (la det stå en blank linje mellom hvert avsnitt — "## " lager en mellomtittel, "> " lager et fremhevet sitat)</label><textarea id="c-manus-hovedtekst">' + escapeHtml((c.manusHovedtekst || []).join("\n\n")) + "</textarea></div>" +
+      tidligereDekningHtml +
       '<div class="field-row">' +
         '<div class="field"><label for="c-manus-alttekst">Alt-tekst bilde</label><input id="c-manus-alttekst" data-field="manusAltTekst" value="' + escapeHtml(c.manusAltTekst) + '" /></div>' +
         '<div class="field"><label for="c-manus-foto">Fotokreditering</label><input id="c-manus-foto" data-field="manusFoto" value="' + escapeHtml(c.manusFoto) + '" /></div>' +
       "</div>" +
       '<div class="field"><label for="c-manus-bilde">Bilde-URL</label><input id="c-manus-bilde" data-field="manusBildeUrl" value="' + escapeHtml(c.manusBildeUrl) + '" /></div>' +
+      illustrasjonHtml +
       (c.manusBildeUrl ? '<img src="' + escapeHtml(c.manusBildeUrl) + '" alt="" style="max-width:100%;max-height:240px;border-radius:8px;object-fit:cover;" loading="lazy" />' : "");
 
     var aiNotat =
@@ -1229,6 +1249,31 @@
         '<textarea id="c-manus-ai-notat" rows="2" placeholder="F.eks. «gjør saken lenger», «ta med mer fra kilden om X», «bytt bilde til: https://…»">' + escapeHtml(c.manusAiNotat) + "</textarea></div>" +
       '<p class="helper">AI-en dikter aldri opp et nytt bilde selv — skal bildet byttes, lim inn den faktiske lenken i notatet. Ber du om et "annet"/"bedre" bilde uten en konkret lenke, beholdes gjeldende bilde, og du blir heller anbefalt å bruke Bildeforslag-knappen over.</p>' +
       '<button class="btn btn-primary" data-action="revise-manus" data-id="' + c.id + '"' + (state.ui.reviseBusy[c.id] ? " disabled" : "") + ">" + (state.ui.reviseBusy[c.id] ? "Oppdaterer …" : "🤖 Oppdater med AI") + "</button>";
+
+    // Kontrollseksjon — matcher redaksjonens eget malforslag: en tydelig
+    // merket "INTERNT — FJERNES FØR PUBLISERING"-boks med konkrete,
+    // saksspesifikke spørsmål, pluss den fulle kildelisten AI-en faktisk
+    // brukte (hver lenke ekte HTTP-verifisert før den vises som fungerende).
+    var kontrollHtml = "";
+    if ((c.manusKontrollpunkter || []).length || (c.manusKilderBrukt || []).length) {
+      kontrollHtml =
+        '<div class="kildevurdering-report" style="border-color:var(--warn,#b56);">' +
+          '<p><b>⚠️ INTERNT — FJERNES FØR PUBLISERING</b></p>' +
+          (c.manusKontrollpunkter.length ? (
+            "<p><b>Redaksjonell kontroll og oppfølging:</b></p><ul>" +
+              c.manusKontrollpunkter.map(function (k) { return "<li>" + escapeHtml(k) + "</li>"; }).join("") +
+            "</ul>"
+          ) : "") +
+          (c.manusKilderBrukt.length ? (
+            "<p><b>Kilder brukt i dette arbeidsutkastet:</b></p><ul>" +
+              c.manusKilderBrukt.map(function (k) {
+                return "<li><b>" + escapeHtml(k.navn) + ":</b> " + escapeHtml(k.tittel) + linkHtml(k.url, "↗ Åpne") +
+                  (k.url_virker === false ? ' <span style="color:var(--danger,#c33);">⚠️ lenke kunne ikke bekreftes</span>' : "") + "</li>";
+              }).join("") +
+            "</ul>"
+          ) : "") +
+        "</div>";
+    }
 
     return (
       '<div class="section-label">Manus</div>' +
@@ -1238,6 +1283,7 @@
           : '<div style="display:flex;justify-content:flex-end;"><button class="btn" type="button" data-action="toggle-manus-expand">⛶ Forstørre</button></div>') +
         fields +
         aiNotat +
+        kontrollHtml +
       "</div>" +
       genBtn + ' <button class="btn btn-primary" data-action="save-case">💾 Lagre manus</button>' +
       (c.manusUrl ? ' <button class="btn" data-action="download-manus" data-id="' + c.id + '" data-path="' + escapeHtml(c.manusUrl) + '">Last ned .docx</button><p class="helper">Sist generert: ' + fmtTime(c.manusGenerertTs) + "</p>" : "")
@@ -1310,6 +1356,7 @@
               '<div class="stopp-box' + (stoppReady ? " done" : "") + '">' +
                 '<div class="stopp-title">' + (stoppReady ? "✅ Kontrollert og godkjent" : "🛑 Manuell kontroll kreves før publisering") + "</div>" +
                 (c.status === "publisert" ? '<p class="helper">Godkjent av ' + escapeHtml(c.publisertAv || "—") + ".</p>" : (
+                  ((c.manusKontrollpunkter || []).length ? '<p class="helper" style="color:var(--warn,#b56);">⚠️ AI-en har ' + c.manusKontrollpunkter.length + " punkt(er) i kontrollseksjonen på manuset som bør avklares først — se «INTERNT — FJERNES FØR PUBLISERING» under Manus." : "") +
                   '<label class="checkline"><input type="checkbox" id="c-stopp-check"' + (c.stoppGodkjent ? " checked" : "") + ' /> Jeg har lest og kontrollert hele saken (tekst, kilder, bilder, bildetekster).</label>' +
                   '<div class="field"><label for="c-godkjentav">Godkjent av</label><select id="c-godkjentav"><option value=""' + (c.publisertAv ? "" : " selected") + ">Velg godkjenner</option>" +
                     APPROVERS.map(function (a) { return "<option" + (a === c.publisertAv ? " selected" : "") + ">" + escapeHtml(a) + "</option>"; }).join("") +

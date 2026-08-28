@@ -266,3 +266,43 @@ alter table cases add column if not exists kilde_publisert_dato timestamptz;
 -- netlify/functions/lib/reviseManuscript.js. Selve notatet lagres IKKE i
 -- historikken (det er en instruks, ikke en hendelse), kun siste verdi.
 alter table cases add column if not exists manus_ai_notat text default '';
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v6 — Manus som faktisk redaksjonelt arbeid, ikke bare omskriving
+-- ═══════════════════════════════════════════════════════════════════
+-- Etter tilbakemelding om at førsteutkastet kun omskrev én artikkel:
+-- generateManuscript (lib/manuscript.js) gjør nå ekte research
+-- (gpt-5-search-api) — finner og navngir kilden korrekt, søker etter
+-- primærkilder, søker Dronemagasinets eget arkiv etter tidligere dekning,
+-- og sjekker om nyere kilder oppdaterer/motsier fakta i kildeartikkelen.
+-- manus_hovedtekst (fra v3) beholder samme datatype (jsonb-liste med
+-- avsnitt-strenger) for å unngå en brytende migrering — mellomtitler
+-- markeres med et innledende "## ", sitatblokker med "> ", begge tolket av
+-- både lib/manuscript.js (docx) og lib/wordpress.js (HTML ved publisering).
+
+-- 1-3 korte emneord/kategori-tagger, f.eks. ["FORSVAR", "C-UAS"].
+alter table cases add column if not exists manus_emnefelt jsonb default '[]'::jsonb;
+
+-- To alternative titler ved siden av manus_tittel (som er den anbefalte).
+alter table cases add column if not exists manus_titler_alternativer jsonb default '[]'::jsonb;
+
+-- Egen tidligere dekning (Dronemagasinet/UAS Norway) som faktisk ble funnet
+-- OG verifisert (ekte HTTP-sjekk) — {tittel, url} — eller null om ingen
+-- relevant tidligere sak ble funnet. Vises som en egen "TIDLIGERE DEKNING"-
+-- boks i manuset.
+alter table cases add column if not exists manus_tidligere_dekning jsonb;
+
+-- ALLE kilder faktisk brukt i researchen — {navn, tittel, url} — hver URL
+-- verifisert med en ekte HTTP-forespørsel før den regnes med. Vises som en
+-- klikkbar kildeliste bakerst i utkastet, IKKE sendt til WordPress.
+alter table cases add column if not exists manus_kilder_brukt jsonb default '[]'::jsonb;
+
+-- Redaksjonell kontrollsjekkliste — konkrete, saksspesifikke åpne spørsmål
+-- AI-en selv identifiserte (aldri late som noe er avklart når det ikke er
+-- det). Vises som en tydelig merket "INTERNT — FJERNES FØR PUBLISERING"-
+-- seksjon, IKKE sendt til WordPress.
+alter table cases add column if not exists manus_kontrollpunkter jsonb default '[]'::jsonb;
+
+-- Sant hvis hovedbildet er et generisk/produsent-illustrasjonsfoto som IKKE
+-- er bekreftet å vise den faktiske, konkrete situasjonen saken omtaler.
+alter table cases add column if not exists manus_bilde_er_illustrasjon boolean default false;
