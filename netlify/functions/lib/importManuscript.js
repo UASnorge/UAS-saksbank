@@ -11,7 +11,7 @@
 
 const mammoth = require("mammoth");
 const { Document, Packer } = require("docx");
-const { generateManuscript, fetchSourceArticle, buildDocxParagraphs, callOpenAI, HOUSE_STYLE, MODEL } = require("./manuscript.js");
+const { generateManuscript, fetchSourceArticle, buildDocxParagraphs, callOpenAI, HOUSE_STYLE, MODEL, IMAGE_MARKER_RE } = require("./manuscript.js");
 
 const IMPORT_SYSTEM_PROMPT = HOUSE_STYLE + `
 
@@ -30,8 +30,62 @@ Bruk teksten som allerede står der, så ordrett som mulig.
 - kilde_url: finner du noe i teksten som tydelig er en kildehenvisning (f.eks. en URL, eller "Kilde: ..."),
   oppgi den nøyaktig. Ellers null — ikke gjett eller dikt opp en lenke.
 
+VIKTIG OM BILDER MIDT I TEKSTEN: originalteksten kan inneholde linjer i formatet "![alt-tekst](url)" — dette er
+bilder som allerede lå i det opplastede dokumentet, hentet ut og lagret automatisk. Disse skal ALLTID bli med,
+som EGNE listeelementer i hovedtekst_avsnitt, i nøyaktig samme relative posisjon i teksten som de opprinnelig
+sto (ikke flyttet til toppen eller bunnen). Kopiér "![...](...)"-linjen NØYAKTIG som den står — ikke endre URL-
+en, ikke fjern den, og dikt ALDRI opp en ny en som ikke fantes i originalteksten.
+
 Er noe uklart eller mangler (f.eks. ingen tydelig tittel eller ingress i originalen), skriv det i
 usikkerhetsnotat i stedet for å dikte opp innhold.`;
+
+// Konverterer mammoth sin HTML-output (med bilder allerede lastet opp og
+// erstattet med ekte URL-er, se extractDocxWithImages) til en enkel,
+// linjebasert tekst der overskrifter/bilder er markert med de samme
+// "## "/"![...](...)""-konvensjonene som resten av appen bruker — det AI-en
+// faktisk får som "rå tekst" å jobbe med.
+function htmlToMarkedLines(html) {
+  return html
+    .replace(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi, function (_, inner) { return "\n## " + stripTags(inner) + "\n"; })
+    .replace(/<img[^>]*\bsrc="([^"]+)"[^>]*\balt="([^"]*)"[^>]*>/gi, function (_, src, alt) { return "\n![" + alt + "](" + src + ")\n"; })
+    .replace(/<img[^>]*\balt="([^"]*)"[^>]*\bsrc="([^"]+)"[^>]*>/gi, function (_, alt, src) { return "\n![" + alt + "](" + src + ")\n"; })
+    .replace(/<img[^>]*\bsrc="([^"]+)"[^>]*>/gi, function (_, src) { return "\n![](" + src + ")\n"; })
+    .replace(/<\/p>|<\/li>|<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .split("\n").map(function (l) { return l.trim(); }).filter(Boolean).join("\n");
+}
+function stripTags(s) { return String(s || "").replace(/<[^>]+>/g, "").trim(); }
+
+// Leser et opplastet .docx og laster automatisk opp EVENTUELLE bilder som
+// allerede lå inni dokumentet til "manus"-bøtta — brukes til bilder utover
+// selve hovedbildet, midt i saken (f.eks. et bilde nummer to i et allerede
+// skrevet manus). Signerte URL-er (24 timer) i stedet for direkte
+// lagringsstier, slik at både AI-kallet og senere docx-/WordPress-bygging
+// kan hente dem med en vanlig HTTP-forespørsel, samme mønster som resten av
+// bildehåndteringen i appen.
+async function extractDocxWithImages(supabase, buffer, caseIdPrefix) {
+  var uploadedCount = 0;
+  var result = await mammoth.convertToHtml({ buffer: buffer }, {
+    convertImage: mammoth.images.imgElement(async function (image) {
+      var base64 = await image.read("base64");
+      var buf = Buffer.from(base64, "base64");
+      var ext = (image.contentType || "").indexOf("png") !== -1 ? "png" : "jpg";
+      uploadedCount++;
+      var path = caseIdPrefix + "/importert-bilde-" + uploadedCount + "-" + Date.now() + "." + ext;
+      var uploadRes = await supabase.storage.from("manus").upload(path, buf, { contentType: image.contentType || "image/jpeg", upsert: false });
+      if (uploadRes.error) return { src: "" };
+      // Ett år, ikke 24 timer — denne URL-en lagres varig i manus_hovedtekst
+      // (og kan gjenbrukes ved WordPress-publisering lenge etter opplasting),
+      // så den må ikke rekke å utløpe før noen faktisk får sett gjennom saken.
+      var signedRes = await supabase.storage.from("manus").createSignedUrl(path, 60 * 60 * 24 * 365);
+      if (signedRes.error || !signedRes.data) return { src: "" };
+      return { src: signedRes.data.signedUrl };
+    })
+  });
+  var text = htmlToMarkedLines(result.value || "");
+  return { text: text, bilderFunnet: uploadedCount };
+}
 
 const IMPORT_SCHEMA = {
   name: "manus_import",
@@ -88,19 +142,32 @@ async function createCaseFromUpload(supabase, openaiKey, storagePath, originalFi
   const arrayBuffer = await downloadRes.data.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
 
-  let extracted;
+  // Midlertidig mappeprefiks for eventuelle bilder funnet inni dokumentet —
+  // saken har ikke fått en id ennå på dette tidspunktet.
+  const tempPrefix = "importert-" + Date.now();
+  let extraction;
   try {
-    extracted = await mammoth.extractRawText({ buffer: buffer });
+    extraction = await extractDocxWithImages(supabase, buffer, tempPrefix);
   } catch (err) {
     throw new Error("Kunne ikke lese .docx-filen — er den gyldig? (" + err.message + ")");
   }
-  const rawText = (extracted.value || "").trim();
+  const rawText = (extraction.text || "").trim();
   if (rawText.length < 40) throw new Error("Fant nesten ingen tekst i den opplastede filen — er det riktig fil?");
 
-  const userPrompt = "Opplastet manusfil (\"" + (originalFilename || "ukjent filnavn") + "\"), rå tekst:\n\n" + rawText.slice(0, 12000);
+  const userPrompt = "Opplastet manusfil (\"" + (originalFilename || "ukjent filnavn") + "\"), rå tekst" +
+    (extraction.bilderFunnet ? " (inneholder " + extraction.bilderFunnet + " bilde(r), markert med ![...](...)  — behold dem)" : "") +
+    ":\n\n" + rawText.slice(0, 14000);
   const fields = await callOpenAI(openaiKey, MODEL, IMPORT_SYSTEM_PROMPT, userPrompt, IMPORT_SCHEMA);
 
-  const doc = new Document({ sections: [{ children: buildDocxParagraphs({
+  // Sjekk at AI-en faktisk beholdt like mange bildemarkører som ble funnet i
+  // originaldokumentet — stol ikke bare på at instruksen ble fulgt.
+  var keptImages = (fields.hovedtekst_avsnitt || []).filter(function (p) { return IMAGE_MARKER_RE.test(p); }).length;
+  if (extraction.bilderFunnet && keptImages < extraction.bilderFunnet) {
+    fields.usikkerhetsnotat = ((fields.usikkerhetsnotat ? fields.usikkerhetsnotat + " " : "") +
+      "OBS: " + extraction.bilderFunnet + " bilde(r) ble funnet i det opplastede dokumentet, men kun " + keptImages + " ble med i det plasserte manuset — sjekk om noe mangler.").trim();
+  }
+
+  const doc = new Document({ sections: [{ children: await buildDocxParagraphs({
     tittel: fields.tittel, ingress: fields.ingress, hovedtekst_avsnitt: fields.hovedtekst_avsnitt,
     alt_tekst_bilde: fields.alt_tekst_bilde, fotoKreditering: fields.foto_kreditering
   }, null) }] });
@@ -122,6 +189,7 @@ async function createCaseFromUpload(supabase, openaiKey, storagePath, originalFi
     historikk: [{
       ts: nowIsoStr,
       text: "Sak opprettet fra opplastet manus (" + (originalFilename || "ukjent fil") + ") — AI plasserte innholdet i malen" +
+        (extraction.bilderFunnet ? ", inkl. " + extraction.bilderFunnet + " bilde(r) fra dokumentet" : "") +
         (fields.usikkerhetsnotat ? " — ⚠️ " + fields.usikkerhetsnotat : "")
     }]
   }).select().single();
@@ -135,7 +203,7 @@ async function createCaseFromUpload(supabase, openaiKey, storagePath, originalFi
     await supabase.from("cases").update({ manus_url: path }).eq("id", caseRes.data.id);
   }
 
-  return { ok: true, caseId: caseRes.data.id, title: fields.tittel, usikkerhetsnotat: fields.usikkerhetsnotat || null };
+  return { ok: true, caseId: caseRes.data.id, title: fields.tittel, usikkerhetsnotat: fields.usikkerhetsnotat || null, bilderFunnet: extraction.bilderFunnet };
 }
 
 module.exports = { createCaseFromLink, createCaseFromUpload };

@@ -139,7 +139,11 @@ Porter fra det allerede eksisterende «WordPress Infosak Batch Administrator»-v
 3. Kjør `supabase/schema.sql` på nytt i Supabase (v3-delen nederst legger til strukturerte manusfelt + WP-kobling på `cases` — idempotent, som resten av filen).
 4. Åpne en sak med generert manus → **«🌐 Publiser til WordPress (utkast)»**. Mangler saken tittel, ingress, hovedtekst, bilde, **Stikkord**, **Kategori** eller **Byline**, stoppes den FØR noe sendes til WordPress, med en tydelig feilmelding om nøyaktig hva som mangler. Samme handling finnes som batch i verktøylinjen for valgte saker.
 
-**Stikkord, Kategori og Byline velges alltid av et menneske, aldri automatisk** — tre felt like over publiser-knappen: Stikkord (Dronemagasinet/INFO/Kommentar → WordPress-stikkord/tags) og Kategori (INFO/Dronemagasinet/Aktuelt → WordPress-kategorier/categories) er to atskilte WordPress-taksonomier, begge obligatoriske. Byline er fritekst (foreslår saken sin «Journalist»-verdi som utgangspunkt) — tidligere brukte bylines på tvers av alle saker dukker opp som forslag mens du skriver, slik at dere vanligvis kan velge i stedet for å skrive på nytt.
+**Stikkord, Kategori og Byline velges alltid av et menneske, aldri automatisk** — tre felt like over publiser-knappen. **Stikkord** (INFO eller Dronemagasinet — velg nøyaktig én) og **Kategori** (INFO/Dronemagasinet/Aktuelt — kan velge flere, avkrysningsbokser) er to atskilte WordPress-taksonomier (stikkord=tags, kategori=categories), begge obligatoriske — appen finner ALDRI på egne, ekstra stikkord (ingen AI-emnefelt eller frie kategoritekster legges lenger automatisk til). **Byline** er fritekst (foreslår saken sin «Journalist»-verdi som utgangspunkt) — tidligere brukte bylines på tvers av alle saker dukker opp som forslag mens du skriver.
+
+Ved publisering settes hovedbildet automatisk også som **«Sosialt bilde»** (Yoast SEO sin «Opptreden i sosiale medier»-fane), ikke bare som WordPress sitt vanlige hovedbilde — samme mekanisme som tittel/meta-beskrivelse allerede bruker.
+
+**Ekstra bilder midt i en sak** (utover selve hovedbildet) støttes nå også — typisk fra et opplastet manus (Steg 15) som allerede hadde bilder plassert i brødteksten. Disse markeres internt som `![alt-tekst](url)` på nøyaktig det stedet i teksten de opprinnelig lå, vises som ekte bilder i den nedlastede `.docx`-en, og lastes opp til WordPress sitt eget mediebibliotek (aldri hot-lenket til en midlertidig URL) når saken publiseres.
 
 ### Om dronemag.no bruker egendefinerte visningsfelt
 

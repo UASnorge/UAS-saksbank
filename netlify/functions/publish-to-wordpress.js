@@ -82,10 +82,10 @@ async function publishOneCase(supabase, caseId) {
     photoCredit: c.manus_foto || "",
     caption: c.manus_alt_tekst || "",
     featuredMediaId: media.id,
-    // wp_stikkord er det redaksjonen selv har valgt (Dronemagasinet/INFO/
-    // Kommentar) — sendt som WP-stikkord (tags), sammen med saken sitt eget
-    // kategori-felt og AI-foreslåtte emnefelt (f.eks. "FORSVAR"/"C-UAS").
-    tagNames: [c.wp_stikkord].concat(c.kategori ? [c.kategori] : []).concat(c.manus_emnefelt || []),
+    // wp_stikkord er det ENESTE som sendes som WP-stikkord (tags) — nøyaktig
+    // det redaksjonen selv har valgt (INFO/Dronemagasinet), ingen AI-
+    // foreslåtte eller andre automatisk utledede stikkord i tillegg.
+    tagNames: [c.wp_stikkord],
     // wp_kategori (INFO/Dronemagasinet/Aktuelt, kan være flere) er en EGEN
     // WordPress-taksonomi (categories), ikke det samme som stikkord over.
     categoryNames: c.wp_kategori

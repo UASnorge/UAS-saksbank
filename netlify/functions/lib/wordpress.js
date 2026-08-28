@@ -180,17 +180,61 @@ function escapeHtmlText(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// Manus-avsnitt kan inneholde to markører satt av lib/manuscript.js sin
-// research-drevne generering: "## " for en mellomtittel og "> " for et
-// fremhevet sitat — tolkes her til <h3>/<blockquote> ved publisering, slik
-// at de vises riktig på selve nettsiden, ikke bare som synlig "## "-tekst.
-function paragraphsToHtml(paragraphs) {
+// Samme bildemarkør-konvensjon som lib/manuscript.js (duplisert her bevisst,
+// ikke krysset inn fra manuscript.js — de to lib-modulene er ellers
+// uavhengige av hverandre): "![alt-tekst](url)" for et ekstra bilde midt i
+// saken, utover selve hovedbildet.
+const WP_IMAGE_MARKER_RE = /^!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)$/;
+
+// Laster ALLE bildemarkører i avsnittslisten opp til WordPress sitt eget
+// mediebibliotek FØR innlegget opprettes — publiserte artikler skal aldri
+// hot-linke til en ekstern/midlertidig URL (f.eks. en Supabase-signert lenke
+// som en gang utløper), samme prinsipp som hovedbildet allerede laster opp
+// via uploadMediaForSite i stedet for å lenke direkte til kildesiden.
+// Returnerer et oppslag original-URL → ekte, varig WordPress-bilde-URL.
+async function uploadInlineImages(site, paragraphs) {
+  const map = {};
+  for (const p of paragraphs || []) {
+    const m = String(p || "").trim().match(WP_IMAGE_MARKER_RE);
+    if (!m || map[m[2]]) continue;
+    const url = m[2];
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const contentType = res.headers.get("content-type") || "image/jpeg";
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const ext = contentType.indexOf("png") !== -1 ? "png" : "jpg";
+      const media = await uploadMedia(site, { buffer, filename: "bilde." + ext, mimeType: contentType, altText: m[1] || "" });
+      map[url] = media.url;
+    } catch (err) {
+      // Lenken kunne ikke hentes/lastes opp — beholder original-URL-en i
+      // HTML-en under (bedre enn å miste bildet helt), men den kan i
+      // verste fall utløpe senere. Feiler aldri hele publiseringen for dette.
+    }
+  }
+  return map;
+}
+
+// Manus-avsnitt kan inneholde tre markører: "## " for en mellomtittel, "> "
+// for et fremhevet sitat (begge satt av lib/manuscript.js sin research-
+// drevne generering), og "![alt](url)" for et ekstra bilde midt i saken
+// (f.eks. hentet fra et opplastet manus, se lib/importManuscript.js) —
+// tolkes her til <h3>/<blockquote>/<img>, med imageUrlMap brukt til å bytte
+// ut URL-en med den ekte, opplastede WordPress-bilde-URL-en.
+function paragraphsToHtml(paragraphs, imageUrlMap) {
+  imageUrlMap = imageUrlMap || {};
   return (paragraphs || [])
     .map((p) => String(p || "").trim())
     .filter(Boolean)
     .map((p) => {
       if (p.indexOf("## ") === 0) return "<h3>" + escapeHtmlText(p.slice(3)) + "</h3>";
       if (p.indexOf("> ") === 0) return "<blockquote>" + escapeHtmlText(p.slice(2)) + "</blockquote>";
+      const imgMatch = p.match(WP_IMAGE_MARKER_RE);
+      if (imgMatch) {
+        const resolvedUrl = imageUrlMap[imgMatch[2]] || imgMatch[2];
+        return '<img src="' + escapeHtmlText(resolvedUrl) + '" alt="' + escapeHtmlText(imgMatch[1] || "") + '" />' +
+          (imgMatch[1] ? '<em>' + escapeHtmlText(imgMatch[1]) + '</em>' : "");
+      }
       return "<p>" + escapeHtmlText(p) + "</p>";
     })
     .join("\n");
@@ -201,7 +245,11 @@ function paragraphsToHtml(paragraphs) {
 // kun manuelt, i WordPress selv eller i wordpress-infosak sin Oversikt-fane.
 async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, byline, photoCredit, caption, featuredMediaId, tagNames, categoryNames }) {
   const site = getSiteConfig(nettsted);
-  const contentHtml = paragraphsToHtml(hovedtekstAvsnitt);
+  // Ekstra bilder midt i saken (utover selve hovedbildet) lastes opp til
+  // WordPress sitt eget mediebibliotek FØR innholdet bygges, slik at de
+  // aldri hot-lenker til en midlertidig/ekstern URL i det publiserte innlegget.
+  const imageUrlMap = await uploadInlineImages(site, hovedtekstAvsnitt);
+  const contentHtml = paragraphsToHtml(hovedtekstAvsnitt, imageUrlMap);
   const tagIds = await resolveTagIds(site, tagNames);
   const categoryIds = await resolveCategoryIds(site, categoryNames);
 
@@ -209,6 +257,11 @@ async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, by
     "_yoast_wpseo_title": title,
     "_yoast_wpseo_metadesc": ingress || "",
   };
+  // Bruk hovedbildet som "Sosialt bilde" (Yoast SEO sin Opptreden i sosiale
+  // medier-fane) også, ikke bare som WordPress sitt vanlige hovedbilde —
+  // samme mekanisme (meta-felt) som _yoast_wpseo_title/_metadesc over, som
+  // allerede er bekreftet virkende i denne appen.
+  if (featuredMediaId) meta["_yoast_wpseo_opengraph-image-id"] = String(featuredMediaId);
   const acf = site.acfFieldKeys;
   if (acf) {
     // Egendefinerte felt styrer selve visningen på siden (bekreftet for

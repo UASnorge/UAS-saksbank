@@ -292,17 +292,43 @@ function ensureQuoteAttribution(fields, siteName) {
   return fields;
 }
 
-function paragraphFromMarkedText(text) {
-  if (text.indexOf("## ") === 0) {
-    return new Paragraph({ spacing: { before: 200 }, children: [new TextRun({ text: text.slice(3), bold: true, size: 26 })] });
-  }
-  if (text.indexOf("> ") === 0) {
-    return new Paragraph({ indent: { left: 400 }, children: [new TextRun({ text: text.slice(2), italics: true })] });
-  }
-  return new Paragraph({ children: [new TextRun({ text: text })] });
+// Bildemarkør — vanlig Markdown-bildesyntaks, "![alt-tekst](url)" — brukt for
+// EKSTRA bilder midt i en sak (utover selve hovedbildet), f.eks. funnet i et
+// opplastet manus som allerede hadde bilder plassert i brødteksten (se
+// lib/importManuscript.js). Samme prinsipp som "## "/"> ": et helt
+// avsnitts-listeelement, tolket likt av både docx-bygging (her) og
+// WordPress-publisering (lib/wordpress.js).
+var IMAGE_MARKER_RE = /^!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)$/;
+function parseImageMarker(text) {
+  var m = String(text || "").match(IMAGE_MARKER_RE);
+  return m ? { alt: m[1], url: m[2] } : null;
 }
 
-function buildDocxParagraphs(fields, image) {
+// Returnerer en LISTE med paragrafer (et vanlig avsnitt blir én, et bilde kan
+// bli to — selve bildet og en bildetekst). Async fordi et bildemarkør-avsnitt
+// må hente bildet før det kan legges inn i dokumentet.
+async function paragraphsFromMarkedText(text) {
+  if (text.indexOf("## ") === 0) {
+    return [new Paragraph({ spacing: { before: 200 }, children: [new TextRun({ text: text.slice(3), bold: true, size: 26 })] })];
+  }
+  if (text.indexOf("> ") === 0) {
+    return [new Paragraph({ indent: { left: 400 }, children: [new TextRun({ text: text.slice(2), italics: true })] })];
+  }
+  var imgMarker = parseImageMarker(text);
+  if (imgMarker) {
+    var img = await fetchImage(imgMarker.url);
+    if (img) {
+      var size = scaleToMaxWidth(img.width, img.height, 600);
+      var out = [new Paragraph({ alignment: "center", children: [new ImageRun({ type: img.type, data: img.buffer, transformation: size })] })];
+      if (imgMarker.alt) out.push(new Paragraph({ alignment: "center", children: [new TextRun({ text: imgMarker.alt, italics: true, size: 18 })] }));
+      return out;
+    }
+    return [new Paragraph({ children: [new TextRun({ text: "(Bilde ikke funnet automatisk: " + imgMarker.url + (imgMarker.alt ? " — " + imgMarker.alt : "") + ")", italics: true })] })];
+  }
+  return [new Paragraph({ children: [new TextRun({ text: text })] })];
+}
+
+async function buildDocxParagraphs(fields, image) {
   var paras = [];
   function field(label, value) {
     paras.push(new Paragraph({ children: [
@@ -330,10 +356,11 @@ function buildDocxParagraphs(fields, image) {
   field("INGRESS", fields.ingress);
 
   paras.push(new Paragraph({ children: [new TextRun({ text: "HOVEDTEKST:", bold: true })] }));
-  fields.hovedtekst_avsnitt.forEach(function (p, i) {
-    paras.push(paragraphFromMarkedText(p));
+  for (var i = 0; i < fields.hovedtekst_avsnitt.length; i++) {
+    var resolved = await paragraphsFromMarkedText(fields.hovedtekst_avsnitt[i]);
+    resolved.forEach(function (p) { paras.push(p); });
     if (i < fields.hovedtekst_avsnitt.length - 1) paras.push(new Paragraph({ children: [] }));
-  });
+  }
 
   if (fields.tidligere_dekning) {
     paras.push(new Paragraph({ children: [] }));
@@ -440,7 +467,7 @@ async function generateManuscript(supabase, openaiKey, caseId) {
   }
   fields.fotoKreditering = image && source.siteName ? source.siteName + (fields.bilde_er_illustrasjon ? " (produsentbilde/illustrasjon)" : "") : "";
 
-  const doc = new Document({ sections: [{ children: buildDocxParagraphs(fields, image) }] });
+  const doc = new Document({ sections: [{ children: await buildDocxParagraphs(fields, image) }] });
   const buffer = await Packer.toBuffer(doc);
 
   const path = c.id + "/" + Date.now() + ".docx";
@@ -504,5 +531,5 @@ async function generateManuscript(supabase, openaiKey, caseId) {
 // for å duplisere den samme, allerede testede logikken.
 module.exports = {
   generateManuscript, fetchSourceArticle, fetchImage, buildDocxParagraphs,
-  callOpenAI, scaleToMaxWidth, HOUSE_STYLE, MODEL
+  callOpenAI, scaleToMaxWidth, HOUSE_STYLE, MODEL, IMAGE_MARKER_RE, parseImageMarker
 };

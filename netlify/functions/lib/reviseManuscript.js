@@ -95,7 +95,7 @@ async function reviseManuscript(supabase, openaiKey, caseId, aiNotat) {
   }
   if (newImageUrl) image = await fetchImage(newImageUrl);
 
-  var doc = new Document({ sections: [{ children: buildDocxParagraphs({
+  var doc = new Document({ sections: [{ children: await buildDocxParagraphs({
     tittel: fields.tittel, ingress: fields.ingress, hovedtekst_avsnitt: fields.hovedtekst_avsnitt,
     alt_tekst_bilde: fields.alt_tekst_bilde, fotoKreditering: c.manus_foto || ""
   }, image) }] });
