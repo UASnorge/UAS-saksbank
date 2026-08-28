@@ -21,16 +21,21 @@ const UASNORWAY_ACF_FIELD_KEYS = {
   content: "field_58aca298266bf", // Innhold
 };
 
-// dronemag.no sine ACF-feltnøkler er IKKE bekreftet ennå (ukjent om siden i
-// det hele tatt bruker egendefinerte felt for visningen — mange WordPress-
-// temaer gjør ikke det). Sett disse seks miljøvariablene i Netlify KUN hvis
-// dronemag.no faktisk trenger dem — se README, avsnittet om flere nettsteder,
-// for fremgangsmåten (høyreklikk → Inspiser i wp-admin, se etter data-name).
-// Er de ikke satt: posten opprettes med kun WordPress sine standardfelt
-// (tittel/innhold/ingress/hovedbilde), som er en trygg standard for et tema
-// uten egendefinerte visningsfelt.
+// dronemag.no ble 28.08.2026 bekreftet av brukeren å ha et WordPress-oppsett
+// som er "helt likt" uasnorway.no sitt — bruker derfor de samme, allerede
+// bekreftede ACF-feltnøklene som standard. VIKTIG NYANSE: ACF-feltNØKLER
+// (field_xxxxx-hashene) genereres normalt unikt per WordPress-installasjon
+// selv når feltGRUPPEN er strukturelt identisk (samme feltnavn/-typer) —
+// med mindre feltgruppen faktisk ble eksportert/importert mellom sidene.
+// Default her er derfor en velbegrunnet, brukerbekreftet ANTAKELSE, ikke en
+// uavhengig verifisert nøkkel-for-nøkkel-bekreftelse. Sjekk gjerne én gang
+// ved å se om felter faktisk fylles ut riktig i dronemag.no sin wp-admin
+// etter første utkast (eller høyreklikk → Inspiser, som i README). Stemmer
+// ikke nøklene: sett de seks WP_DRONEMAG_ACF_*-miljøvariablene i Netlify for
+// å overstyre — er ÉN av dem satt, brukes det overstyrte settet i sin helhet
+// i stedet for uasnorway.no sine nøkler.
 function dronemagAcfFieldKeys() {
-  var keys = {
+  var override = {
     image: process.env.WP_DRONEMAG_ACF_IMAGE,
     imageTxt: process.env.WP_DRONEMAG_ACF_IMAGE_TXT,
     photoCredits: process.env.WP_DRONEMAG_ACF_PHOTO_CREDITS,
@@ -38,8 +43,8 @@ function dronemagAcfFieldKeys() {
     excerpt: process.env.WP_DRONEMAG_ACF_EXCERPT,
     content: process.env.WP_DRONEMAG_ACF_CONTENT,
   };
-  var anySet = Object.keys(keys).some(function (k) { return !!keys[k]; });
-  return anySet ? keys : null;
+  var anyOverrideSet = Object.keys(override).some(function (k) { return !!override[k]; });
+  return anyOverrideSet ? override : UASNORWAY_ACF_FIELD_KEYS;
 }
 
 // nettsted (saksbankens felt, "dronemag.no" | "uasnorway.no") → hvilke

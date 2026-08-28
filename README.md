@@ -141,15 +141,17 @@ Porter fra det allerede eksisterende «WordPress Infosak Batch Administrator»-v
 
 **Stikkord, Kategori og Byline velges alltid av et menneske, aldri automatisk** — tre felt like over publiser-knappen: Stikkord (Dronemagasinet/INFO/Kommentar → WordPress-stikkord/tags) og Kategori (INFO/Dronemagasinet/Aktuelt → WordPress-kategorier/categories) er to atskilte WordPress-taksonomier, begge obligatoriske. Byline er fritekst (foreslår saken sin «Journalist»-verdi som utgangspunkt) — tidligere brukte bylines på tvers av alle saker dukker opp som forslag mens du skriver, slik at dere vanligvis kan velge i stedet for å skrive på nytt.
 
-### Om dronemag.no bruker egendefinerte visningsfelt (ukjent ennå)
+### Om dronemag.no bruker egendefinerte visningsfelt
 
-uasnorway.no bruker Advanced Custom Fields (ACF) for selve visningen — det er *bekreftet*, feltnøklene ligger hardkodet i `lib/wordpress.js`. Om dronemag.no gjør det samme er **ikke bekreftet**, og jeg har bevisst ikke gjettet på feltnavn. Inntil videre opprettes dronemag.no-utkast med kun WordPress sine standardfelt (tittel/innhold/ingress/hovedbilde) — trygt, men saken vises kanskje ikke helt likt som en manuelt lagt inn sak om temaet faktisk bruker egendefinerte felt der.
+uasnorway.no bruker Advanced Custom Fields (ACF) for selve visningen — det er *bekreftet*, feltnøklene ligger hardkodet i `lib/wordpress.js`. Brukeren bekreftet 28.08.2026 at dronemag.no sitt WordPress-oppsett er «helt likt» uasnorway.no sitt — appen bruker derfor nå **de samme ACF-feltnøklene som standard for dronemag.no også**, i stedet for kun WordPress sine standardfelt som før.
 
-Slik sjekker dere det:
+**Én nyanse verdt å vite:** ACF-feltNØKLER (de kryptiske `field_xxxxx`-verdiene) genereres normalt unikt per WordPress-installasjon selv når selve feltGRUPPEN er strukturelt identisk — med mindre feltgruppen faktisk ble eksportert/importert mellom sidene. Dette er derfor en velbegrunnet, brukerbekreftet antakelse, ikke en uavhengig nøkkel-for-nøkkel-verifisering. Verdt å sjekke én gang: se om feltene faktisk fylles ut riktig i dronemag.no sin wp-admin etter første WordPress-utkast fra saksbanken.
+
+Stemmer det ikke, kan dere overstyre med egne nøkler:
 1. Åpne et eksisterende innlegg i dronemag.no sin wp-admin
 2. Høyreklikk på hvert visningsfelt (Bilde, Bildetekst, Foto, Byline, Ingress, Innhold) → **«Inspiser»** i nettleseren
 3. Se etter `data-name`-attributtet på elementet (samme fremgangsmåte som ble brukt for å finne uasnorway.no sine feltnavn)
-4. Finner dere egendefinerte felt: fyll inn de seks `WP_DRONEMAG_ACF_*`-miljøvariablene i `.env.example` med riktige feltnøkler → trigger ny deploy. Finner dere ingen: ikke gjør noe, standardfeltene fungerer fint som de er.
+4. Fyll inn de seks `WP_DRONEMAG_ACF_*`-miljøvariablene i Netlify med de riktige feltnøklene → trigger ny deploy. Er ÉN av dem satt, overstyres standarden fra uasnorway.no i sin helhet.
 
 **Ufravikelig grense, samme som ellers i appen:** oppretter alltid status `draft` i WordPress — aldri `publish`, uansett hvilket av de to nettstedene. Selve publiseringen skjer fortsatt manuelt, enten direkte i WordPress eller i Oversikt-fanen i wordpress-infosak-verktøyet, med et menneske som faktisk har lest gjennom saken. Dette er en egen, separat kontroll fra saksbankens interne STOPP-regel for status «Publisert» — de erstatter ikke hverandre.
 
