@@ -4,12 +4,17 @@
   "private": true,
   "description": "Delt redaksjonell saksbank for UAS Norway / Dronemagasinet, med automatisk RSS-innhenting.",
   "scripts": {
-    "dev": "netlify dev"
+    "dev": "netlify dev",
+    "db:migrate": "node scripts/run-schema.js"
   },
   "dependencies": {
     "@netlify/functions": "^2.8.1",
     "@supabase/supabase-js": "^2.45.4",
-    "rss-parser": "^3.13.0",
-    "docx": "^9.7.1"
+    "docx": "^9.7.1",
+    "rss-parser": "^3.13.0"
+  },
+  "devDependencies": {
+    "dotenv": "^17.4.2",
+    "pg": "^8.23.0"
   }
 }

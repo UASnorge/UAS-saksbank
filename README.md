@@ -6,7 +6,11 @@ Delt redaksjonell saksbank med automatisk RSS-innhenting, AI-drevet triage/kilde
 
 **Fortsatt ikke koblet på:** Mailchimp-sending, Doffin, automatisk eventkalender-synk (events.uasnorway.no har intet åpent API — se `events`-tabellen), omtaleovervåkning.
 
-**⚠️ Husk etter hver oppdatering:** kjør hele `supabase/schema.sql` på nytt i Supabase sin SQL Editor (Project → SQL Editor → lim inn hele filen → Run). Den er skrevet for å alltid være trygg å kjøre i sin helhet på nytt — den legger kun til det som mangler, sletter eller endrer aldri eksisterende data. Nyeste versjoner er v5 (forenklet statusflyt, `kilde_publisert_dato`) og v6 (research-felt på manus: emnefelt, tidligere dekning, kilder brukt, kontrollpunkter).
+**⚠️ Husk etter hver oppdatering:** kjør hele `supabase/schema.sql` på nytt. Den er skrevet for å alltid være trygg å kjøre i sin helhet på nytt — den legger kun til det som mangler, sletter eller endrer aldri eksisterende data. Nyeste versjoner er v5 (forenklet statusflyt, `kilde_publisert_dato`) og v6 (research-felt på manus: emnefelt, tidligere dekning, kilder brukt, kontrollpunkter).
+
+To måter å gjøre dette på:
+- **Manuelt** (ingen oppsett): Supabase → SQL Editor → lim inn hele filen → Run.
+- **Automatisk** (`npm run db:migrate`): kjører `scripts/run-schema.js` direkte mot databasen — krever `SUPABASE_DB_URL` i en lokal `.env`-fil (se `.env.example` for hvor du finner tilkoblingsstrengen). Filen er aldri committet til git.
 
 ---
 
