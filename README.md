@@ -200,6 +200,15 @@ Ingen ny miljøvariabel — bruker samme `OPENAI_API_KEY` og `manus`-lagringsbok
 
 ---
 
+## Steg 16 — Kun @uasnorway.no kan logge inn
+
+`supabase/schema.sql` (v9-delen) oppretter en Postgres-funksjon, `public.restrict_signup_by_email_domain`, som avviser innlogging fra alt annet enn `@uasnorway.no`. Selve funksjonen gjør ingenting før den kobles inn som Auth Hook — det kan ikke gjøres via SQL, kun i dashbordet:
+
+1. **Authentication → Auth Hooks** i Supabase-dashbordet.
+2. Finn **«Before user created»** → velg **Postgres function** → velg `public.restrict_signup_by_email_domain` → **Save**.
+
+Rammer kun *nye* brukere (en e-post som ikke finnes i `auth.users` fra før) — allerede innloggede team-medlemmer påvirkes ikke. Skal flere domener slippe gjennom (f.eks. dronemag.no), utvid `allowed_domains`-listen i funksjonen (i `schema.sql`) og kjør `npm run db:migrate` på nytt.
+
 ## Prosjektstruktur
 
 ```

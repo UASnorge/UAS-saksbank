@@ -346,3 +346,48 @@ begin
     alter table cases alter column wp_kategori set default '[]'::jsonb;
   end if;
 end $$;
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v9 — Kun @uasnorway.no kan logge inn (Auth Hook: "Before user created")
+-- ═══════════════════════════════════════════════════════════════════
+-- Funksjonen selv gjør ingenting før den er koblet inn i Supabase sitt
+-- Auth Hook-system (KAN IKKE gjøres via SQL, kun i dashbordet — se README):
+-- Authentication → Auth Hooks → "Before user created" → Postgres function →
+-- velg public.restrict_signup_by_email_domain → Save.
+--
+-- Rammer KUN nye brukere (magic link til en e-post som ikke finnes i
+-- auth.users fra før) — eksisterende innloggede brukere påvirkes ikke.
+-- ALLOWED_DOMAINS under styrer hvilke domener som slipper gjennom; utvid
+-- listen direkte i koden under ved behov (f.eks. dronemag.no).
+create or replace function public.restrict_signup_by_email_domain(event jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  allowed_domains text[] := array['uasnorway.no'];
+  email text;
+  domain text;
+begin
+  email := lower(coalesce(event->'user'->>'email', ''));
+  domain := split_part(email, '@', 2);
+
+  if domain = any(allowed_domains) then
+    return '{}'::jsonb;
+  end if;
+
+  return jsonb_build_object(
+    'error', jsonb_build_object(
+      'message', 'Kun e-post fra @uasnorway.no kan logge inn i denne saksbanken.',
+      'http_code', 403
+    )
+  );
+end;
+$$;
+
+grant execute
+  on function public.restrict_signup_by_email_domain
+  to supabase_auth_admin;
+
+revoke execute
+  on function public.restrict_signup_by_email_domain
+  from authenticated, anon, public;
