@@ -452,6 +452,11 @@
   ];
   var SIDE_STATUSES = { arkivert: "Arkivert", avvist: "Avvist" };
   var TYPE_LABELS = { redaksjonell: "Dronemagasin", content: "INFO", ai: "Kommentar" };
+  // WordPress-stikkord (tags) og -kategori (categories) ved publisering —
+  // to atskilte WP-taksonomier, valgt av redaksjonen selv per sak, aldri
+  // utledet stille fra andre felt. Se lib/wordpress.js.
+  var WP_STIKKORD_OPTIONS = ["Dronemagasinet", "INFO", "Kommentar"];
+  var WP_KATEGORI_OPTIONS = ["INFO", "Dronemagasinet", "Aktuelt"];
   var URGENCY_LABELS = { akutt: "Akutt", planlagt: "Planlagt", tidlos: "Tidløs" };
   var SITES = ["dronemag.no", "uasnorway.no"];
   var SITE_LABELS = { "dronemag.no": "DRONEMAGASINET", "uasnorway.no": "UAS NORWAY" };
@@ -520,6 +525,7 @@
       manusEmnefelt: row.manus_emnefelt || [], manusTitlerAlternativer: row.manus_titler_alternativer || [],
       manusTidligereDekning: row.manus_tidligere_dekning || null, manusKilderBrukt: row.manus_kilder_brukt || [],
       manusKontrollpunkter: row.manus_kontrollpunkter || [], manusBildeErIllustrasjon: !!row.manus_bilde_er_illustrasjon,
+      wpStikkord: row.wp_stikkord || "", wpKategori: row.wp_kategori || "", wpByline: row.wp_byline || "",
       isRss: (row.historikk || []).some(function (h) { return /RSS-kilde/.test(h.text || ""); })
     };
   }
@@ -536,7 +542,8 @@
       // lagrer direkte manus-redigering, ikke bare AI-generering/-revisjon.
       manus_tittel: c.manusTittel, manus_ingress: c.manusIngress, manus_hovedtekst: c.manusHovedtekst,
       manus_alt_tekst: c.manusAltTekst, manus_bilde_url: c.manusBildeUrl, manus_foto: c.manusFoto,
-      manus_ai_notat: c.manusAiNotat
+      manus_ai_notat: c.manusAiNotat,
+      wp_stikkord: c.wpStikkord, wp_kategori: c.wpKategori, wp_byline: c.wpByline
     };
   }
 
@@ -606,6 +613,16 @@
     return "var(--slate-fg)";
   }
   function getCase(id) { return state.cases.filter(function (c) { return c.id === id; })[0]; }
+
+  // Tidligere brukte WordPress-bylines på tvers av ALLE saker — vist som
+  // forslag (<datalist>) i stedet for en fast liste, siden byline med vilje
+  // er fritekst ("kan også være Redaksjonen, KI, Erfan ... — greit å skrive
+  // selv, og det som er skrevet en gang skal kunne velges senere").
+  function bylineHistory() {
+    var seen = {};
+    state.cases.forEach(function (c) { if (c.wpByline && c.wpByline.trim()) seen[c.wpByline.trim()] = true; });
+    return Object.keys(seen).sort(function (a, b) { return a.localeCompare(b, "nb"); });
+  }
 
   /* ---------- Supabase I/O ---------- */
 
@@ -1401,6 +1418,18 @@
               (
                 '<div class="section-label" style="border-top:none;padding-top:0;">Publiser til WordPress</div>' +
                 (c.status === "wp-utkast" && !c.wpPostId ? '<p class="helper" style="color:var(--danger,#c33);">⚠️ Saken står som «WP-utkast opprettet», men det finnes ikke noe faktisk utkast i WordPress ennå (sannsynligvis flyttet hit manuelt, f.eks. med dra-og-slipp, i stedet for via knappen under). Trykk knappen for å faktisk opprette det — eller generer manus først om saken ikke har det ennå.</p>' : "") +
+                '<div class="field-row">' +
+                  '<div class="field"><label for="wp-stikkord">Stikkord</label><select id="wp-stikkord" data-field="wpStikkord"><option value=""' + (c.wpStikkord ? "" : " selected") + ">Velg stikkord</option>" +
+                    WP_STIKKORD_OPTIONS.map(function (o) { return '<option value="' + escapeHtml(o) + '"' + (o === c.wpStikkord ? " selected" : "") + ">" + escapeHtml(o) + "</option>"; }).join("") +
+                  "</select></div>" +
+                  '<div class="field"><label for="wp-kategori">Kategori</label><select id="wp-kategori" data-field="wpKategori"><option value=""' + (c.wpKategori ? "" : " selected") + ">Velg kategori</option>" +
+                    WP_KATEGORI_OPTIONS.map(function (o) { return '<option value="' + escapeHtml(o) + '"' + (o === c.wpKategori ? " selected" : "") + ">" + escapeHtml(o) + "</option>"; }).join("") +
+                  "</select></div>" +
+                "</div>" +
+                '<div class="field"><label for="wp-byline">Byline</label><input id="wp-byline" data-field="wpByline" list="wp-byline-list" value="' + escapeHtml(c.wpByline || (c.eier !== "Ikke tildelt" ? c.eier : "")) + '" placeholder="F.eks. Redaksjonen, KI, eller et navn" />' +
+                  '<datalist id="wp-byline-list">' + bylineHistory().map(function (b) { return '<option value="' + escapeHtml(b) + '">'; }).join("") + "</datalist>" +
+                "</div>" +
+                '<p class="helper">Stikkord og kategori må velges av redaksjonen — ingen av dem utledes automatisk. Byline er fritekst; tidligere brukte navn foreslås mens du skriver.</p>' +
                 '<p class="helper">Oppretter et UTKAST på ' + escapeHtml(c.nettsted) + ' (aldri publisert direkte) — kontroller alltid saken i WordPress før dere trykker Publiser der.</p>' +
                 '<button class="btn' + (c.wpPostId ? "" : " btn-primary") + '" data-action="publish-wordpress" data-id="' + c.id + '"' + (state.ui.wpBusy[c.id] ? " disabled" : "") + ">" + (state.ui.wpBusy[c.id] ? "Sender til WordPress …" : (c.wpPostId ? "Send oppdatert utkast på nytt" : "🌐 Publiser til WordPress (utkast)")) + "</button>" +
                 (c.wpPostId ? ' <a class="btn" href="' + escapeHtml(c.wpEditLink) + '" target="_blank" rel="noopener noreferrer">Åpne i WordPress ↗</a><p class="helper">WordPress-utkast #' + c.wpPostId + "</p>" : "")
@@ -1863,6 +1892,14 @@
   }
 
   async function publishToWordPress(id) {
+    // Lagre alt som står i skjemaet (særlig stikkord/kategori/byline, som
+    // kun redigeres her og ellers aldri ville blitt lagret) FØR selve
+    // publiseringskallet — som leser saken fra databasen, ikke fra skjermen.
+    var formCase = readCaseForm();
+    if (formCase) {
+      var saved = await updateCase(formCase.id, caseToDbUpdate(formCase));
+      if (!saved) return; // updateCase har allerede vist en feilmelding
+    }
     state.ui.wpBusy[id] = true;
     render();
     try {

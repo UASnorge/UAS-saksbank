@@ -32,12 +32,18 @@ function getSupabaseForUser(token) {
 // Samme feltkrav som malen ("Mal-opplasting-av-saker.docx") og det
 // eksisterende WordPress-verktøyet stiller: TITTEL, INGRESS, HOVEDTEKST og
 // minst ett bilde er obligatorisk. FOTO (fotokreditering) er valgfritt.
+// Stikkord/kategori/byline er, etter tilbakemelding, ALDRI noe som skal
+// utledes stille — redaksjonen velger dem selv per sak, og publisering
+// stoppes her (samme prinsipp som manus-feltene) om noen av dem mangler.
 function findMissingFields(c) {
   const missing = [];
   if (!((c.manus_tittel || c.title || "").trim())) missing.push("Tittel");
   if (!((c.manus_ingress || "").trim())) missing.push("Ingress");
   if (!(Array.isArray(c.manus_hovedtekst) && c.manus_hovedtekst.some((p) => (p || "").trim()))) missing.push("Hovedtekst");
   if (!((c.manus_bilde_url || "").trim())) missing.push("Bilde");
+  if (!((c.wp_stikkord || "").trim())) missing.push("Stikkord");
+  if (!((c.wp_kategori || "").trim())) missing.push("Kategori");
+  if (!((c.wp_byline || "").trim())) missing.push("Byline");
   return missing;
 }
 
@@ -68,19 +74,21 @@ async function publishOneCase(supabase, caseId) {
     altText: c.manus_alt_tekst || "", caption: c.manus_alt_tekst || ""
   });
 
-  const byline = c.eier && c.eier !== "Ikke tildelt" ? c.eier : "";
   const post = await createDraftPost(c.nettsted, {
     title: c.manus_tittel || c.title,
     ingress: c.manus_ingress,
     hovedtekstAvsnitt: c.manus_hovedtekst,
-    byline: byline,
+    byline: c.wp_byline,
     photoCredit: c.manus_foto || "",
     caption: c.manus_alt_tekst || "",
     featuredMediaId: media.id,
-    // Emnefelt (AI-foreslåtte kategori-tagger, f.eks. "FORSVAR"/"C-UAS") i
-    // tillegg til saken sitt eget kategori-felt — begge blir vanlige
-    // WP-tagger (se lib/wordpress.js), ikke egendefinerte felt.
-    tagNames: (c.kategori ? [c.kategori] : []).concat(c.manus_emnefelt || [])
+    // wp_stikkord er det redaksjonen selv har valgt (Dronemagasinet/INFO/
+    // Kommentar) — sendt som WP-stikkord (tags), sammen med saken sitt eget
+    // kategori-felt og AI-foreslåtte emnefelt (f.eks. "FORSVAR"/"C-UAS").
+    tagNames: [c.wp_stikkord].concat(c.kategori ? [c.kategori] : []).concat(c.manus_emnefelt || []),
+    // wp_kategori (INFO/Dronemagasinet/Aktuelt) er en EGEN WordPress-
+    // taksonomi (categories), ikke det samme som stikkord over.
+    categoryNames: [c.wp_kategori]
   });
 
   const historikk = [{

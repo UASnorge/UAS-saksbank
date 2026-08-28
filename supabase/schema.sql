@@ -306,3 +306,21 @@ alter table cases add column if not exists manus_kontrollpunkter jsonb default '
 -- Sant hvis hovedbildet er et generisk/produsent-illustrasjonsfoto som IKKE
 -- er bekreftet å vise den faktiske, konkrete situasjonen saken omtaler.
 alter table cases add column if not exists manus_bilde_er_illustrasjon boolean default false;
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v7 — Stikkord/kategori/byline må velges manuelt før WordPress-publisering
+-- ═══════════════════════════════════════════════════════════════════
+-- Etter tilbakemelding: dette skal ALDRI utledes stille fra andre felt —
+-- redaksjonen velger dem selv, per sak, rett før "Publiser til WordPress".
+
+-- WordPress-STIKKORD (tags) — fast liste: "Dronemagasinet" | "INFO" | "Kommentar".
+alter table cases add column if not exists wp_stikkord text default '';
+
+-- WordPress-KATEGORI (categories) — fast liste: "INFO" | "Dronemagasinet" | "Aktuelt".
+alter table cases add column if not exists wp_kategori text default '';
+
+-- Byline til WordPress-utkastet — fritekst (IKKE en fast liste), men
+-- frontend viser tidligere brukte verdier på tvers av alle saker som
+-- forslag (HTML <datalist>), slik at man vanligvis kan velge i stedet for
+-- å skrive på nytt hver gang.
+alter table cases add column if not exists wp_byline text default '';

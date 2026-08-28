@@ -137,7 +137,9 @@ Porter fra det allerede eksisterende «WordPress Infosak Batch Administrator»-v
 
    → trigger ny deploy etterpå.
 3. Kjør `supabase/schema.sql` på nytt i Supabase (v3-delen nederst legger til strukturerte manusfelt + WP-kobling på `cases` — idempotent, som resten av filen).
-4. Åpne en sak med generert manus → **«🌐 Publiser til WordPress (utkast)»**. Mangler saken tittel, ingress, hovedtekst eller bilde, stoppes den FØR noe sendes til WordPress, med en tydelig feilmelding om nøyaktig hva som mangler. Samme handling finnes som batch i verktøylinjen for valgte saker.
+4. Åpne en sak med generert manus → **«🌐 Publiser til WordPress (utkast)»**. Mangler saken tittel, ingress, hovedtekst, bilde, **Stikkord**, **Kategori** eller **Byline**, stoppes den FØR noe sendes til WordPress, med en tydelig feilmelding om nøyaktig hva som mangler. Samme handling finnes som batch i verktøylinjen for valgte saker.
+
+**Stikkord, Kategori og Byline velges alltid av et menneske, aldri automatisk** — tre felt like over publiser-knappen: Stikkord (Dronemagasinet/INFO/Kommentar → WordPress-stikkord/tags) og Kategori (INFO/Dronemagasinet/Aktuelt → WordPress-kategorier/categories) er to atskilte WordPress-taksonomier, begge obligatoriske. Byline er fritekst (foreslår saken sin «Journalist»-verdi som utgangspunkt) — tidligere brukte bylines på tvers av alle saker dukker opp som forslag mens du skriver, slik at dere vanligvis kan velge i stedet for å skrive på nytt.
 
 ### Om dronemag.no bruker egendefinerte visningsfelt (ukjent ennå)
 

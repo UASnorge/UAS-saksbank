@@ -118,6 +118,37 @@ async function resolveTagIds(site, names) {
   return ids;
 }
 
+// Kategorier (WordPress sin egen, innebygde "categories"-taksonomi) — samme
+// mønster som stikkord/tags over, men en egen endepunkt/taksonomi i WP.
+// Redaksjonen velger denne selv per sak, aldri utledet stille fra noe annet.
+async function getCategories(site, search) {
+  const q = search ? `&search=${encodeURIComponent(search)}` : "";
+  return wpFetch(site, `/wp/v2/categories?per_page=100${q}&_fields=id,name,slug`);
+}
+
+async function findOrCreateCategory(site, name) {
+  const clean = (name || "").trim();
+  if (!clean) return null;
+  const found = await getCategories(site, clean);
+  const exact = found.find((c) => c.name.toLowerCase() === clean.toLowerCase());
+  if (exact) return exact.id;
+  const created = await wpFetch(site, "/wp/v2/categories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: clean }),
+  });
+  return created.id;
+}
+
+async function resolveCategoryIds(site, names) {
+  const ids = [];
+  for (const name of names || []) {
+    const id = await findOrCreateCategory(site, name);
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
 async function uploadMedia(site, { buffer, filename, mimeType, altText, caption }) {
   const media = await wpFetch(site, "/wp/v2/media", {
     method: "POST",
@@ -163,10 +194,11 @@ function paragraphsToHtml(paragraphs) {
 // Oppretter et WordPress-innlegg på det gitte nettstedet. status er ALLTID
 // "draft" — ingen kallere i denne appen sender noe annet. Publisering skjer
 // kun manuelt, i WordPress selv eller i wordpress-infosak sin Oversikt-fane.
-async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, byline, photoCredit, caption, featuredMediaId, tagNames }) {
+async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, byline, photoCredit, caption, featuredMediaId, tagNames, categoryNames }) {
   const site = getSiteConfig(nettsted);
   const contentHtml = paragraphsToHtml(hovedtekstAvsnitt);
   const tagIds = await resolveTagIds(site, tagNames);
+  const categoryIds = await resolveCategoryIds(site, categoryNames);
 
   const meta = {
     "_yoast_wpseo_title": title,
@@ -193,6 +225,7 @@ async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, by
       excerpt: ingress || "",
       status: "draft",
       tags: tagIds,
+      categories: categoryIds.length ? categoryIds : undefined,
       featured_media: featuredMediaId || undefined,
       meta,
     }),
