@@ -1,10 +1,12 @@
 # UAS Norway — Saksbank
 
-Delt redaksjonell saksbank med automatisk RSS-innhenting. Statisk frontend (ingen build-steg) + Netlify-funksjon som poller RSS-kilder + Supabase som delt database og innlogging.
+Delt redaksjonell saksbank med automatisk RSS-innhenting, AI-drevet triage/kildekontroll/manus, og WordPress-publisering. Statisk frontend (ingen build-steg) + Netlify-funksjoner + Supabase som delt database og innlogging.
 
-**Nå koblet på og verifisert:** RSS-innhenting (delt saksbank, live innlogging), massimport av RSS-kilder, og AI-vurdering + AI-generert manus via OpenAI. AI-delene er testet direkte mot den ekte OpenAI-API-en (strukturert JSON-svar) og docx-strukturen er verifisert til å matche malen "WordPress Infosak Batch Administrator" nøyaktig (feltrekkefølge, bilde rett under BILDE:-linjen, tom linje mellom avsnitt).
+**Arbeidsflyt:** Idé → Godkjente idéer → I arbeid (manus genereres/redigeres/AI-revideres her) → WP-utkast opprettet (ekte WordPress-utkast) → Publisert (STOPP-kontroll). Relevans- og kildekontroll skjer automatisk FØR en RSS-sak i det hele tatt blir en idé; AI-vurdering kjøres automatisk ved innhenting; saker eldre enn 2 måneder arkiveres automatisk. Se Steg 9-15 under for detaljene.
 
-**Fortsatt ikke koblet på:** selve WordPress-opplastingen (skjer i det eksisterende Infosak-verktøyet, dere laster opp `.docx`-en dit selv), Mailchimp-sending, Doffin, eventkalender-synk (events.uasnorway.no har intet åpent API — se `events`-tabellen), omtaleovervåkning. Se banneret "Om piloten" i selve verktøyet for full status.
+**Fortsatt ikke koblet på:** Mailchimp-sending, Doffin, automatisk eventkalender-synk (events.uasnorway.no har intet åpent API — se `events`-tabellen), omtaleovervåkning.
+
+**⚠️ Husk etter hver oppdatering:** kjør hele `supabase/schema.sql` på nytt i Supabase sin SQL Editor (Project → SQL Editor → lim inn hele filen → Run). Den er skrevet for å alltid være trygg å kjøre i sin helhet på nytt — den legger kun til det som mangler, sletter eller endrer aldri eksisterende data. Nyeste versjoner er v5 (forenklet statusflyt, `kilde_publisert_dato`) og v6 (research-felt på manus: emnefelt, tidligere dekning, kilder brukt, kontrollpunkter).
 
 ---
 
