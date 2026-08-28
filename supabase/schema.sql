@@ -324,3 +324,25 @@ alter table cases add column if not exists wp_kategori text default '';
 -- forslag (HTML <datalist>), slik at man vanligvis kan velge i stedet for
 -- å skrive på nytt hver gang.
 alter table cases add column if not exists wp_byline text default '';
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v8 — Kategori: kan velge FLERE, ikke bare én
+-- ═══════════════════════════════════════════════════════════════════
+-- wp_kategori var opprinnelig én enkelt tekststreng — gjøres om til en
+-- jsonb-liste (samme mønster som manus_emnefelt/manus_kilder_brukt), siden
+-- en sak kan tilhøre flere WordPress-kategorier samtidig. Migreringen kjøres
+-- KUN når kolonnen faktisk fortsatt er tekst (ikke idempotent i seg selv —
+-- wrappet i en betinget sjekk, samme mønster som andre ikke-additive
+-- endringer lenger opp i denne filen), slik at hele filen fortsatt trygt kan
+-- kjøres på nytt.
+do $$
+begin
+  if (select data_type from information_schema.columns where table_name = 'cases' and column_name = 'wp_kategori') = 'text' then
+    alter table cases alter column wp_kategori drop default;
+    alter table cases alter column wp_kategori type jsonb using (
+      case when wp_kategori is null or wp_kategori = '' then '[]'::jsonb
+           else jsonb_build_array(wp_kategori) end
+    );
+    alter table cases alter column wp_kategori set default '[]'::jsonb;
+  end if;
+end $$;

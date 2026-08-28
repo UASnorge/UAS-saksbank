@@ -42,7 +42,7 @@ function findMissingFields(c) {
   if (!(Array.isArray(c.manus_hovedtekst) && c.manus_hovedtekst.some((p) => (p || "").trim()))) missing.push("Hovedtekst");
   if (!((c.manus_bilde_url || "").trim())) missing.push("Bilde");
   if (!((c.wp_stikkord || "").trim())) missing.push("Stikkord");
-  if (!((c.wp_kategori || "").trim())) missing.push("Kategori");
+  if (!(Array.isArray(c.wp_kategori) && c.wp_kategori.length)) missing.push("Kategori");
   if (!((c.wp_byline || "").trim())) missing.push("Byline");
   return missing;
 }
@@ -86,9 +86,9 @@ async function publishOneCase(supabase, caseId) {
     // Kommentar) — sendt som WP-stikkord (tags), sammen med saken sitt eget
     // kategori-felt og AI-foreslåtte emnefelt (f.eks. "FORSVAR"/"C-UAS").
     tagNames: [c.wp_stikkord].concat(c.kategori ? [c.kategori] : []).concat(c.manus_emnefelt || []),
-    // wp_kategori (INFO/Dronemagasinet/Aktuelt) er en EGEN WordPress-
-    // taksonomi (categories), ikke det samme som stikkord over.
-    categoryNames: [c.wp_kategori]
+    // wp_kategori (INFO/Dronemagasinet/Aktuelt, kan være flere) er en EGEN
+    // WordPress-taksonomi (categories), ikke det samme som stikkord over.
+    categoryNames: c.wp_kategori
   });
 
   const historikk = [{

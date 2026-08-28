@@ -525,7 +525,7 @@
       manusEmnefelt: row.manus_emnefelt || [], manusTitlerAlternativer: row.manus_titler_alternativer || [],
       manusTidligereDekning: row.manus_tidligere_dekning || null, manusKilderBrukt: row.manus_kilder_brukt || [],
       manusKontrollpunkter: row.manus_kontrollpunkter || [], manusBildeErIllustrasjon: !!row.manus_bilde_er_illustrasjon,
-      wpStikkord: row.wp_stikkord || "", wpKategori: row.wp_kategori || "", wpByline: row.wp_byline || "",
+      wpStikkord: row.wp_stikkord || "", wpKategori: row.wp_kategori || [], wpByline: row.wp_byline || "",
       isRss: (row.historikk || []).some(function (h) { return /RSS-kilde/.test(h.text || ""); })
     };
   }
@@ -1422,9 +1422,11 @@
                   '<div class="field"><label for="wp-stikkord">Stikkord</label><select id="wp-stikkord" data-field="wpStikkord"><option value=""' + (c.wpStikkord ? "" : " selected") + ">Velg stikkord</option>" +
                     WP_STIKKORD_OPTIONS.map(function (o) { return '<option value="' + escapeHtml(o) + '"' + (o === c.wpStikkord ? " selected" : "") + ">" + escapeHtml(o) + "</option>"; }).join("") +
                   "</select></div>" +
-                  '<div class="field"><label for="wp-kategori">Kategori</label><select id="wp-kategori" data-field="wpKategori"><option value=""' + (c.wpKategori ? "" : " selected") + ">Velg kategori</option>" +
-                    WP_KATEGORI_OPTIONS.map(function (o) { return '<option value="' + escapeHtml(o) + '"' + (o === c.wpKategori ? " selected" : "") + ">" + escapeHtml(o) + "</option>"; }).join("") +
-                  "</select></div>" +
+                  '<div class="field"><label>Kategori (kan velge flere)</label><div style="display:flex;gap:14px;flex-wrap:wrap;padding-top:9px;">' +
+                    WP_KATEGORI_OPTIONS.map(function (o) {
+                      return '<label class="checkline"><input type="checkbox" class="wp-kategori-check" value="' + escapeHtml(o) + '"' + ((c.wpKategori || []).indexOf(o) !== -1 ? " checked" : "") + " /> " + escapeHtml(o) + "</label>";
+                    }).join("") +
+                  "</div></div>" +
                 "</div>" +
                 '<div class="field"><label for="wp-byline">Byline</label><input id="wp-byline" data-field="wpByline" list="wp-byline-list" value="' + escapeHtml(c.wpByline || (c.eier !== "Ikke tildelt" ? c.eier : "")) + '" placeholder="F.eks. Redaksjonen, KI, eller et navn" />' +
                   '<datalist id="wp-byline-list">' + bylineHistory().map(function (b) { return '<option value="' + escapeHtml(b) + '">'; }).join("") + "</datalist>" +
@@ -1783,6 +1785,12 @@
     }
     var aiNotatEl = document.getElementById("c-manus-ai-notat");
     if (aiNotatEl) c.manusAiNotat = aiNotatEl.value;
+    // Kategori: flere avkrysningsbokser, ikke ett data-field-element — samles
+    // til en liste med de som faktisk er avkrysset.
+    var kategoriChecks = root.querySelectorAll(".wp-kategori-check");
+    if (kategoriChecks.length) {
+      c.wpKategori = Array.prototype.filter.call(kategoriChecks, function (el) { return el.checked; }).map(function (el) { return el.value; });
+    }
     return c;
   }
 
