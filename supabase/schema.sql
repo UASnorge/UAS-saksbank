@@ -7,7 +7,7 @@ create table if not exists cases (
   title text not null default '',
   sakstype text not null default 'redaksjonell',        -- redaksjonell (vises: "Dronemagasin") | content (vises: "INFO") | ai (vises: "Kommentar")
   hastegrad text not null default 'planlagt',            -- akutt | planlagt | tidlos
-  status text not null default 'ide',                    -- ide | godkjent | i-arbeid | utkast-klart | wp-utkast | publisert | arkivert | avvist
+  status text not null default 'ide',                    -- ide | godkjent | i-arbeid | wp-utkast | publisert | arkivert | avvist
   eier text default 'Ikke tildelt',
   frist date,
   neste_handling text default '',
@@ -240,3 +240,29 @@ alter table cases add column if not exists kildevurdering_ts timestamptz;
 -- (eller hentet automatisk fra kildesiden som fallback), aldri kun antatt.
 alter table cases add column if not exists bildeforslag jsonb;
 alter table cases add column if not exists bildeforslag_ts timestamptz;
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v5 — Forenklet statusflyt, kilde-publiseringsdato, AI-notat på manus
+-- ═══════════════════════════════════════════════════════════════════
+
+-- "utkast-klart" er fjernet som eget steg — manus genereres og redigeres nå
+-- direkte i "i-arbeid", og "wp-utkast" nås kun via selve
+-- WordPress-publiseringen (se blockedStatusChangeReason i public/index.html
+-- og move_case_status i assistant-chat.js). Flytt eksisterende saker i det
+-- gamle steget over til "i-arbeid" — kjøres trygt flere ganger, treffer 0
+-- rader etter første kjøring.
+update cases set status = 'i-arbeid' where status = 'utkast-klart';
+
+-- Datoen SAKEN opprinnelig ble publisert HOS KILDEN (fra RSS-feedens egen
+-- pubDate/isoDate, ikke tidspunktet saken kom inn i saksbanken) — brukes til
+-- å (a) aldri hente inn saker som allerede er eldre enn to måneder, (b)
+-- automatisk arkivere "Idé"-saker som blir stående og blir eldre enn to
+-- måneder, og (c) gruppere "Idé"-kolonnen på måned. Kan være null (manuelt
+-- lagt inn tips, eller en RSS-feed uten publiseringsdato på elementet).
+alter table cases add column if not exists kilde_publisert_dato timestamptz;
+
+-- Fritekstnotat redaksjonen kan skrive til AI-en når de reviderer et manus
+-- direkte i verktøyet (f.eks. "gjør saken lenger", "ta bilde herifra") — se
+-- netlify/functions/lib/reviseManuscript.js. Selve notatet lagres IKKE i
+-- historikken (det er en instruks, ikke en hendelse), kun siste verdi.
+alter table cases add column if not exists manus_ai_notat text default '';

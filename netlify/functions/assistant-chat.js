@@ -17,10 +17,11 @@ const { generateManuscript } = require("./lib/manuscript.js");
 const { cleanupIrrelevantCases } = require("./lib/cleanup.js");
 const { checkSource } = require("./lib/sourceCheck.js");
 const { researchImages } = require("./lib/imageResearch.js");
+const { reviseManuscript } = require("./lib/reviseManuscript.js");
 
 const MODEL = "gpt-5.5";
 const MAX_ROUNDS = 6;
-const MOVABLE_STATUSES = ["ide", "godkjent", "i-arbeid", "utkast-klart", "wp-utkast", "arkivert", "avvist"];
+const MOVABLE_STATUSES = ["ide", "godkjent", "i-arbeid", "wp-utkast", "arkivert", "avvist"];
 
 function getSupabaseForUser(token) {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
@@ -50,6 +51,17 @@ move_case_status avviser dette forsøket automatisk — forklar da brukeren at p
 menneske åpner saken i appen, krysser av at de har kontrollert den, og velger en godkjenner. Ikke prøv
 omveier (f.eks. update_case) for å oppnå det samme.
 
+Tilsvarende kan du heller ikke sette en sak til "wp-utkast" med mindre den allerede har et ekte
+WordPress-utkast — det ville løyet om at noe finnes i WordPress som faktisk ikke gjør det. Vil brukeren
+opprette et WordPress-utkast, forklar at det skjer via selve "🌐 Publiser til WordPress"-knappen i appen
+(assistenten kan ikke gjøre det på vegne av brukeren).
+
+Manusarbeidsflyt: å generere manus (generate_manuscript) flytter automatisk saken fra "Godkjente idéer" til
+"I arbeid" — det er tilsiktet, ikke noe du trenger å gjøre separat med move_case_status. Ber brukeren om å
+endre noe i et allerede generert manus (f.eks. "gjør saken lenger", "ta med mer fra kilden", "bytt bilde til
+denne lenken"), bruk revise_manuscript med et presist AI-notat som gjengir akkurat det brukeren ba om —
+ikke skriv om manuset selv i update_case, det feltet finnes ikke der.
+
 Når du utfører en handling (oppretter, endrer, flytter, sletter, kjører AI-vurdering, genererer manus):
 oppsummer kort og tydelig hva du faktisk gjorde, på norsk, etter at verktøyet er kjørt. Ikke fabriker
 resultater — bruk kun det verktøyene faktisk returnerer.`;
@@ -63,7 +75,7 @@ const TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          status: { type: "string", enum: ["ide", "godkjent", "i-arbeid", "utkast-klart", "wp-utkast", "publisert", "arkivert", "avvist"] },
+          status: { type: "string", enum: ["ide", "godkjent", "i-arbeid", "wp-utkast", "publisert", "arkivert", "avvist"] },
           search: { type: "string", description: "Fritekstsøk i tittel (delvis treff, case-insensitive)." },
           limit: { type: "integer", minimum: 1, maximum: 50, default: 20 }
         },
@@ -124,7 +136,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "move_case_status",
-      description: "Flytt en sak til en annen status. 'publisert' er IKKE tillatt her — avvises alltid, se systeminstruksen.",
+      description: "Flytt en sak til en annen status. 'publisert' er IKKE tillatt her — avvises alltid. 'wp-utkast' avvises også med mindre saken allerede har et ekte WordPress-utkast — se systeminstruksen.",
       parameters: {
         type: "object",
         properties: { id: { type: "string" }, status: { type: "string" } },
@@ -152,8 +164,20 @@ const TOOLS = [
     type: "function",
     function: {
       name: "generate_manuscript",
-      description: "Generer et AI-førsteutkast (.docx-manus) for én sak. Saken bør være i status 'godkjent' eller senere.",
+      description: "Generer et AI-førsteutkast (.docx-manus) for én sak. Saken bør være i status 'godkjent' eller senere. Flytter automatisk saken til 'I arbeid' om den fortsatt sto i 'Godkjente idéer'.",
       parameters: { type: "object", properties: { caseId: { type: "string" } }, required: ["caseId"] }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "revise_manuscript",
+      description: "Rediger et ALLEREDE generert manus basert på en konkret instruks fra brukeren (AI-notat) — f.eks. gjøre det lengre, ta med mer fra kilden, eller bytte bilde til en URL brukeren selv oppgir. Dikter aldri opp en ny bilde-URL selv — bruker kun én brukeren faktisk oppga, og verifiserer den (ekte HTTP-sjekk) før den godtas.",
+      parameters: {
+        type: "object",
+        properties: { caseId: { type: "string" }, aiNotat: { type: "string", description: "Instruksen fra brukeren, så presist gjengitt som mulig." } },
+        required: ["caseId", "aiNotat"]
+      }
     }
   },
   {
@@ -254,8 +278,11 @@ async function executeTool(supabase, openaiKey, name, args) {
       if (MOVABLE_STATUSES.indexOf(args.status) === -1) {
         return { error: "Ukjent status: " + args.status + ". Gyldige: " + MOVABLE_STATUSES.join(", ") };
       }
-      var caseRes = await supabase.from("cases").select("status, historikk, title").eq("id", args.id).maybeSingle();
+      var caseRes = await supabase.from("cases").select("status, historikk, title, wp_post_id").eq("id", args.id).maybeSingle();
       if (caseRes.error || !caseRes.data) return { error: "Fant ikke saken." };
+      if (args.status === "wp-utkast" && caseRes.data.status !== "wp-utkast" && !caseRes.data.wp_post_id) {
+        return { error: "Ikke tillatt: dette ville markert saken som om et WordPress-utkast finnes, uten at det faktisk gjør det. Be brukeren bruke «🌐 Publiser til WordPress»-knappen i appen i stedet — den oppretter det ekte utkastet." };
+      }
       var historikk = [{ ts: new Date().toISOString(), text: "Status endret (AI-assistent): " + caseRes.data.status + " → " + args.status }].concat(caseRes.data.historikk || []);
       var res = await supabase.from("cases").update({ status: args.status, historikk: historikk }).eq("id", args.id);
       if (res.error) return { error: res.error.message };
@@ -279,6 +306,13 @@ async function executeTool(supabase, openaiKey, name, args) {
       try {
         var result = await generateManuscript(supabase, openaiKey, args.caseId);
         return result;
+      } catch (err) {
+        return { error: err.message };
+      }
+    }
+    case "revise_manuscript": {
+      try {
+        return await reviseManuscript(supabase, openaiKey, args.caseId, args.aiNotat);
       } catch (err) {
         return { error: err.message };
       }

@@ -194,9 +194,22 @@ async function generateManuscript(supabase, openaiKey, caseId) {
   if (uploadRes.error) throw new Error("Kunne ikke laste opp manus: " + uploadRes.error.message);
 
   const historikkNote = "Manus generert (AI-førsteutkast)" + (fields.usikkerhetsnotat ? " — ⚠️ " + fields.usikkerhetsnotat : "") + (image ? "" : " — ingen bilde funnet automatisk, må settes inn manuelt");
-  const historikk = [{ ts: new Date().toISOString(), text: historikkNote }].concat(c.historikk || []);
+  const historikkEntries = [{ ts: new Date().toISOString(), text: historikkNote }];
 
-  const updateRes = await supabase.from("cases").update({
+  // Arbeidsflyt: å generere manus er starten på det redaksjonelle arbeidet —
+  // saken flyttes derfor automatisk fra "Godkjente idéer" til "I arbeid" her
+  // (der selve manusredigeringen skjer i verktøyet), i stedet for å kreve et
+  // eget manuelt statusbytte i tillegg. Rører aldri en sak som allerede har
+  // kommet lenger (i-arbeid/wp-utkast/publisert) eller ligger i "Idé" uten å
+  // være godkjent ennå.
+  const statusUpdate = {};
+  if (c.status === "godkjent") {
+    statusUpdate.status = "i-arbeid";
+    historikkEntries.push({ ts: new Date().toISOString(), text: "Status endret automatisk (manus generert): Godkjente idéer → I arbeid" });
+  }
+  const historikk = historikkEntries.concat(c.historikk || []);
+
+  const updateRes = await supabase.from("cases").update(Object.assign({
     manus_url: path,
     manus_generert_ts: new Date().toISOString(),
     // Strukturerte felt ved siden av .docx-filen — slik at "Publiser til
@@ -209,10 +222,17 @@ async function generateManuscript(supabase, openaiKey, caseId) {
     manus_bilde_url: (source.ok && source.imageUrl) ? source.imageUrl : "",
     manus_foto: fields.fotoKreditering || "",
     historikk: historikk
-  }).eq("id", c.id);
+  }, statusUpdate)).eq("id", c.id);
   if (updateRes.error) throw new Error(updateRes.error.message);
 
-  return { ok: true, path: path, harBilde: !!image, usikkerhetsnotat: fields.usikkerhetsnotat || null };
+  return { ok: true, path: path, harBilde: !!image, usikkerhetsnotat: fields.usikkerhetsnotat || null, nyStatus: statusUpdate.status || null };
 }
 
-module.exports = { generateManuscript };
+// fetchSourceArticle/fetchImage/buildDocxParagraphs/callOpenAI/HOUSE_STYLE
+// eksportert i tillegg til generateManuscript selv — gjenbrukes av
+// lib/reviseManuscript.js (AI-notat-revidering direkte i verktøyet) i stedet
+// for å duplisere den samme, allerede testede logikken.
+module.exports = {
+  generateManuscript, fetchSourceArticle, fetchImage, buildDocxParagraphs,
+  callOpenAI, scaleToMaxWidth, HOUSE_STYLE, MODEL
+};
