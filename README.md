@@ -180,6 +180,16 @@ Ingen ny miljøvariabel og ingen ny knapp å trykke på — dette kjører av seg
 
 Idéer som blir liggende (fordi de får en mer usikker anbefaling enn «Bør ikke brukes» — «Kun tips», «Bør verifiseres» eller «Trygg») viser den fulle kildevurderingsrapporten inne på saken, akkurat som om du hadde trykket knappen selv (Steg 13) — dere slipper bare å trykke på den for RSS-saker.
 
+## Steg 15 — «+ Ny sak»: lim inn en lenke, eller last opp et manus
+
+Erstatter den gamle «+ Nytt tips»-knappen. Åpner en modal med tre faner:
+
+- **🔗 Lim inn lenke** (standardfanen) — lim inn lenken til en aktuell sak dere selv har funnet. AI gjør resten: oppretter saken og kjører den samme, research-drevne manusgenereringen fra Steg 9 automatisk (finner og krediterer kilden riktig, søker primærkilder og eget arkiv, faktasjekker) — dere havner rett inne i saken med et ferdig førsteutkast i «I arbeid», i stedet for å måtte gå via «Idé» → godkjenn → generer manus manuelt.
+- **📄 Last opp manus** — har dere allerede skrevet et manus (i Word, eller fått det fra en frilanser) som ikke følger redaksjonens mal (TITTEL/BILDE/INGRESS/HOVEDTEKST osv.), last det opp som `.docx`. AI omorganiserer INNHOLDET inn i malen — omskriver eller legger aldri til noe nytt — og saken havner rett i «I arbeid» med et ferdig malformatert manus, klart til gjennomlesning.
+- **✍️ Skriv selv** — det gamle, rent manuelle skjemaet (tittel/kilde/notat), for de gangene dere vil starte helt fra bunnen selv. Havner i «Idé» som før.
+
+Ingen ny miljøvariabel — bruker samme `OPENAI_API_KEY` og `manus`-lagringsboksen som resten av manus-funksjonene.
+
 ---
 
 ## Prosjektstruktur
@@ -188,11 +198,13 @@ Idéer som blir liggende (fordi de får en mer usikker anbefaling enn «Bør ikk
 uas-saksbank/
 ├── public/index.html          Hele frontend — kanban, liste, saksskjema, STOPP-gate
 ├── netlify/functions/
-│   ├── rss-poll.js             Kjører hver time, henter RSS → nye saker i "Idé" (relevansfiltrert)
+│   ├── rss-poll.js             Kjører hver time, henter RSS → nye saker i "Idé" (relevans+alder-filtrert)
 │   ├── add-sources.js          Masseimport av RSS-kilder (lenkeliste eller OPML)
 │   ├── ai-triage.js            AI-vurdering: kategori, hastegrad, score, sammendrag, eventkobling
-│   ├── generate-manuscript.js  AI-generert .docx-manus i UAS Norways malformat
-│   ├── cleanup-irrelevant.js   Rydder bort ikke-dronerelevante idéer fra "Idé"
+│   ├── generate-manuscript.js  AI-generert, research-drevet .docx-manus i UAS Norways malformat
+│   ├── revise-manuscript.js    AI-notat-drevet redigering av et allerede generert manus
+│   ├── create-case-from-link.js  "Ny sak" → lim inn lenke: oppretter sak + genererer manus i ett steg
+│   ├── import-manuscript.js    "Ny sak" → last opp manus: plasserer opplastet tekst i malen
 │   ├── assistant-chat.js       AI-chat med verktøytilgang til hele saksbanken
 │   ├── publish-to-wordpress.js Oppretter WordPress-UTKAST fra en sak sitt manus
 │   ├── check-source.js         Kildevurdering (troverdighet, originalkilde, lenkekontroll)
@@ -202,13 +214,18 @@ uas-saksbank/
 │   └── lib/
 │       ├── relevance.js        Delt AI-relevanssjekk (rss-poll + cleanup)
 │       ├── triage.js           Delt AI-vurderingslogikk (ai-triage + assistant-chat)
-│       ├── manuscript.js       Delt manusgenerering (generate-manuscript + assistant-chat)
+│       ├── manuscript.js       Delt, research-drevet manusgenerering (gpt-5-search-api)
+│       ├── reviseManuscript.js Delt AI-notat-revidering av eksisterende manus
+│       ├── importManuscript.js Delt logikk for "Ny sak" (fra lenke / fra opplastet manus)
+│       ├── ageGate.js          Arkiverer automatisk "Idé"-saker eldre enn 2 måneder
+│       ├── cleanup.js          Batch-rydding av ikke-dronerelevante idéer (kun assistent-verktøy nå)
 │       ├── wordpress.js        WordPress REST API-klient (portert fra wordpress-infosak)
 │       ├── sourceCheck.js      Delt kildevurdering (check-source + assistant-chat + sourceGate)
 │       ├── sourceGate.js       Automatisk kildekontroll-fjerning av nye RSS-idéer
 │       ├── imageResearch.js    Delt bilderesearch (research-images + assistant-chat)
-│       └── linkCheck.js        Ekte HTTP-verifisering av lenker (brukt av begge over)
-├── supabase/schema.sql        Databasetabeller + tilgangsregler (v1–v4)
+│       └── linkCheck.js        Ekte HTTP-verifisering av lenker (brukt av flere av modulene over)
+├── scripts/run-schema.js       `npm run db:migrate` — kjør schema.sql direkte mot databasen
+├── supabase/schema.sql        Databasetabeller + tilgangsregler (v1–v6)
 ├── netlify.toml                Netlify-konfig (publish-mappe, funksjonsmappe)
 └── .env.example                Mal for lokale miljøvariabler
 ```

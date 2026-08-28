@@ -552,7 +552,7 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, reviseBusy: {}, mobileMenuOpen: false, manusExpanded: false },
+    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, reviseBusy: {}, mobileMenuOpen: false, manusExpanded: false, newCaseTab: "lenke", newCaseBusy: false },
     chat: { messages: [], busy: false },
     session: null,
     realtimeOk: false
@@ -727,7 +727,7 @@
           '<button class="btn" data-action="open-weights">Prioriteringsmodell</button>' +
           '<button class="btn btn-ghost" data-action="toggle-aside" aria-label="Aktivitet">Aktivitet ' + (alertCount ? '<span class="badge-count">' + alertCount + "</span>" : "") + "</button>" +
           '<button class="btn btn-ghost" data-action="open-chat" aria-label="Assistent">💬 Assistent</button>' +
-          '<button class="btn btn-primary" data-action="open-new-tip">+ Nytt tips</button>' +
+          '<button class="btn btn-primary" data-action="open-new-case">+ Ny sak</button>' +
           '<button class="btn btn-ghost" data-action="sign-out" title="' + escapeHtml(email) + '">Logg ut</button>' +
         "</div>" +
       "</header>"
@@ -1044,7 +1044,7 @@
   function renderModal() {
     var m = state.ui.modal;
     if (!m) return "";
-    if (m === "new-tip") return renderNewTipModal();
+    if (m === "new-case") return renderNewCaseModal();
     if (m === "case") return renderCaseModal(getCase(state.ui.activeCaseId));
     if (m === "weights") return renderWeightsModal();
     if (m === "sources") return renderSourcesModal();
@@ -1052,25 +1052,55 @@
     return "";
   }
 
-  function renderNewTipModal() {
+  function newCaseTabBtn(id, label) {
+    var active = (state.ui.newCaseTab || "lenke") === id;
+    return '<button class="aside-tab' + (active ? " active" : "") + '" type="button" data-action="set-new-case-tab" data-tab="' + id + '">' + label + "</button>";
+  }
+
+  function renderNewCaseModal() {
+    var tab = state.ui.newCaseTab || "lenke";
+    var busy = state.ui.newCaseBusy;
+    var tabsHtml = '<div class="aside-tabs" style="padding:0 0 4px;">' +
+      newCaseTabBtn("lenke", "🔗 Lim inn lenke") +
+      newCaseTabBtn("opplasting", "📄 Last opp manus") +
+      newCaseTabBtn("skriv", "✍️ Skriv selv") +
+    "</div>";
+
+    var bodyHtml;
+    if (tab === "lenke") {
+      bodyHtml =
+        '<div class="field"><label for="nc-link">Lenke til saken</label><input id="nc-link" type="url" placeholder="https://…" /></div>' +
+        '<p class="helper">AI oppretter saken og gjør research automatisk — finner og krediterer kilden riktig, søker primærkilder og eget arkiv, faktasjekker, og skriver et førsteutkast rett i «I arbeid». Samme, allerede testede rutine som «Generer manus»-knappen, i ett steg.</p>' +
+        '<button class="btn btn-primary" type="button" data-action="submit-new-case-link"' + (busy ? " disabled" : "") + ">" + (busy ? "Oppretter og genererer manus (kan ta et halvt minutt) …" : "Opprett sak fra lenke") + "</button>";
+    } else if (tab === "opplasting") {
+      bodyHtml =
+        '<div class="field"><label for="nc-file">Manus-fil (.docx)</label><input id="nc-file" type="file" accept=".docx" /></div>' +
+        '<p class="helper">Følger ikke filen redaksjonens mal (TITTEL/BILDE/INGRESS/HOVEDTEKST osv.) er det helt greit — AI plasserer det du allerede har skrevet riktig i malen, uten å omskrive eller legge til noe nytt. Saken havner rett i «I arbeid».</p>' +
+        '<button class="btn btn-primary" type="button" data-action="submit-new-case-upload"' + (busy ? " disabled" : "") + ">" + (busy ? "Laster opp og leser fil (kan ta litt tid) …" : "Last opp og opprett sak") + "</button>";
+    } else {
+      bodyHtml =
+        '<form id="new-tip-form">' +
+          '<div class="field"><label for="nt-title">Tittel / kort beskrivelse</label><input id="nt-title" name="title" required placeholder="F.eks. Ny sone innført ved Gardermoen" /></div>' +
+          '<div class="field"><label for="nt-kilde">Kilde / lenke</label><input id="nt-kilde" name="kilde" placeholder="Lim inn lenke eller skriv kilde" /></div>' +
+          '<div class="field"><label for="nt-notat">Notat</label><textarea id="nt-notat" name="notat" placeholder="Kort notat om hvorfor dette kan være en sak"></textarea></div>' +
+          '<div class="field-row">' +
+            '<div class="field"><label for="nt-type">Sakstype</label><select id="nt-type" name="sakstype">' + optionsFor(TYPE_LABELS, "redaksjonell") + "</select></div>" +
+            '<div class="field"><label for="nt-hastegrad">Hastegrad</label><select id="nt-hastegrad" name="hastegrad"><option value="akutt">Akutt</option><option value="planlagt" selected>Planlagt</option><option value="tidlos">Tidløs</option></select></div>' +
+          "</div>" +
+          '<div class="field"><label for="nt-eier">Journalist (valgfritt)</label><select id="nt-eier" name="eier">' +
+            OWNERS.map(function (o) { return "<option" + (o === "Ikke tildelt" ? " selected" : "") + ">" + escapeHtml(o) + "</option>"; }).join("") +
+          "</select></div>" +
+          '<p class="helper">Saken legges i kolonnen «Idé» og er synlig for hele teamet med en gang.</p>' +
+        "</form>" +
+        '<button class="btn btn-primary" type="button" data-action="submit-new-tip">Legg til tips</button>';
+    }
+
     return (
       '<div class="overlay center" data-action="close-modal-bg">' +
-        '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="new-tip-title">' +
-          '<div class="panel-header"><h2 id="new-tip-title">Nytt tips</h2><button class="icon-btn" data-action="close-modal">✕</button></div>' +
-          '<form class="panel-body" id="new-tip-form">' +
-            '<div class="field"><label for="nt-title">Tittel / kort beskrivelse</label><input id="nt-title" name="title" required placeholder="F.eks. Ny sone innført ved Gardermoen" /></div>' +
-            '<div class="field"><label for="nt-kilde">Kilde / lenke</label><input id="nt-kilde" name="kilde" placeholder="Lim inn lenke eller skriv kilde" /></div>' +
-            '<div class="field"><label for="nt-notat">Notat</label><textarea id="nt-notat" name="notat" placeholder="Kort notat om hvorfor dette kan være en sak"></textarea></div>' +
-            '<div class="field-row">' +
-              '<div class="field"><label for="nt-type">Sakstype</label><select id="nt-type" name="sakstype">' + optionsFor(TYPE_LABELS, "redaksjonell") + "</select></div>" +
-              '<div class="field"><label for="nt-hastegrad">Hastegrad</label><select id="nt-hastegrad" name="hastegrad"><option value="akutt">Akutt</option><option value="planlagt" selected>Planlagt</option><option value="tidlos">Tidløs</option></select></div>' +
-            "</div>" +
-            '<div class="field"><label for="nt-eier">Journalist (valgfritt)</label><select id="nt-eier" name="eier">' +
-              OWNERS.map(function (o) { return "<option" + (o === "Ikke tildelt" ? " selected" : "") + ">" + escapeHtml(o) + "</option>"; }).join("") +
-            "</select></div>" +
-            '<p class="helper">Saken legges i kolonnen «Idé» og er synlig for hele teamet med en gang.</p>' +
-          "</form>" +
-          '<div class="panel-footer"><button class="btn" data-action="close-modal">Avbryt</button><button class="btn btn-primary" data-action="submit-new-tip">Legg til tips</button></div>' +
+        '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="new-case-title">' +
+          '<div class="panel-header"><h2 id="new-case-title">Ny sak</h2><button class="icon-btn" data-action="close-modal">✕</button></div>' +
+          '<div class="panel-body">' + tabsHtml + bodyHtml + "</div>" +
+          '<div class="panel-footer"><button class="btn" data-action="close-modal">Lukk</button><div></div></div>' +
         "</div>" +
       "</div>"
     );
@@ -1552,7 +1582,8 @@
       case "toggle-mobile-menu": state.ui.mobileMenuOpen = !state.ui.mobileMenuOpen; render(); break;
       case "open-chat": state.ui.asideOpen = true; state.ui.asideTab = "chat"; render(); focusChatInput(); break;
       case "set-aside-tab": state.ui.asideTab = e.currentTarget.getAttribute("data-tab"); render(); if (state.ui.asideTab === "chat") focusChatInput(); break;
-      case "open-new-tip": state.ui.modal = "new-tip"; render(); break;
+      case "open-new-case": state.ui.modal = "new-case"; state.ui.newCaseTab = "lenke"; render(); break;
+      case "set-new-case-tab": state.ui.newCaseTab = e.currentTarget.getAttribute("data-tab"); render(); break;
       case "open-case": state.ui.activeCaseId = e.currentTarget.getAttribute("data-id"); state.ui.modal = "case"; render(); break;
       case "open-weights": state.ui.modal = "weights"; render(); break;
       case "open-sources": openSources(); break;
@@ -1610,6 +1641,8 @@
       case "move-selected": e.stopPropagation(); moveSelected(document.getElementById("bulk-status-select").value); break;
       case "close-modal": case "close-modal-bg": state.ui.modal = null; state.ui.activeCaseId = null; render(); break;
       case "submit-new-tip": submitNewTip(); break;
+      case "submit-new-case-link": submitNewCaseFromLink(); break;
+      case "submit-new-case-upload": submitNewCaseFromUpload(); break;
       case "save-case": saveCaseFromForm(); break;
       case "publish-case": publishCaseFromForm(); break;
       case "delete-case": deleteActiveCase(); break;
@@ -1638,6 +1671,71 @@
     state.ui.modal = null;
     await refreshAndRender();
     showToast("Tips lagt til i «Idé»");
+  }
+
+  // Åpner den ferdig opprettede saken direkte etter at "Ny sak"-flyten (lenke
+  // eller opplasting) er ferdig — man skal se resultatet med én gang, ikke
+  // måtte lete den opp selv i tavla etterpå.
+  async function openCreatedCase(caseId) {
+    await refreshAndRender();
+    state.ui.activeCaseId = caseId;
+    state.ui.modal = "case";
+    render();
+  }
+
+  async function submitNewCaseFromLink() {
+    var input = document.getElementById("nc-link");
+    var url = input ? input.value.trim() : "";
+    if (!url) { if (input) input.focus(); showToast("Lim inn en lenke først"); return; }
+    state.ui.newCaseBusy = true;
+    render();
+    try {
+      var res = await fetch("/.netlify/functions/create-case-from-link", {
+        method: "POST", headers: authHeader(), body: JSON.stringify({ url: url })
+      });
+      var data = await parseFunctionResponse(res);
+      if (!res.ok) { showToast(data.error || "Kunne ikke opprette sak fra lenke"); return; }
+      showToast("Sak opprettet og manus generert: " + data.title);
+      if (data.manus && data.manus.usikkerhetsnotat) showToast("⚠️ " + data.manus.usikkerhetsnotat);
+      await openCreatedCase(data.caseId);
+    } catch (err) {
+      showToast("Kunne ikke opprette sak fra lenke: " + err.message);
+    } finally {
+      state.ui.newCaseBusy = false;
+      render();
+    }
+  }
+
+  var MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+
+  async function submitNewCaseFromUpload() {
+    var input = document.getElementById("nc-file");
+    var file = input && input.files && input.files[0];
+    if (!file) { showToast("Velg en .docx-fil først"); return; }
+    if (!/\.docx$/i.test(file.name)) { showToast("Kun .docx-filer støttes"); return; }
+    if (file.size > MAX_UPLOAD_BYTES) { showToast("Filen er for stor (maks 15 MB)"); return; }
+
+    state.ui.newCaseBusy = true;
+    render();
+    try {
+      var path = "uploads/" + Date.now() + "-" + file.name.replace(/[^a-z0-9.\-_]/gi, "_");
+      var uploadRes = await supabase.storage.from("manus").upload(path, file);
+      if (uploadRes.error) { showToast("Kunne ikke laste opp filen: " + uploadRes.error.message); return; }
+
+      var res = await fetch("/.netlify/functions/import-manuscript", {
+        method: "POST", headers: authHeader(), body: JSON.stringify({ storagePath: path, filename: file.name })
+      });
+      var data = await parseFunctionResponse(res);
+      if (!res.ok) { showToast(data.error || "Kunne ikke lese opplastet manus"); return; }
+      showToast("Sak opprettet fra opplastet manus: " + data.title);
+      if (data.usikkerhetsnotat) showToast("⚠️ " + data.usikkerhetsnotat);
+      await openCreatedCase(data.caseId);
+    } catch (err) {
+      showToast("Kunne ikke opprette sak fra opplastet manus: " + err.message);
+    } finally {
+      state.ui.newCaseBusy = false;
+      render();
+    }
   }
 
   function readCaseForm() {

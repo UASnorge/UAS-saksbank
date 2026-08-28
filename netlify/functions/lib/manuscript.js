@@ -124,13 +124,25 @@ const RESEARCH_SCHEMA = {
   }
 };
 
+// Dekoder både navngitte HTML-entiteter (&amp; &#39; osv.) OG numeriske
+// (&#39; &#x27; osv., desimal og heksadesimal) — stripHtml dekket tidligere
+// kun &#39;, ikke &#039; (nullpadded) eller andre tegn, noe som viste seg i
+// praksis (en apostrof i en ekte artikkeltittel kom gjennom som &#039;).
+var NAMED_ENTITIES = { nbsp: " ", amp: "&", quot: '"', apos: "'", lt: "<", gt: ">" };
+function decodeHtmlEntities(s) {
+  return String(s || "")
+    .replace(/&#x([0-9a-f]+);/gi, function (_, hex) { return String.fromCodePoint(parseInt(hex, 16)); })
+    .replace(/&#(\d+);/g, function (_, dec) { return String.fromCodePoint(parseInt(dec, 10)); })
+    .replace(/&([a-z]+);/gi, function (m, name) { return NAMED_ENTITIES[name.toLowerCase()] || m; });
+}
+
 function stripHtml(html) {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+  return decodeHtmlEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+  )
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -141,6 +153,13 @@ function extractMeta(html, prop) {
   return m ? m[1] : null;
 }
 
+function extractTitle(html) {
+  var og = extractMeta(html, "og:title");
+  if (og) return decodeHtmlEntities(og).trim();
+  var m = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  return m ? decodeHtmlEntities(m[1]).trim() : null;
+}
+
 async function fetchSourceArticle(url) {
   try {
     var res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; UASNorwaySaksbank/1.0)" } });
@@ -148,8 +167,10 @@ async function fetchSourceArticle(url) {
     var html = await res.text();
     var ogImage = extractMeta(html, "og:image");
     var siteName = extractMeta(html, "og:site_name");
+    if (siteName) siteName = decodeHtmlEntities(siteName).trim();
+    var title = extractTitle(html);
     var text = stripHtml(html).slice(0, MAX_SOURCE_CHARS);
-    return { ok: true, text: text, imageUrl: ogImage, siteName: siteName || new URL(url).hostname };
+    return { ok: true, text: text, imageUrl: ogImage, siteName: siteName || new URL(url).hostname, title: title };
   } catch (err) {
     return { ok: false, reason: err.message };
   }
