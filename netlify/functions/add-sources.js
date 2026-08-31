@@ -4,9 +4,14 @@
 //  - én lenke per linje (valgfritt "Navn | https://lenke"-format), eller
 //  - en limt inn OPML-eksport (fra Feedly, Inoreader, el.l. — <outline xmlUrl="…">)
 //
-// For hver kandidat: sjekker at den faktisk er en gyldig RSS/Atom-feed FØR den
+// For hver kandidat: sjekker om den faktisk er en gyldig RSS/Atom-feed FØR den
 // lagres (akkurat som vi oppdaget at én foreslått Luftfartstilsynet-URL i praksis
 // var død — dette fanger den typen feil automatisk i stedet for å lagre søppel).
+//
+// Er den IKKE en gyldig feed (f.eks. https://www.aftenposten.no/, som ikke har
+// noen RSS-feed på akkurat den URL-en), avvises den IKKE lenger — den lagres i
+// stedet som en "website"-kilde (type='website') og overvåkes av det generelle
+// websøket (lib/webSearch.js / web-search-background.js) i stedet for RSS.
 //
 // Krever innlogget bruker (Supabase-sesjon sendt som Bearer-token). Bruker IKKE
 // service_role — innsettingen skjer som den innloggede brukeren, styrt av RLS-
@@ -120,9 +125,18 @@ exports.handler = async function (event) {
       if (existingUrls.has(cand.url)) return { status: "skipped", url: cand.url };
       try {
         var feed = await parser.parseURL(cand.url);
-        return { status: "valid", url: cand.url, name: cand.name || feed.title || cand.url };
+        return { status: "valid", url: cand.url, name: cand.name || feed.title || cand.url, type: "rss" };
       } catch (err) {
-        return { status: "failed", url: cand.url, error: err.message };
+        // Ikke en gyldig RSS/Atom-feed — men fortsatt en gyldig, nåbar URL?
+        // Legg den da til som en "website"-kilde i stedet for å avvise den.
+        // Kun ekte nettverksfeil (domenet finnes ikke, tidsavbrudd) avvises helt.
+        try {
+          var headRes = await fetch(cand.url, { method: "GET", redirect: "follow" });
+          if (!headRes.ok) throw new Error("HTTP " + headRes.status);
+          return { status: "valid", url: cand.url, name: cand.name || new URL(cand.url).hostname, type: "website" };
+        } catch (fetchErr) {
+          return { status: "failed", url: cand.url, error: "Verken en gyldig RSS-feed eller et nåbart nettsted: " + err.message };
+        }
       }
     })
   );
@@ -134,9 +148,9 @@ exports.handler = async function (event) {
     if (r.status === "skipped") { skipped.push(r.url); continue; }
     if (r.status === "failed") { failed.push({ url: r.url, error: r.error }); continue; }
 
-    var insertRes = await supabase.from("sources").insert({ name: r.name, feed_url: r.url, active: true });
+    var insertRes = await supabase.from("sources").insert({ name: r.name, feed_url: r.url, active: true, type: r.type });
     if (insertRes.error) failed.push({ url: r.url, error: insertRes.error.message });
-    else added.push({ url: r.url, name: r.name });
+    else added.push({ url: r.url, name: r.name, type: r.type });
   }
 
   return {

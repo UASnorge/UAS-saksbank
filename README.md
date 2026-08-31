@@ -209,6 +209,22 @@ Ingen ny miljøvariabel — bruker samme `OPENAI_API_KEY` og `manus`-lagringsbok
 
 Rammer kun *nye* brukere (en e-post som ikke finnes i `auth.users` fra før) — allerede innloggede team-medlemmer påvirkes ikke. Skal flere domener slippe gjennom (f.eks. dronemag.no), utvid `allowed_domains`-listen i funksjonen (i `schema.sql`) og kjør `npm run db:migrate` på nytt.
 
+## Steg 17 — Generelt websøk: bredere enn den faste RSS-listen
+
+RSS-kildelisten (Steg 6) fanger kun opp det de faste kildene faktisk publiserer selv. For å dekke resten — generelle norske nettsteder uten (eller med ukjent) RSS, navngitte selskaper dere vil følge med på, og et bevisst mer sivilt fokus i tillegg til forsvar — kjører appen nå et eget websøk-sveip én gang i døgnet (`web-search-trigger.js` kl. 05:00 UTC → `web-search-background.js`, samme to-funksjons-mønster som kildekontrollen i Steg 14, siden ekte websøk-kall er for trege for en vanlig 30-sekunders scheduled function).
+
+Bruker `gpt-5-search-api` (samme søkekapable AI-verktøy som kildevurdering/bilderesearch) til tre ting, alle med samme "grunnregel" som resten av appen — modellen skal ALDRI dikte opp en URL, bare rapportere ekte treff funnet ved faktisk søk:
+
+1. **Generelt sveip** — ikke bundet til noen bestemt kildeliste. Instruert eksplisitt til å dekke BÅDE sivilt (landbruksdroner, dronelevering, film/foto, kartlegging/inspeksjon, droneselskaper/næringsliv, droneregelverk for sivil bruk) og forsvar/beredskap — den faste RSS-listen har i praksis vært forsvarstung (Forsvaret, Forsvarsdepartementet, FFI, TWZ), så dette sveipet er tenkt som en bevisst motvekt.
+2. **Nettsted-kilder uten RSS** — i «Kilder»-panelet limer dere inn en helt vanlig nettside-URL (f.eks. `https://www.aftenposten.no/`) akkurat som en RSS-lenke. Har den ingen RSS-feed, avvises den IKKE lenger (slik den gjorde før) — den lagres i stedet automatisk som en `type='website'`-kilde og overvåkes med et nettstedbegrenset søk (`site:domene`) i stedet for RSS-parsing. Utenlandske luftfartstilsyn uten kjent RSS (Trafikstyrelsen/Transportstyrelsen/Traficom, FAA) legges inn på samme måte — EASA har allerede en fungerende RSS-feed og trenger ingen endring.
+3. **Søkeord (operatør-/selskapsnavn)** — samme panel, egen seksjon: lim inn navn på registrerte droneoperatører/-selskaper, ett per linje (KUN bedriftsnavn, ikke privatpersoner — håndheves redaksjonelt av den som limer inn listen, ikke teknisk). Websøket leter aktivt etter fersk omtale av disse selskapene, selv i saker som ikke eksplisitt nevner ordet "drone".
+
+Hvert treff går gjennom nøyaktig samme AI-relevanssjekk som RSS-treff (`lib/relevance.js`) før det blir en sak i «Idé», og samme automatiske AI-vurdering (Steg 9) rett etterpå. Egen dedup-tabell (`seen_urls`) hindrer at samme artikkel dukker opp på nytt neste sveip.
+
+Ingen ny miljøvariabel — bruker samme `OPENAI_API_KEY`. Kjør `supabase/schema.sql` på nytt (v10-delen legger til `sources.type`, `watch_keywords`- og `seen_urls`-tabellene, idempotent som resten av filen).
+
+**Sivilt fokus, også i selve AI-vurderingen:** `lib/triage.js` sin husstil-beskrivelse er justert til eksplisitt IKKE å vekte forsvar/militært høyere enn sivil bruk i aktualitet/betydning-scoringen — den beskrev tidligere kun det faktisk publiserte (forsvarstunge) volumet, noe som i praksis kunne forsterke skjevheten videre.
+
 ## Prosjektstruktur
 
 ```

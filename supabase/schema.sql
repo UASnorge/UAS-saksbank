@@ -391,3 +391,55 @@ grant execute
 revoke execute
   on function public.restrict_signup_by_email_domain
   from authenticated, anon, public;
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v10 — Generelt websøk: nettsted-kilder uten RSS, søkeord/operatører,
+-- dedup for søketreff
+-- ═══════════════════════════════════════════════════════════════════
+-- "sources" fikk opprinnelig kun RSS-feeder. Et nettsted uten egen RSS-feed
+-- (f.eks. aftenposten.no) blir nå IKKE avvist av add-sources.js lenger — det
+-- lagres i stedet som type 'website' og overvåkes av det nye websøket
+-- (lib/webSearch.js) i stedet for rss-parser.
+alter table sources add column if not exists type text not null default 'rss';
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'sources_type_check'
+  ) then
+    alter table sources add constraint sources_type_check check (type in ('rss', 'website'));
+  end if;
+end $$;
+
+-- Operatør-/selskapsnavn (KUN bedrifter, ikke privatpersoner — håndheves
+-- redaksjonelt, ikke teknisk) som websøket aktivt leter etter omtale av,
+-- selv i saker som ikke eksplisitt nevner "drone" i teksten.
+create table if not exists watch_keywords (
+  id uuid primary key default gen_random_uuid(),
+  term text not null unique,
+  created_at timestamptz not null default now()
+);
+
+alter table watch_keywords enable row level security;
+
+drop policy if exists "innloggede kan lese søkeord" on watch_keywords;
+create policy "innloggede kan lese søkeord" on watch_keywords
+  for select using (auth.role() = 'authenticated');
+
+drop policy if exists "innloggede kan legge til søkeord" on watch_keywords;
+create policy "innloggede kan legge til søkeord" on watch_keywords
+  for insert with check (auth.role() = 'authenticated');
+
+drop policy if exists "innloggede kan slette søkeord" on watch_keywords;
+create policy "innloggede kan slette søkeord" on watch_keywords
+  for delete using (auth.role() = 'authenticated');
+
+-- Dedup for websøket — egen fra "seen_items" (som er RSS-spesifikk og bundet
+-- til én bestemt kilderad) siden et treff fra det generelle sveipet eller et
+-- søkeordtreff ikke nødvendigvis hører til én bestemt "sources"-rad.
+create table if not exists seen_urls (
+  url text primary key,
+  seen_at timestamptz not null default now()
+);
+
+-- Ingen policy for innloggede brukere her heller — kun web-search-background.js
+-- (service_role) skal skrive hit, samme prinsipp som "seen_items".

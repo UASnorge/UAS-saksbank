@@ -556,6 +556,7 @@
   var state = {
     cases: [],
     sources: [],
+    keywords: [],
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
@@ -649,6 +650,12 @@
     var res = await supabase.from("sources").select("*").order("name");
     if (res.error) { showToast("Kunne ikke hente kilder: " + res.error.message); return; }
     state.sources = res.data || [];
+  }
+
+  async function fetchKeywords() {
+    var res = await supabase.from("watch_keywords").select("*").order("term");
+    if (res.error) { showToast("Kunne ikke hente søkeord: " + res.error.message); return; }
+    state.keywords = res.data || [];
   }
 
   async function createCase(fields) {
@@ -757,25 +764,39 @@
     if (report) {
       reportHtml =
         '<div class="import-report">' +
-          (report.added.length ? '<div class="ok-line">✓ ' + report.added.length + " kilde(r) lagt til</div>" : "") +
+          (report.added.length ? '<div class="ok-line">✓ ' + report.added.length + " kilde(r) lagt til (" +
+            report.added.filter(function (a) { return a.type === "rss"; }).length + " RSS, " +
+            report.added.filter(function (a) { return a.type === "website"; }).length + " nettsted uten RSS — overvåkes via websøk)</div>" : "") +
           (report.skipped.length ? '<div class="warn-line">– ' + report.skipped.length + " fantes allerede, hoppet over</div>" : "") +
           (report.overflow ? '<div class="warn-line">– ' + report.overflow + " kilde(r) ble ikke behandlet (maks 30 per import — lim inn resten i en ny runde)</div>" : "") +
           (report.failed.length ? (
-            '<div class="fail-line">✗ ' + report.failed.length + " feilet (ugyldig eller utilgjengelig feed):<ul>" +
+            '<div class="fail-line">✗ ' + report.failed.length + " feilet (nettstedet svarte ikke i det hele tatt):<ul>" +
               report.failed.map(function (f) { return "<li>" + escapeHtml(f.url) + " — " + escapeHtml(f.error) + "</li>"; }).join("") +
             "</ul></div>"
           ) : "") +
         "</div>";
     }
 
+    var kwReport = state.ui.keywordImportReport;
+    var kwReportHtml = "";
+    if (kwReport) {
+      kwReportHtml =
+        '<div class="import-report">' +
+          (kwReport.added.length ? '<div class="ok-line">✓ ' + kwReport.added.length + " søkeord lagt til</div>" : "") +
+          (kwReport.skipped.length ? '<div class="warn-line">– ' + kwReport.skipped.length + " fantes allerede, hoppet over</div>" : "") +
+          (kwReport.overflow ? '<div class="warn-line">– ' + kwReport.overflow + " ble ikke behandlet (maks 200 per import)</div>" : "") +
+          (kwReport.failed.length ? '<div class="fail-line">✗ ' + kwReport.failed.length + " feilet</div>" : "") +
+        "</div>";
+    }
+
     return (
       '<div class="overlay center" data-action="close-modal-bg">' +
         '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="sources-title">' +
-          '<div class="panel-header"><h2 id="sources-title">RSS-kilder</h2><button class="icon-btn" data-action="close-modal">✕</button></div>' +
+          '<div class="panel-header"><h2 id="sources-title">Kilder og søkeord</h2><button class="icon-btn" data-action="close-modal">✕</button></div>' +
           '<div class="panel-body">' +
-            '<div class="section-label">Importer flere på én gang</div>' +
-            '<p class="helper">Lim inn én lenke per linje (valgfritt «Navn | lenke»), eller lim inn en OPML-eksport fra Feedly/Inoreader. Hver lenke sjekkes automatisk — ugyldige eller døde feeder legges ikke til.</p>' +
-            '<textarea id="bulk-sources-input" rows="6" placeholder="https://eksempel.no/rss&#10;Luftfartstilsynet | https://eksempel.no/nyheter/rss&#10;… eller lim inn en hel OPML-fil"></textarea>' +
+            '<div class="section-label">Importer flere kilder på én gang</div>' +
+            '<p class="helper">Lim inn én lenke per linje (valgfritt «Navn | lenke»), eller lim inn en OPML-eksport fra Feedly/Inoreader. Har nettstedet en RSS-feed, brukes den. Har det ikke (f.eks. en vanlig nettside uten RSS), legges det i stedet til som et nettsted som overvåkes med websøk automatisk hver natt.</p>' +
+            '<textarea id="bulk-sources-input" rows="6" placeholder="https://eksempel.no/rss&#10;Aftenposten | https://www.aftenposten.no/&#10;… eller lim inn en hel OPML-fil"></textarea>' +
             '<button class="btn btn-primary" data-action="import-sources"' + (state.ui.importBusy ? " disabled" : "") + '>' +
               (state.ui.importBusy ? "Importerer …" : "Importer kilder") +
             "</button>" +
@@ -785,13 +806,30 @@
               return (
                 '<div class="source-row">' +
                   '<input type="checkbox" data-toggle-source="' + s.id + '"' + (s.active ? " checked" : "") + ' title="Aktiv" />' +
-                  '<div class="source-main"><div class="source-name">' + escapeHtml(s.name || "(uten navn)") + '</div>' +
+                  '<div class="source-main"><div class="source-name">' + (s.type === "website" ? "🔎 " : "📡 ") + escapeHtml(s.name || "(uten navn)") + '</div>' +
                     '<div class="source-url">' + escapeHtml(s.feed_url) + "</div></div>" +
-                  '<span class="source-meta">' + (s.last_polled_at ? "sist hentet " + fmtTime(s.last_polled_at) : "ikke hentet ennå") + "</span>" +
+                  '<span class="source-meta">' + (s.type === "website" ? "nettsted (websøk) — " : "RSS — ") + (s.last_polled_at ? "sist hentet " + fmtTime(s.last_polled_at) : "ikke hentet ennå") + "</span>" +
                   '<button class="icon-btn" data-action="delete-source" data-id="' + s.id + '" title="Slett">✕</button>' +
                 "</div>"
               );
             }).join("") : '<p class="aside-empty">Ingen kilder lagt til ennå.</p>') +
+
+            '<div class="section-label" style="margin-top:22px;">Søkeord — operatør-/selskapsnavn</div>' +
+            '<p class="helper">Fersk omtale av disse selskapene fanges opp automatisk hver natt (websøk), selv om «drone» ikke nevnes eksplisitt. Kun bedriftsnavn — ikke privatpersoner. Ett navn per linje.</p>' +
+            '<textarea id="bulk-keywords-input" rows="4" placeholder="Firma AS&#10;Et annet Selskap AS&#10;…"></textarea>' +
+            '<button class="btn btn-primary" data-action="import-keywords"' + (state.ui.keywordImportBusy ? " disabled" : "") + '>' +
+              (state.ui.keywordImportBusy ? "Importerer …" : "Importer søkeord") +
+            "</button>" +
+            kwReportHtml +
+            '<div class="section-label">Søkeord i bruk (' + state.keywords.length + ")</div>" +
+            (state.keywords.length ? state.keywords.map(function (k) {
+              return (
+                '<div class="source-row">' +
+                  '<div class="source-main"><div class="source-name">' + escapeHtml(k.term) + "</div></div>" +
+                  '<button class="icon-btn" data-action="delete-keyword" data-id="' + k.id + '" title="Slett">✕</button>' +
+                "</div>"
+              );
+            }).join("") : '<p class="aside-empty">Ingen søkeord lagt til ennå.</p>') +
           "</div>" +
           '<div class="panel-footer"><button class="btn btn-primary" data-action="close-modal">Lukk</button></div>' +
         "</div>" +
@@ -1623,6 +1661,8 @@
       case "clear-selection": state.ui.selectedIds = {}; render(); break;
       case "import-sources": importSources(); break;
       case "delete-source": deleteSource(e.currentTarget.getAttribute("data-id")); break;
+      case "import-keywords": importKeywords(); break;
+      case "delete-keyword": deleteKeyword(e.currentTarget.getAttribute("data-id")); break;
       case "run-ai-triage-bulk": runAiTriageBulk(); break;
       case "run-ai-triage-one": runAiTriage([e.currentTarget.getAttribute("data-id")]); break;
       case "run-ai-triage-selected": e.stopPropagation(); runAiTriageSelected(); break;
@@ -2003,8 +2043,9 @@
   async function openSources() {
     state.ui.modal = "sources";
     state.ui.importReport = null;
+    state.ui.keywordImportReport = null;
     render();
-    await fetchSources();
+    await Promise.all([fetchSources(), fetchKeywords()]);
     render();
   }
 
@@ -2050,12 +2091,54 @@
   }
 
   async function deleteSource(id) {
-    if (!window.confirm("Slette denne RSS-kilden? Tidligere innhentede saker beholdes.")) return;
+    if (!window.confirm("Slette denne kilden? Tidligere innhentede saker beholdes.")) return;
     var res = await supabase.from("sources").delete().eq("id", id);
     if (res.error) { showToast("Kunne ikke slette: " + res.error.message); return; }
     await fetchSources();
     render();
     showToast("Kilde slettet");
+  }
+
+  async function importKeywords() {
+    var textarea = document.getElementById("bulk-keywords-input");
+    var text = textarea ? textarea.value.trim() : "";
+    if (!text) { showToast("Lim inn minst ett selskapsnavn først"); return; }
+    if (!state.session) { showToast("Du må være innlogget"); return; }
+
+    state.ui.keywordImportBusy = true;
+    render();
+
+    try {
+      var res = await fetch("/.netlify/functions/add-keywords", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + state.session.access_token },
+        body: JSON.stringify({ text: text })
+      });
+      var data = await parseFunctionResponse(res);
+      if (!res.ok) {
+        showToast(data.error || "Import feilet");
+        state.ui.keywordImportBusy = false;
+        render();
+        return;
+      }
+      state.ui.keywordImportReport = data;
+      state.ui.keywordImportBusy = false;
+      await fetchKeywords();
+      render();
+      showToast(data.added.length + " søkeord lagt til");
+    } catch (err) {
+      state.ui.keywordImportBusy = false;
+      render();
+      showToast("Import feilet: " + err.message);
+    }
+  }
+
+  async function deleteKeyword(id) {
+    var res = await supabase.from("watch_keywords").delete().eq("id", id);
+    if (res.error) { showToast("Kunne ikke slette: " + res.error.message); return; }
+    await fetchKeywords();
+    render();
+    showToast("Søkeord slettet");
   }
 
   function authHeader() {
