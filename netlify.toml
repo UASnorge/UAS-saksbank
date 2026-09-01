@@ -13,9 +13,6 @@
 [functions."transcribe-audio-background"]
   external_node_modules = ["ffmpeg-static"]
 
-[functions."diag-ffmpeg-temp"]
-  external_node_modules = ["ffmpeg-static"]
-
 # Sikkerhetsheader — statisk side, ingen grunn til å tillate innramming el.l.
 [[headers]]
   for = "/*"
