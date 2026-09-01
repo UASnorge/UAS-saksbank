@@ -16,6 +16,18 @@ Norge, droneutdanning). Vurder aktualitet og betydning ut fra saken selv, ikke u
 sivil — en god sivil sak skal aldri få lavere score bare fordi den ikke handler om forsvar. De skriver LITE om
 forbrukerdrone-anmeldelser (produkttest-aktige artikler), det er en annen avgrensning enn sivil/militær.
 
+Du setter i tillegg ETT tema-merke per sak, til bruk i et filter/kategoriseringspanel — velg det som passer BEST (ikke flere), ut fra hovedvinkelen i saken:
+- FORSVAR_BEREDSKAP: forsvar, militært, beredskap, politi, motdrone/antidrone, sikkerhetshendelser.
+- REGELVERK_LUFTFART: regelverk, sertifisering, luftromsintegrasjon, Luftfartstilsynet/EASA/andre myndigheter.
+- TEKNOLOGI_PRODUKT: ny drone/komponent/programvare, produktlansering, teknisk gjennombrudd — uten at forsvar eller landbruk er hovedvinkelen.
+- LANDBRUK: landbruksdroner, sprøyting, jordbruk.
+- INDUSTRI_KARTLEGGING: kartlegging, inspeksjon, anlegg/bygg, industri, geodata.
+- LOGISTIKK_LEVERING: dronelevering, logistikk, transport.
+- SELSKAP_MARKED: selskapsnyheter, finansiering, marked, oppkjøp, børs — uten at et konkret produkt/en konkret teknologi er hovedvinkelen.
+- ULYKKE_HENDELSE: ulykker, kræsj, kriminalitet/misbruk av droner, rettssaker.
+- ARRANGEMENT_UTDANNING: kurs, konferanser, utdanning, webinarer (typisk samme saker som får sakstype "content").
+- ANNET: passer ikke tydelig i noen av de over.
+
 Tre sakstyper skal kunne skilles tydelig:
 - "redaksjonell" (vises som "Dronemagasin"): ordinær redaksjonell nyhetssak for dronemag.no/uasnorway.no.
 - "content" (vises som "INFO"): saken passer bedre som informasjon knyttet til et konkret UAS Norway-kurs,
@@ -53,6 +65,11 @@ const TRIAGE_SCHEMA = {
     additionalProperties: false,
     properties: {
       sakstype: { type: "string", enum: ["redaksjonell", "content", "ai"] },
+      tema: {
+        type: "string",
+        enum: ["FORSVAR_BEREDSKAP", "REGELVERK_LUFTFART", "TEKNOLOGI_PRODUKT", "LANDBRUK", "INDUSTRI_KARTLEGGING",
+          "LOGISTIKK_LEVERING", "SELSKAP_MARKED", "ULYKKE_HENDELSE", "ARRANGEMENT_UTDANNING", "ANNET"]
+      },
       hastegrad: { type: "string", enum: ["akutt", "planlagt", "tidlos"] },
       aktualitet: { type: "integer", minimum: 1, maximum: 5 },
       betydning: { type: "integer", minimum: 1, maximum: 5 },
@@ -62,7 +79,7 @@ const TRIAGE_SCHEMA = {
       arrangement_tittel: { type: ["string", "null"], description: "Eksakt tittel på arrangementet fra listen, kun hvis sakstype er content. Ellers null." },
       begrunnelse: { type: "string", description: "Kort, én setning, til historikklogg." }
     },
-    required: ["sakstype", "hastegrad", "aktualitet", "betydning", "innsats", "eksklusivitet", "oppsummering", "arrangement_tittel", "begrunnelse"]
+    required: ["sakstype", "tema", "hastegrad", "aktualitet", "betydning", "innsats", "eksklusivitet", "oppsummering", "arrangement_tittel", "begrunnelse"]
   }
 };
 
@@ -114,6 +131,7 @@ async function runTriage(supabase, openaiKey, caseIds) {
 
     const update = {
       sakstype: result.sakstype,
+      tema: result.tema,
       hastegrad: result.hastegrad,
       triage: { aktualitet: result.aktualitet, betydning: result.betydning, innsats: result.innsats, eksklusivitet: result.eksklusivitet },
       oppsummering: result.oppsummering,

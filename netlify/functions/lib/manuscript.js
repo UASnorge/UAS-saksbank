@@ -1,4 +1,4 @@
-// Delt kjernelogikk for AI-generert manus. Brukt av generate-manuscript.js
+// Delt kjernelogikk for AI-generert manus. Brukt av generate-manuscript-background.js
 // (kalt fra "Generer manus"-knappen) og assistant-chat.js (kalt som verktøy
 // av AI-assistenten) — samme, allerede testede logikk.
 //

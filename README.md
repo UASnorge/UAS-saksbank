@@ -246,9 +246,9 @@ uas-saksbank/
 │   ├── rss-poll.js             Kjører hver time, henter RSS → nye saker i "Idé" (relevans+alder-filtrert)
 │   ├── add-sources.js          Masseimport av RSS-kilder (lenkeliste eller OPML)
 │   ├── ai-triage.js            AI-vurdering: kategori, hastegrad, score, sammendrag, eventkobling
-│   ├── generate-manuscript.js  AI-generert, research-drevet .docx-manus i UAS Norways malformat
+│   ├── generate-manuscript-background.js  AI-generert, research-drevet .docx-manus (Background Function)
 │   ├── revise-manuscript.js    AI-notat-drevet redigering av et allerede generert manus
-│   ├── create-case-from-link.js  "Ny sak" → lim inn lenke: oppretter sak + genererer manus i ett steg
+│   ├── create-case-from-link.js  "Ny sak" → lim inn lenke: oppretter saken raskt/synkront (manus genereres separat, i bakgrunnen)
 │   ├── import-manuscript.js    "Ny sak" → last opp manus: plasserer opplastet tekst i malen
 │   ├── assistant-chat.js       AI-chat med verktøytilgang til hele saksbanken
 │   ├── publish-to-wordpress.js Oppretter WordPress-UTKAST fra en sak sitt manus

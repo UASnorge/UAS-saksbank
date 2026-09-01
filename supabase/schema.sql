@@ -443,3 +443,23 @@ create table if not exists seen_urls (
 
 -- Ingen policy for innloggede brukere her heller — kun web-search-background.js
 -- (service_role) skal skrive hit, samme prinsipp som "seen_items".
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v11 — Tema-tagging på idéer (filter/kategorisering)
+-- ═══════════════════════════════════════════════════════════════════
+-- Satt automatisk av AI-vurderingen (lib/triage.js — kjøres allerede
+-- automatisk på RSS-/websøk-oppdagede idéer, og manuelt via "Kjør
+-- AI-vurdering"), til bruk i det nye filter-panelet i frontend
+-- (public/index.html). Fast sett med verdier (ikke fritekst) — nødvendig
+-- for at et avkrysningsfilter faktisk skal gi mening.
+alter table cases add column if not exists tema text;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'cases_tema_check') then
+    alter table cases add constraint cases_tema_check check (tema is null or tema in (
+      'FORSVAR_BEREDSKAP', 'REGELVERK_LUFTFART', 'TEKNOLOGI_PRODUKT', 'LANDBRUK',
+      'INDUSTRI_KARTLEGGING', 'LOGISTIKK_LEVERING', 'SELSKAP_MARKED', 'ULYKKE_HENDELSE',
+      'ARRANGEMENT_UTDANNING', 'ANNET'
+    ));
+  end if;
+end $$;

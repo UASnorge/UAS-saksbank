@@ -19,30 +19,13 @@
 const { createClient } = require("@supabase/supabase-js");
 const { transcribeAudio } = require("./lib/transcribe.js");
 const { generateManuscriptFromTranscript } = require("./lib/manuscript.js");
+const { isAuthorizedUser } = require("./lib/authCheck.js");
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("Mangler SUPABASE_URL og/eller SUPABASE_SERVICE_ROLE_KEY som miljøvariabler i Netlify.");
   return createClient(url, key);
-}
-
-// Kalles direkte fra nettleseren (ikke server-til-server som source-gate-
-// background.js) — må derfor selv sjekke innlogging, samme mønster som
-// import-manuscript.js, FØR den tunge (og kostbare — ekte OpenAI-kall) jobben
-// starter. Selve arbeidet under gjøres likevel med service_role (som
-// rss-poll.js) siden Background Functions ikke har noen mottaker som venter
-// på et RLS-feilsvar underveis.
-async function isAuthorized(event) {
-  var authHeader = event.headers.authorization || event.headers.Authorization || "";
-  var token = authHeader.replace(/^Bearer\s+/i, "").trim();
-  if (!token) return false;
-  var url = process.env.SUPABASE_URL;
-  var anonKey = process.env.SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return false;
-  var client = createClient(url, anonKey, { global: { headers: { Authorization: "Bearer " + token } } });
-  var userRes = await client.auth.getUser(token);
-  return !(userRes.error || !userRes.data || !userRes.data.user);
 }
 
 async function recordFailure(supabase, caseId, message) {
@@ -59,7 +42,7 @@ async function recordFailure(supabase, caseId, message) {
 
 exports.handler = async function (event) {
   const openaiKey = process.env.OPENAI_API_KEY;
-  if (!(await isAuthorized(event))) return { statusCode: 401, body: "" };
+  if (!(await isAuthorizedUser(event))) return { statusCode: 401, body: "" };
 
   var body;
   try { body = JSON.parse(event.body || "{}"); } catch (e) { return { statusCode: 400, body: "" }; }

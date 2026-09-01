@@ -245,6 +245,7 @@
   .chip-urg-planlagt { background: var(--yellow-bg); color: var(--yellow-fg); }
   .chip-urg-tidlos { background: var(--green-bg); color: var(--green-fg); }
   .chip-rss { background: transparent; color: var(--text-muted); border: 1px dotted var(--border); }
+  .chip-tema { background: var(--bg-sunken); color: var(--text-muted); border: 1px solid var(--border); text-transform: none; }
 
   .card-title { font-size: 0.9rem; font-weight: 650; line-height: 1.3; }
   .card-meta { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--text-muted); }
@@ -416,6 +417,18 @@
   .source-name { font-weight: 650; }
   .source-url { color: var(--text-muted); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .source-meta { font-size: 0.68rem; color: var(--text-muted); font-family: var(--font-mono); }
+
+  /* filter-nedtrekk */
+  .filter-dropdown { position: fixed; top: 58px; right: 16px; width: min(320px, calc(100vw - 32px)); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.22); z-index: 40; padding: 10px; max-height: 70vh; overflow-y: auto; }
+  .filter-group { border-bottom: 1px solid var(--border); padding: 4px 0; }
+  .filter-group:last-of-type { border-bottom: none; }
+  .filter-group-header { width: 100%; display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 8px 4px; font-weight: 650; font-size: 0.85rem; cursor: pointer; color: inherit; text-align: left; }
+  .filter-group-header .chev { color: var(--text-muted); }
+  .filter-group-body { display: flex; flex-direction: column; gap: 2px; padding: 2px 4px 8px; }
+  .filter-row { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; padding: 4px 2px; cursor: pointer; }
+  .filter-dropdown-footer { display: flex; justify-content: space-between; gap: 8px; padding-top: 8px; }
+  .title-group-toggle { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--accent); font-size: 0.74rem; padding: 2px 4px 8px; cursor: pointer; }
+  .title-group-extra { border-left: 2px solid var(--border); margin-left: 6px; padding-left: 8px; }
   .import-report { display: flex; flex-direction: column; gap: 8px; font-size: 0.82rem; }
   .import-report .ok-line { color: var(--green-fg); }
   .import-report .warn-line { color: var(--amber-fg); }
@@ -452,6 +465,16 @@
   ];
   var SIDE_STATUSES = { arkivert: "Arkivert", avvist: "Avvist" };
   var TYPE_LABELS = { redaksjonell: "Dronemagasin", content: "INFO", ai: "Kommentar" };
+  // AI-satt tema per idé (lib/triage.js) — brukt til filter/kategorisering.
+  var TEMA_LABELS = {
+    FORSVAR_BEREDSKAP: "🎖️ Forsvar/beredskap", REGELVERK_LUFTFART: "⚖️ Regelverk/luftfart",
+    TEKNOLOGI_PRODUKT: "🔧 Teknologi/produkt", LANDBRUK: "🌾 Landbruk",
+    INDUSTRI_KARTLEGGING: "🏗️ Industri/kartlegging", LOGISTIKK_LEVERING: "📦 Logistikk/levering",
+    SELSKAP_MARKED: "💼 Selskap/marked", ULYKKE_HENDELSE: "⚠️ Ulykke/hendelse",
+    ARRANGEMENT_UTDANNING: "🎓 Arrangement/utdanning", ANNET: "Annet"
+  };
+  var TEMA_ORDER = ["FORSVAR_BEREDSKAP", "REGELVERK_LUFTFART", "TEKNOLOGI_PRODUKT", "LANDBRUK", "INDUSTRI_KARTLEGGING",
+    "LOGISTIKK_LEVERING", "SELSKAP_MARKED", "ULYKKE_HENDELSE", "ARRANGEMENT_UTDANNING", "ANNET"];
   // WordPress-stikkord (tags) og -kategori (categories) ved publisering —
   // to atskilte WP-taksonomier, valgt av redaksjonen selv per sak, aldri
   // utledet stille fra andre felt. Se lib/wordpress.js.
@@ -506,7 +529,7 @@
 
   function dbToCase(row) {
     return {
-      id: row.id, title: row.title || "", sakstype: row.sakstype, hastegrad: row.hastegrad,
+      id: row.id, title: row.title || "", sakstype: row.sakstype, tema: row.tema || "", hastegrad: row.hastegrad,
       status: row.status, eier: row.eier || "Ikke tildelt", frist: row.frist || "",
       nesteHandling: row.neste_handling || "", kilder: row.kilder || [], kategori: row.kategori || "",
       malgruppe: row.malgruppe || "Ikke satt", nettsted: row.nettsted, triage: row.triage,
@@ -560,7 +583,8 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, reviseBusy: {}, mobileMenuOpen: false, manusExpanded: false, newCaseTab: "lenke", newCaseBusy: false },
+    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, reviseBusy: {}, mobileMenuOpen: false, manusExpanded: false, newCaseTab: "lenke", newCaseBusy: false,
+      filterPanelOpen: false, filterGroupsOpen: { tema: true, sakstype: true }, filters: { tema: null, sakstype: null }, expandedTitleGroups: {} },
     chat: { messages: [], busy: false },
     session: null,
     realtimeOk: false
@@ -697,6 +721,7 @@
     var alerts = buildAlerts();
     root.innerHTML =
       renderTopbar(alerts.length) +
+      renderFilterDropdown() +
       renderSelectionBar() +
       '<div class="main">' +
         (state.ui.view === "list" ? renderListView() : renderBoard()) +
@@ -704,6 +729,48 @@
       "</div>" +
       renderModal();
     bindEvents();
+  }
+
+  // Filter-nedtrekk (Tema/Sakstype) — to hovedgrupper som kan lukkes/åpnes
+  // individuelt (state.ui.filterGroupsOpen), pluss avkrysning per verdi
+  // (state.ui.filters). null for en dimensjon = ingen filtrering der.
+  function filterGroupHtml(dim, title, options) {
+    var open = !!state.ui.filterGroupsOpen[dim];
+    var active = state.ui.filters[dim];
+    var rows = options.map(function (opt) {
+      var checked = !active || !!active[opt.value];
+      return (
+        '<label class="filter-row">' +
+          '<input type="checkbox" data-filter-dim="' + dim + '" data-filter-value="' + escapeHtml(opt.value) + '"' + (checked ? " checked" : "") + " />" +
+          "<span>" + escapeHtml(opt.label) + "</span>" +
+        "</label>"
+      );
+    }).join("");
+    return (
+      '<div class="filter-group">' +
+        '<button class="filter-group-header" type="button" data-action="toggle-filter-group" data-dim="' + dim + '">' +
+          '<span class="chev">' + (open ? "▾" : "▸") + "</span><span>" + escapeHtml(title) + "</span>" +
+        "</button>" +
+        (open ? '<div class="filter-group-body">' + rows + "</div>" : "") +
+      "</div>"
+    );
+  }
+
+  function renderFilterDropdown() {
+    if (!state.ui.filterPanelOpen) return "";
+    var temaOptions = TEMA_ORDER.map(function (t) { return { value: t, label: TEMA_LABELS[t] }; })
+      .concat([{ value: "UTEN_TEMA", label: "Uten tema (ikke AI-vurdert ennå)" }]);
+    var sakstypeOptions = Object.keys(TYPE_LABELS).map(function (k) { return { value: k, label: TYPE_LABELS[k] }; });
+    return (
+      '<div class="filter-dropdown" role="dialog" aria-label="Filter">' +
+        filterGroupHtml("tema", "Tema", temaOptions) +
+        filterGroupHtml("sakstype", "Sakstype", sakstypeOptions) +
+        '<div class="filter-dropdown-footer">' +
+          '<button class="btn btn-ghost" type="button" data-action="reset-filters">Nullstill filter</button>' +
+          '<button class="btn btn-primary" type="button" data-action="toggle-filter-panel">Lukk</button>' +
+        "</div>" +
+      "</div>"
+    );
   }
 
   function renderSelectionBar() {
@@ -747,6 +814,7 @@
         '<button class="btn menu-toggle" data-action="toggle-mobile-menu" aria-label="Meny" aria-expanded="' + (state.ui.mobileMenuOpen ? "true" : "false") + '">☰ Meny</button>' +
         '<div class="topbar-actions' + (state.ui.mobileMenuOpen ? " open" : "") + '">' +
           '<button class="btn" data-action="open-sources">Kilder</button>' +
+          '<button class="btn" data-action="toggle-filter-panel">🔎 Filter' + (activeFilterCount() ? ' <span class="badge-count">' + activeFilterCount() + "</span>" : "") + "</button>" +
           '<button class="btn" data-action="run-ai-triage-bulk"' + (state.ui.aiBulkBusy ? " disabled" : "") + ">" + (state.ui.aiBulkBusy ? "Vurderer …" : "Kjør AI-vurdering (nye idéer)") + "</button>" +
           '<button class="btn" data-action="open-weights">Prioriteringsmodell</button>' +
           '<button class="btn btn-ghost" data-action="toggle-aside" aria-label="Aktivitet">Aktivitet ' + (alertCount ? '<span class="badge-count">' + alertCount + "</span>" : "") + "</button>" +
@@ -898,9 +966,62 @@
     return order.map(function (key) { return { key: key, label: monthGroupLabel(key), items: groups[key] }; });
   }
 
+  // Filter-panelet (Tema/Sakstype) — null i state.ui.filters[dim] = ingen
+  // filtrering på den dimensjonen (vis alt), ellers et objekt/set med
+  // verdiene som skal vises.
+  function visibleCases() {
+    var f = state.ui.filters;
+    return state.cases.filter(function (c) {
+      if (f.tema && !f.tema[c.tema || "UTEN_TEMA"]) return false;
+      if (f.sakstype && !f.sakstype[c.sakstype]) return false;
+      return true;
+    });
+  }
+
+  function activeFilterCount() {
+    var f = state.ui.filters;
+    var n = 0;
+    if (f.tema) n++;
+    if (f.sakstype) n++;
+    return n;
+  }
+
+  // Samler saker med (nesten) identisk tittel (trimmet, uavhengig av store/
+  // små bokstaver) — typisk samme hendelse plukket opp via to forskjellige
+  // kilder/URL-er (RSS + websøk, eller to ulike RSS-feeder). Viser én
+  // hovedsak + en "vis N til"-knapp i stedet for flere like-utseende kort.
+  function groupByTitleWithinList(items) {
+    var order = [], groups = {};
+    items.forEach(function (c) {
+      var key = (c.title || "").trim().toLowerCase();
+      if (!key) { order.push({ single: c }); return; }
+      if (!groups[key]) { groups[key] = []; order.push({ key: key }); }
+      groups[key].push(c);
+    });
+    return order.map(function (entry) {
+      if (entry.single) return { primary: entry.single, extras: [] };
+      var g = groups[entry.key];
+      return { primary: g[0], extras: g.slice(1) };
+    });
+  }
+
+  function renderCardGroup(group) {
+    if (!group.extras.length) return renderCard(group.primary);
+    var groupKey = group.primary.id;
+    var open = !!state.ui.expandedTitleGroups[groupKey];
+    return (
+      renderCard(group.primary) +
+      '<button class="title-group-toggle" type="button" data-action="toggle-title-group" data-id="' + groupKey + '">' +
+        (open ? "▾ Skjul " : "▸ Vis ") + group.extras.length + " til med samme tittel" +
+      "</button>" +
+      (open ? '<div class="title-group-extra">' + group.extras.map(renderCard).join("") + "</div>" : "")
+    );
+  }
+
   function renderBoard() {
+    var cases = visibleCases();
     var cols = STATUSES.map(function (s) {
-      var items = state.cases.filter(function (c) { return c.status === s.id; }).sort(function (a, b) {
+      var items = cases.filter(function (c) { return c.status === s.id; }).sort(function (a, b) {
         return computeScore(b.triage, state.weights) - computeScore(a.triage, state.weights);
       });
       var bodyHtml;
@@ -908,13 +1029,14 @@
         bodyHtml = '<div class="column-empty">Ingen saker</div>';
       } else if (s.id === "ide") {
         // Gruppert på måned publisert hos kilden — nyeste måned øverst, mest
-        // relevante (høyest score) øverst innenfor hver måned.
+        // relevante (høyest score) øverst innenfor hver måned. Innad i hver
+        // måned: saker med samme tittel samles under ett.
         bodyHtml = groupByMonth(items).map(function (g) {
           return '<div class="month-group-header">' + escapeHtml(g.label) + '<span class="month-group-count">' + g.items.length + "</span></div>" +
-            g.items.map(renderCard).join("");
+            groupByTitleWithinList(g.items).map(renderCardGroup).join("");
         }).join("");
       } else {
-        bodyHtml = items.map(renderCard).join("");
+        bodyHtml = groupByTitleWithinList(items).map(renderCardGroup).join("");
       }
       return (
         '<div class="column">' +
@@ -965,6 +1087,7 @@
           '<span class="chip chip-type-' + c.sakstype + '">' + TYPE_LABELS[c.sakstype] + "</span>" +
           '<span class="chip chip-urg-' + c.hastegrad + '">' + URGENCY_LABELS[c.hastegrad] + "</span>" +
           '<span class="chip chip-site">' + (SITE_LABELS[c.nettsted] || c.nettsted) + "</span>" +
+          (c.tema && TEMA_LABELS[c.tema] ? '<span class="chip chip-tema">' + TEMA_LABELS[c.tema] + "</span>" : "") +
           (c.isRss ? '<span class="chip chip-rss">RSS</span>' : "") +
           (ev ? '<span class="chip chip-event">📅 ' + escapeHtml(ev.title) + "</span>" : "") +
         "</div>" +
@@ -988,7 +1111,7 @@
 
   function renderListView() {
     var order = STATUSES.map(function (s) { return s.id; }).concat(Object.keys(SIDE_STATUSES));
-    var rows = state.cases.slice().sort(function (a, b) {
+    var rows = visibleCases().slice().sort(function (a, b) {
       var oa = order.indexOf(a.status), ob = order.indexOf(b.status);
       if (oa !== ob) return oa - ob;
       return computeScore(b.triage, state.weights) - computeScore(a.triage, state.weights);
@@ -1551,6 +1674,11 @@
         toggleSource(el.getAttribute("data-toggle-source"), el.checked);
       });
     });
+    root.querySelectorAll("[data-filter-dim]").forEach(function (el) {
+      el.addEventListener("change", function () {
+        toggleFilterValue(el.getAttribute("data-filter-dim"), el.getAttribute("data-filter-value"));
+      });
+    });
     root.querySelectorAll("[data-select-id]").forEach(function (el) {
       el.addEventListener("click", function (e) { e.stopPropagation(); });
       el.addEventListener("change", function () {
@@ -1666,6 +1794,20 @@
       case "open-case": state.ui.activeCaseId = e.currentTarget.getAttribute("data-id"); state.ui.modal = "case"; render(); break;
       case "open-weights": state.ui.modal = "weights"; render(); break;
       case "open-sources": openSources(); break;
+      case "toggle-filter-panel": state.ui.filterPanelOpen = !state.ui.filterPanelOpen; render(); break;
+      case "toggle-filter-group": {
+        var dim = e.currentTarget.getAttribute("data-dim");
+        state.ui.filterGroupsOpen[dim] = !state.ui.filterGroupsOpen[dim];
+        render();
+        break;
+      }
+      case "reset-filters": state.ui.filters = { tema: null, sakstype: null }; render(); break;
+      case "toggle-title-group": {
+        var groupId = e.currentTarget.getAttribute("data-id");
+        state.ui.expandedTitleGroups[groupId] = !state.ui.expandedTitleGroups[groupId];
+        render();
+        break;
+      }
       case "delete-case-quick": e.stopPropagation(); quickDeleteCase(e.currentTarget.getAttribute("data-id")); break;
       case "delete-selected": deleteSelected(); break;
       case "clear-selection": state.ui.selectedIds = {}; render(); break;
@@ -1777,8 +1919,16 @@
       });
       var data = await parseFunctionResponse(res);
       if (!res.ok) { showToast(data.error || "Kunne ikke opprette sak fra lenke"); return; }
-      showToast("Sak opprettet og manus generert: " + data.title);
-      if (data.manus && data.manus.usikkerhetsnotat) showToast("⚠️ " + data.manus.usikkerhetsnotat);
+
+      // Saken finnes nå — fyr av selve manusgenereringen i bakgrunnen (ekte
+      // gpt-5-search-api-kall, kan ta et halvt minutt+) i stedet for å vente
+      // blokkerende på den (ga i praksis HTTP 504 av og til, se
+      // generate-manuscript-background.js).
+      fetch("/.netlify/functions/generate-manuscript-background", {
+        method: "POST", headers: authHeader(), body: JSON.stringify({ caseId: data.caseId })
+      }).catch(function () {});
+
+      showToast("Sak opprettet — genererer manus i bakgrunnen: " + data.title);
       await openCreatedCase(data.caseId);
     } catch (err) {
       showToast("Kunne ikke opprette sak fra lenke: " + err.message);
@@ -1990,31 +2140,28 @@
     var ids = Object.keys(state.ui.selectedIds);
     if (!ids.length) return;
     state.ui.selectedIds = {};
-    ids.forEach(function (id) { state.ui.manusBusy[id] = true; });
     render();
 
+    // Trigger-kall — svarer raskt (202), selve genereringen skjer i
+    // bakgrunnen per sak (generate-manuscript-background.js). Vi venter ikke
+    // på et samlet "N generert"-resultat lenger; se historikken på hver sak.
     var results = await Promise.allSettled(ids.map(async function (id) {
-      var res = await fetch("/.netlify/functions/generate-manuscript", {
+      var res = await fetch("/.netlify/functions/generate-manuscript-background", {
         method: "POST", headers: authHeader(), body: JSON.stringify({ caseId: id })
       });
-      var data = await parseFunctionResponse(res);
-      if (!res.ok) throw new Error(data.error || "ukjent feil");
-      return data;
+      if (!res.ok) { var data = await parseFunctionResponse(res).catch(function () { return {}; }); throw new Error(data.error || "ukjent feil"); }
     }));
 
-    var ok = 0, failed = [];
+    var startet = 0, failed = [];
     results.forEach(function (r, i) {
-      if (r.status === "fulfilled") ok++;
+      if (r.status === "fulfilled") startet++;
       else failed.push({ id: ids[i], error: r.reason ? r.reason.message : "ukjent feil" });
     });
 
-    ids.forEach(function (id) { delete state.ui.manusBusy[id]; });
-    await refreshAndRender();
-
-    var msg = ok + " manus generert";
-    if (failed.length) msg += ", " + failed.length + " feilet";
+    var msg = startet + " sak(er) sendt til manusgenerering i bakgrunnen — følg med i historikken på hver sak";
+    if (failed.length) msg += ", " + failed.length + " kunne ikke startes";
     showToast(msg);
-    if (failed.length) console.warn("Manus feilet for:", failed);
+    if (failed.length) console.warn("Kunne ikke starte manusgenerering for:", failed);
   }
 
   async function publishToWordPress(id) {
@@ -2116,6 +2263,24 @@
     persistWeights();
     state.ui.modal = null; render();
     showToast("Vekting lagret");
+  }
+
+  var FILTER_DIM_VALUES = {
+    tema: TEMA_ORDER.concat(["UTEN_TEMA"]),
+    sakstype: Object.keys(TYPE_LABELS)
+  };
+
+  function toggleFilterValue(dim, value) {
+    var allValues = FILTER_DIM_VALUES[dim];
+    var current = state.ui.filters[dim];
+    var set = {};
+    if (current) { Object.assign(set, current); } else { allValues.forEach(function (v) { set[v] = true; }); }
+    set[value] = !set[value];
+    var allChecked = allValues.every(function (v) { return set[v]; });
+    var noneChecked = allValues.every(function (v) { return !set[v]; });
+    state.ui.filters[dim] = allChecked ? null : set;
+    if (noneChecked) state.ui.filters[dim] = {}; // eksplisitt "vis ingen" — ikke tolk som "vis alt"
+    render();
   }
 
   async function openSources() {
@@ -2306,21 +2471,26 @@
     }
   }
 
+  // Manusgenerering (ekte gpt-5-search-api-kall — kan ta over et minutt) er
+  // en Background Function (generate-manuscript-background.js) — vi venter
+  // IKKE på et synkront svar lenger (det ga i praksis HTTP 504 av og til).
+  // Trigger-kallet selv svarer nesten øyeblikkelig (202); resultatet dukker
+  // opp live i saken sin historikk via Supabase Realtime (allerede koblet
+  // opp) når jobben faktisk er ferdig.
   async function generateManuscriptForCase(id) {
     state.ui.manusBusy[id] = true;
     render();
     try {
-      var res = await fetch("/.netlify/functions/generate-manuscript", {
+      var res = await fetch("/.netlify/functions/generate-manuscript-background", {
         method: "POST", headers: authHeader(), body: JSON.stringify({ caseId: id })
       });
-      var data = await parseFunctionResponse(res);
-      if (!res.ok) { showToast(data.error || "Kunne ikke generere manus"); return; }
-      var msg = "Manus generert" + (data.harBilde ? "" : " (uten bilde — sett inn manuelt)");
-      showToast(msg);
-      if (data.usikkerhetsnotat) showToast("⚠️ " + data.usikkerhetsnotat);
-      await refreshAndRender();
+      if (!res.ok) {
+        var data = await parseFunctionResponse(res).catch(function () { return {}; });
+        showToast(data.error || "Kunne ikke starte manusgenerering"); return;
+      }
+      showToast("Genererer manus i bakgrunnen (kan ta et halvt minutt) — følg med i historikken");
     } catch (err) {
-      showToast("Kunne ikke generere manus: " + err.message);
+      showToast("Kunne ikke starte manusgenerering: " + err.message);
     } finally {
       delete state.ui.manusBusy[id];
       render();

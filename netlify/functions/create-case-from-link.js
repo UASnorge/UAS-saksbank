@@ -1,7 +1,10 @@
 // Tynn HTTP-wrapper rundt lib/importManuscript.js sin createCaseFromLink —
 // se den filen for selve logikken. Kalles fra "+ Ny sak"-modalens
-// "Lim inn lenke"-fane: oppretter saken og genererer manus automatisk
-// (gjenbruker den research-drevne manusgenereringen i lib/manuscript.js).
+// "Lim inn lenke"-fane: oppretter KUN saken raskt/synkront (ingen AI-kall
+// her lenger — se generate-manuscript-background.js, som frontend kaller
+// separat rett etter med caseId-en denne returnerer. Splittet i to etter at
+// det viste seg i praksis at et ekte gpt-5-search-api-kall inni samme
+// forespørsel kunne gi HTTP 504 på Netlify sin synkrone funksjonsgrense).
 
 const { createClient } = require("@supabase/supabase-js");
 const { createCaseFromLink } = require("./lib/importManuscript.js");
@@ -19,8 +22,6 @@ exports.handler = async function (event) {
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return { statusCode: 401, body: JSON.stringify({ error: "Mangler innlogging." }) };
 
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) return { statusCode: 500, body: JSON.stringify({ error: "OPENAI_API_KEY er ikke satt i Netlify ennå." }) };
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
     return { statusCode: 500, body: JSON.stringify({ error: "SUPABASE_URL/SUPABASE_ANON_KEY mangler som miljøvariabler." }) };
   }
@@ -34,7 +35,7 @@ exports.handler = async function (event) {
   if (!body.url) return { statusCode: 400, body: JSON.stringify({ error: "Mangler lenke." }) };
 
   try {
-    const result = await createCaseFromLink(supabase, openaiKey, body.url);
+    const result = await createCaseFromLink(supabase, body.url);
     return { statusCode: 200, body: JSON.stringify(result) };
   } catch (err) {
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };

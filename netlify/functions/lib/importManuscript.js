@@ -11,7 +11,7 @@
 
 const mammoth = require("mammoth");
 const { Document, Packer } = require("docx");
-const { generateManuscript, fetchSourceArticle, buildDocxParagraphs, callOpenAI, HOUSE_STYLE, MODEL, IMAGE_MARKER_RE } = require("./manuscript.js");
+const { fetchSourceArticle, buildDocxParagraphs, callOpenAI, HOUSE_STYLE, MODEL, IMAGE_MARKER_RE } = require("./manuscript.js");
 
 const IMPORT_SYSTEM_PROMPT = HOUSE_STYLE + `
 
@@ -107,7 +107,12 @@ const IMPORT_SCHEMA = {
 };
 
 // supabase: klient autentisert SOM den innloggede brukeren (RLS gjelder).
-async function createCaseFromLink(supabase, openaiKey, url) {
+// MERK: oppretter KUN saken raskt/synkront — genererer IKKE manuset her
+// lenger (se generate-manuscript-background.js, kalt separat av frontend
+// rett etter at denne returnerer caseId). Et ekte gpt-5-search-api-kall kan
+// ta lenger enn Netlify sin grense for vanlige, synkrone funksjoner —
+// oppdaget i praksis (HTTP 504) da dette fortsatt lå i samme kall.
+async function createCaseFromLink(supabase, url) {
   if (!/^https?:\/\//i.test(url || "")) throw new Error("Ugyldig lenke — må starte med http:// eller https://");
 
   const preview = await fetchSourceArticle(url);
@@ -123,15 +128,11 @@ async function createCaseFromLink(supabase, openaiKey, url) {
     kilder: [url],
     neste_handling: "AI genererer manus …",
     triage: { aktualitet: 3, betydning: 3, innsats: 3, eksklusivitet: 3 },
-    historikk: [{ ts: nowIsoStr, text: "Sak opprettet manuelt fra lenke — AI genererer manus automatisk" }]
+    historikk: [{ ts: nowIsoStr, text: "Sak opprettet manuelt fra lenke — AI genererer manus i bakgrunnen" }]
   }).select().single();
   if (caseRes.error) throw new Error("Kunne ikke opprette sak: " + caseRes.error.message);
 
-  // Gjenbruker den allerede testede, research-drevne manusgenereringen —
-  // ikke en egen, uverifisert kopi av samme logikk.
-  const manusResult = await generateManuscript(supabase, openaiKey, caseRes.data.id);
-
-  return { ok: true, caseId: caseRes.data.id, title: title, manus: manusResult };
+  return { ok: true, caseId: caseRes.data.id, title: title };
 }
 
 // supabase: klient autentisert SOM den innloggede brukeren (RLS gjelder).

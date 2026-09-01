@@ -9,7 +9,7 @@
 //
 // Kjører som den innloggede brukeren (RLS), ikke service_role. Krever
 // OPENAI_API_KEY. Verktøyene deler kjernelogikk med ai-triage.js og
-// generate-manuscript.js via lib/ — ikke egne, uverifiserte kopier.
+// generate-manuscript-background.js via lib/ — ikke egne, uverifiserte kopier.
 
 const { createClient } = require("@supabase/supabase-js");
 const { runTriage } = require("./lib/triage.js");
