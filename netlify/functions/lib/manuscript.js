@@ -525,11 +525,138 @@ async function generateManuscript(supabase, openaiKey, caseId) {
   };
 }
 
+// Maks tegn transkripsjon som sendes til AI-en — MYE høyere enn
+// MAX_SOURCE_CHARS (som gjelder hentet HTML fra en nettartikkel). Et 35 min
+// intervju er typisk 25-30 000 tegn — vanlige modellers kontekstvindu tar
+// dette uten problem, ingen grunn til å kutte det ned slik en nettartikkel
+// kuttes. Kun en sperre mot reelt ekstreme opptak (flere timer).
+const MAX_TRANSCRIPT_CHARS = 80000;
+
+// Systemprompt for manus FRA ET LYDOPPTAK (intervju e.l.) — egen fra
+// RESEARCH_SYSTEM_PROMPT (som handler om å bearbeide en ekte, EKSTERN
+// artikkel) siden grunnlaget her er redaksjonens EGET opptak, ikke en
+// publisert kilde å kreditere. Gjenbruker likevel samme RESEARCH_SCHEMA —
+// feltene (tittel/ingress/hovedtekst_avsnitt/kilder_brukt/kontrollpunkter
+// osv.) passer like godt her.
+const TRANSCRIPT_SYSTEM_PROMPT = `Du er journalist i Dronemagasinet (dronemag.no)/UAS Norway, medlem av Fagpressen og underlagt Redaktørplakaten. Du har fått en TRANSKRIBERT LYDOPPTAK-tekst (typisk et intervju redaksjonen selv har gjort) som grunnlag for en ny sak, samt en arbeidstittel og eventuelt et redaksjonelt notat om vinkling/lengde/hva saken skal handle om.
+
+GRUNNREGEL, ufravikelig: bygg UTELUKKENDE på det som faktisk sies i transkripsjonen. Dikt ALDRI opp sitater, tall, navn eller påstander som ikke faktisk finnes i teksten du får. Transkripsjonen kan inneholde feilhørte ord/navn (automatisk talegjenkjenning) — er noe åpenbart feilstavet eller usikkert (f.eks. et uvanlig firmanavn eller produktnavn), noter det i usikkerhetsnotat i stedet for å gjette blindt.
+
+VIKTIG OM TALERE: transkripsjonen merker ulike stemmer som "Taler 1"/"Taler 2" osv. Er transkripsjonen merket som delt opp i flere biter (fremgår av teksten du får), er IKKE talermerkingen nødvendigvis konsistent på tvers av delene — "Taler 1" i del 2 er ikke garantert samme person som "Taler 1" i del 1. Bruk sitater/attribusjon med varsomhet i så fall, og nevn i usikkerhetsnotat at taleridentitet bør dobbeltsjekkes mot selve lydopptaket før publisering. Er transkripsjonen IKKE delt opp, kan talermerkingen innad i opptaket stort sett stoles på.
+
+Gjør, i denne rekkefølgen:
+
+1. Skriv et redaksjonelt førsteutkast basert på intervjuet — ikke et rått referat, men en ferdig strukturert sak (ingress, mellomtitler, sitatblokker der de faktisk sier noe sitatverdig).
+2. Følg det redaksjonelle notatet (vinkling/lengde/hva saken skal handle om) hvis det er oppgitt — det styrer hvordan saken vinkles og hvor omfattende den blir, men overstyrer ALDRI grunnregelen om å aldri dikte opp innhold utover det som faktisk sies i opptaket.
+3. BRUK WEBSØK til å: verifisere/utdype faktapåstander som nevnes i intervjuet (selskapsnavn, produkter, tall, hendelser) mot åpne kilder der det er naturlig, og søke Dronemagasinets/UAS Norways EGET arkiv (site:dronemag.no / site:uasnorway.no) etter tidligere dekning av samme tema/selskap/person — akkurat som ved vanlig kildebasert manusgenerering. Finner du ingen relevant tidligere dekning, sett tidligere_dekning til null.
+4. Sitatblokker (prefiks "> ") skal formateres '> «sitatet» – navn, rolle' (navn/rolle fra intervjuobjektet om det er kjent fra konteksten/arbeidstittelen/notatet — er navn/rolle ukjent, skriv "– intervjuobjektet" og noter i usikkerhetsnotat at navn/rolle bør bekreftes før publisering). IKKE skriv "til Dronemagasinet" e.l. etter sitatet — det er unødvendig når kilden er redaksjonens eget intervju.
+5. STRUKTUR: samme avsnittskonvensjon som ellers — mellomtittel "## Tittel", sitatblokk "> ...", vanlig avsnitt uten prefiks.
+6. kilder_brukt: list eventuelle EKSTERNE kilder du faktisk fant/brukte til faktasjekk/kontekst (ekte, funnet URL-er, aldri oppdiktet). Selve intervjuet er ikke en URL og skal ikke stå i denne listen.
+7. KONTROLLPUNKTER: konkrete, saksspesifikke ting redaksjonen bør avklare før publisering — inkluder ALLTID et punkt om å dobbeltsjekke sitater/attribusjon mot selve lydopptaket, i tillegg til andre sakspesifikke punkter.
+8. alt_tekst_bilde: sett til en kort, generisk beskrivelse basert på temaet (redaksjonen laster selv opp egne bilder til saken, ingen bilde-URL er hentet automatisk her) — bilde_er_illustrasjon settes til false.
+
+GRUNNREGEL, som ellers i redaksjonens verktøy: skriv ALDRI noe som om det er bekreftet uten at det faktisk sies i opptaket eller er funnet ved websøk. Er noe usikkert, si det i usikkerhetsnotat — ikke fyll hull med antakelser.`;
+
+async function generateManuscriptFromTranscript(supabase, openaiKey, caseId, transcript, opts) {
+  opts = opts || {};
+  const caseRes = await supabase.from("cases").select("*").eq("id", caseId).maybeSingle();
+  if (caseRes.error || !caseRes.data) throw new Error("Fant ikke saken.");
+  const c = caseRes.data;
+
+  var truncated = transcript.length > MAX_TRANSCRIPT_CHARS;
+  var transcriptForPrompt = truncated ? transcript.slice(0, MAX_TRANSCRIPT_CHARS) : transcript;
+
+  const userPrompt =
+    "Arbeidstittel: " + c.title + "\n" +
+    (opts.aiNotat ? "Redaksjonelt notat (vinkling/lengde/hva saken skal handle om): " + opts.aiNotat + "\n" : "") +
+    "Destinasjonsnettsted: " + (c.nettsted || "dronemag.no") + " — søk primært i dronemag.no sitt arkiv etter tidligere dekning, også om saken skal publiseres på uasnorway.no.\n" +
+    (opts.flerBiter ? "MERK: opptaket var langt og ble transkribert i " + opts.antallBiter + " deler — talermerking er IKKE nødvendigvis konsistent på tvers av delene, se instruks over.\n" : "") +
+    (truncated ? "(NB: transkripsjonen var svært lang og er kuttet til de første " + MAX_TRANSCRIPT_CHARS + " tegnene.)\n" : "") +
+    "\nTRANSKRIBERT LYDOPPTAK:\n" + transcriptForPrompt;
+
+  const fields = await callOpenAI(openaiKey, RESEARCH_MODEL, TRANSCRIPT_SYSTEM_PROMPT, userPrompt, RESEARCH_SCHEMA);
+  stripCitationsFromFields(fields);
+  await verifySourceLinks(fields);
+
+  // Server-side garanti, samme prinsipp som ensureOriginalSourceListed/
+  // ensureQuoteAttribution over — testing viste at "ALLTID"-instruksen i
+  // punkt 7 i TRANSCRIPT_SYSTEM_PROMPT ikke alltid faktisk følges av modellen.
+  var harSitatKontrollpunkt = (fields.kontrollpunkter || []).some(function (k) {
+    return /sitat|attribu|opptak/i.test(k);
+  });
+  if (!harSitatKontrollpunkt) {
+    fields.kontrollpunkter = (fields.kontrollpunkter || []).concat(
+      "Dobbeltsjekk sitater og hvem som sier hva mot selve lydopptaket før publisering."
+    );
+  }
+
+  // Første opplastede bilde = hovedbilde (samme docx-plassering som ved
+  // lenke-basert manusgenerering); eventuelle flere limes inn som egne
+  // inline-bildemarkører til slutt i teksten (se IMAGE_MARKER_RE) — enkel,
+  // forutsigbar plassering v1, redaksjonen flytter dem selv om ønskelig i
+  // manus-editoren (samme mekanisme som opplastede manus med bilder).
+  var images = opts.imageUrls || [];
+  var heroImage = images.length ? await fetchImage(images[0]) : null;
+  if (images.length > 1) {
+    for (var i = 1; i < images.length; i++) {
+      fields.hovedtekst_avsnitt.push("![Bilde fra opptaket](" + images[i] + ")");
+    }
+  }
+  fields.fotoKreditering = heroImage ? "UAS Norway / Dronemagasinet" : "";
+
+  const doc = new Document({ sections: [{ children: await buildDocxParagraphs(fields, heroImage) }] });
+  const buffer = await Packer.toBuffer(doc);
+
+  const path = c.id + "/" + Date.now() + ".docx";
+  const uploadRes = await supabase.storage.from("manus").upload(path, buffer, {
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    upsert: false
+  });
+  if (uploadRes.error) throw new Error("Kunne ikke laste opp manus: " + uploadRes.error.message);
+
+  const historikkNote = "Manus generert fra lydopptak (AI-førsteutkast)" +
+    (opts.flerBiter ? " — opptak i " + opts.antallBiter + " deler, dobbeltsjekk taler-attribusjon" : "") +
+    (fields.tidligere_dekning ? " — fant tidligere dekning: " + fields.tidligere_dekning.tittel : "") +
+    (fields.usikkerhetsnotat ? " — ⚠️ " + fields.usikkerhetsnotat : "") +
+    " — " + fields.kontrollpunkter.length + " kontrollpunkt(er) å avklare før publisering";
+  const historikk = [{ ts: new Date().toISOString(), text: historikkNote }].concat(c.historikk || []);
+
+  // audioUrl (signert, 1 år) legges inn som kilden for saken — det ER kilden
+  // for en lydopptak-basert sak, samme prinsipp som en lenke er kilden[0] for
+  // lenke-baserte saker. Rører aldri kilder om noe allerede er satt der.
+  var kilderUpdate = {};
+  if (opts.audioUrl && !(c.kilder && c.kilder.length)) kilderUpdate.kilder = [opts.audioUrl];
+
+  const updateRes = await supabase.from("cases").update(Object.assign({
+    manus_url: path,
+    manus_generert_ts: new Date().toISOString(),
+    manus_tittel: fields.tittel || "",
+    manus_ingress: fields.ingress || "",
+    manus_hovedtekst: fields.hovedtekst_avsnitt || [],
+    manus_alt_tekst: fields.alt_tekst_bilde || "",
+    manus_bilde_url: images.length ? images[0] : "",
+    manus_foto: fields.fotoKreditering || "",
+    manus_emnefelt: fields.emnefelt || [],
+    manus_titler_alternativer: fields.titler_alternativer || [],
+    manus_tidligere_dekning: fields.tidligere_dekning || null,
+    manus_kilder_brukt: fields.kilder_brukt || [],
+    manus_kontrollpunkter: fields.kontrollpunkter || [],
+    manus_bilde_er_illustrasjon: false,
+    historikk: historikk
+  }, kilderUpdate)).eq("id", c.id);
+  if (updateRes.error) throw new Error(updateRes.error.message);
+
+  return {
+    ok: true, path: path, harBilde: !!heroImage, usikkerhetsnotat: fields.usikkerhetsnotat || null,
+    fantTidligereDekning: !!fields.tidligere_dekning, antallKontrollpunkter: fields.kontrollpunkter.length
+  };
+}
+
 // fetchSourceArticle/fetchImage/buildDocxParagraphs/callOpenAI/HOUSE_STYLE
 // eksportert i tillegg til generateManuscript selv — gjenbrukes av
 // lib/reviseManuscript.js (AI-notat-revidering direkte i verktøyet) i stedet
 // for å duplisere den samme, allerede testede logikken.
 module.exports = {
-  generateManuscript, fetchSourceArticle, fetchImage, buildDocxParagraphs,
+  generateManuscript, generateManuscriptFromTranscript, fetchSourceArticle, fetchImage, buildDocxParagraphs,
   callOpenAI, scaleToMaxWidth, HOUSE_STYLE, MODEL, IMAGE_MARKER_RE, parseImageMarker
 };

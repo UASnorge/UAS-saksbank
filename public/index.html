@@ -1118,6 +1118,7 @@
     var tabsHtml = '<div class="aside-tabs" style="padding:0 0 4px;">' +
       newCaseTabBtn("lenke", "🔗 Lim inn lenke") +
       newCaseTabBtn("opplasting", "📄 Last opp manus") +
+      newCaseTabBtn("lydopptak", "🎙️ Lydopptak") +
       newCaseTabBtn("skriv", "✍️ Skriv selv") +
     "</div>";
 
@@ -1132,6 +1133,15 @@
         '<div class="field"><label for="nc-file">Manus-fil (.docx)</label><input id="nc-file" type="file" accept=".docx" /></div>' +
         '<p class="helper">Følger ikke filen redaksjonens mal (TITTEL/BILDE/INGRESS/HOVEDTEKST osv.) er det helt greit — AI plasserer det du allerede har skrevet riktig i malen, uten å omskrive eller legge til noe nytt. Saken havner rett i «I arbeid».</p>' +
         '<button class="btn btn-primary" type="button" data-action="submit-new-case-upload"' + (busy ? " disabled" : "") + ">" + (busy ? "Laster opp og leser fil (kan ta litt tid) …" : "Last opp og opprett sak") + "</button>";
+    } else if (tab === "lydopptak") {
+      bodyHtml =
+        '<div class="import-report"><div class="warn-line">NB: Opptak deles og transkriberes automatisk i bakgrunnen — kan ta noen minutter for lengre opptak. Systemet skiller mellom ulike stemmer i intervjuer, men kan bomme på hvem som er hvem — sjekk sitatattribusjon før publisering.</div></div>' +
+        '<div class="field"><label for="nc-audio">Lydopptak</label><input id="nc-audio" type="file" accept="audio/*" /></div>' +
+        '<div class="field"><label for="nc-audio-images">Bilder til saken (valgfritt, kan velge flere)</label><input id="nc-audio-images" type="file" accept="image/png,image/jpeg" multiple /></div>' +
+        '<div class="field"><label for="nc-audio-title">Arbeidstittel</label><input id="nc-audio-title" type="text" placeholder="F.eks. Intervju med … om …" /></div>' +
+        '<div class="field"><label for="nc-audio-notat">AI-notat (valgfritt)</label><textarea id="nc-audio-notat" rows="3" placeholder="Vinkling, hva saken skal handle om, ønsket lengde, e.l."></textarea></div>' +
+        '<p class="helper">AI transkriberer opptaket og skriver et redaksjonelt førsteutkast basert på det som faktisk sies — du havner rett i «I arbeid» og ser fremdriften i historikken mens det jobbes.</p>' +
+        '<button class="btn btn-primary" type="button" data-action="submit-new-case-audio"' + (busy ? " disabled" : "") + ">" + (busy ? "Laster opp …" : "Last opp og opprett sak") + "</button>";
     } else {
       bodyHtml =
         '<form id="new-tip-form">' +
@@ -1714,6 +1724,7 @@
       case "submit-new-tip": submitNewTip(); break;
       case "submit-new-case-link": submitNewCaseFromLink(); break;
       case "submit-new-case-upload": submitNewCaseFromUpload(); break;
+      case "submit-new-case-audio": submitNewCaseFromAudio(); break;
       case "save-case": saveCaseFromForm(); break;
       case "publish-case": publishCaseFromForm(); break;
       case "delete-case": deleteActiveCase(); break;
@@ -1803,6 +1814,73 @@
       await openCreatedCase(data.caseId);
     } catch (err) {
       showToast("Kunne ikke opprette sak fra opplastet manus: " + err.message);
+    } finally {
+      state.ui.newCaseBusy = false;
+      render();
+    }
+  }
+
+  var MAX_AUDIO_UPLOAD_BYTES = 500 * 1024 * 1024; // 500 MB — romslig margin over et 45 min opptak
+
+  // Lydfilen (og evt. bilder) lastes DIREKTE til Supabase Storage fra
+  // nettleseren her — akkurat som submitNewCaseFromUpload gjør med .docx-
+  // filer — i stedet for å sende dem via en Netlify-funksjon, som har en
+  // størrelsesgrense et 30-45 min lydopptak fort ville sprengt. Selve saken
+  // opprettes RASKT og synkront (samme mønster som resten av "+ Ny sak"),
+  // og brukeren havner rett inne i den — transkribering/manusgenerering
+  // skjer i en Background Function og dukker opp live via historikken
+  // (Supabase Realtime, allerede koblet opp) når den er ferdig.
+  async function submitNewCaseFromAudio() {
+    var audioInput = document.getElementById("nc-audio");
+    var audioFile = audioInput && audioInput.files && audioInput.files[0];
+    if (!audioFile) { showToast("Velg en lydfil først"); return; }
+    if (audioFile.size > MAX_AUDIO_UPLOAD_BYTES) { showToast("Filen er for stor (maks 500 MB)"); return; }
+    if (!state.session) { showToast("Du må være innlogget"); return; }
+
+    var imagesInput = document.getElementById("nc-audio-images");
+    var imageFiles = imagesInput && imagesInput.files ? Array.prototype.slice.call(imagesInput.files) : [];
+    var arbeidstittel = (document.getElementById("nc-audio-title").value || "").trim();
+    var aiNotat = (document.getElementById("nc-audio-notat").value || "").trim();
+
+    state.ui.newCaseBusy = true;
+    render();
+    try {
+      var prefix = "lydopptak/" + Date.now();
+      var audioExt = (audioFile.name.match(/\.[a-zA-Z0-9]+$/) || [".m4a"])[0];
+      var audioPath = prefix + "-opptak" + audioExt;
+      var audioUpload = await supabase.storage.from("manus").upload(audioPath, audioFile, { contentType: audioFile.type || "audio/mp4" });
+      if (audioUpload.error) { showToast("Kunne ikke laste opp lydfilen: " + audioUpload.error.message); return; }
+
+      var imagePaths = [];
+      for (var i = 0; i < imageFiles.length; i++) {
+        var imgExt = (imageFiles[i].name.match(/\.[a-zA-Z0-9]+$/) || [".jpg"])[0];
+        var imgPath = prefix + "-bilde" + (i + 1) + imgExt;
+        var imgUpload = await supabase.storage.from("manus").upload(imgPath, imageFiles[i], { contentType: imageFiles[i].type || "image/jpeg" });
+        if (imgUpload.error) { showToast("Kunne ikke laste opp bilde " + (i + 1) + ": " + imgUpload.error.message); continue; }
+        imagePaths.push(imgPath);
+      }
+
+      var nowIsoStr = nowIso();
+      var created = await createCase({
+        title: arbeidstittel || "(Lydopptak — tittel ikke satt ennå)",
+        status: "i-arbeid",
+        historikk: [{ ts: nowIsoStr, text: "🎙️ Lydopptak lastet opp, transkriberes automatisk (kan ta noen minutter for lengre opptak) …" }]
+      });
+      if (!created) return;
+
+      // Fyr av bakgrunnsjobben og vent IKKE på svaret — den svarer 202 med
+      // en gang og fortsetter selve arbeidet server-side. Feiler selve
+      // HTTP-kallet (nettverk), er ikke det kritisk her: saken finnes
+      // allerede og kan da regenereres manuelt fra saken selv.
+      fetch("/.netlify/functions/transcribe-audio-background", {
+        method: "POST", headers: authHeader(),
+        body: JSON.stringify({ caseId: created.id, audioPath: audioPath, imagePaths: imagePaths, aiNotat: aiNotat })
+      }).catch(function () {});
+
+      showToast("Sak opprettet — transkriberer lydopptaket i bakgrunnen");
+      await openCreatedCase(created.id);
+    } catch (err) {
+      showToast("Kunne ikke opprette sak fra lydopptak: " + err.message);
     } finally {
       state.ui.newCaseBusy = false;
       render();

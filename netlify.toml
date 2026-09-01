@@ -5,6 +5,14 @@
 [functions]
   node_bundler = "esbuild"
 
+# ffmpeg-static laster ned en ekte, kjørbar ffmpeg-binærfil ved "npm install"
+# (brukt av lib/transcribe.js til å dele opp lange lydopptak) — esbuild
+# bundler vanligvis KUN JS-kode, og kan la den faktiske binærfilen falle ut av
+# den ferdige funksjonspakken. external_node_modules kopierer hele pakken
+# (inkl. binærfilen) uendret med i stedet for å forsøke å "bundle" den.
+[functions."transcribe-audio-background"]
+  external_node_modules = ["ffmpeg-static"]
+
 # Sikkerhetsheader — statisk side, ingen grunn til å tillate innramming el.l.
 [[headers]]
   for = "/*"

@@ -225,6 +225,18 @@ Ingen ny miljøvariabel — bruker samme `OPENAI_API_KEY`. Kjør `supabase/schem
 
 **Sivilt fokus, også i selve AI-vurderingen:** `lib/triage.js` sin husstil-beskrivelse er justert til eksplisitt IKKE å vekte forsvar/militært høyere enn sivil bruk i aktualitet/betydning-scoringen — den beskrev tidligere kun det faktisk publiserte (forsvarstunge) volumet, noe som i praksis kunne forsterke skjevheten videre.
 
+## Steg 18 — «+ Ny sak»: 🎙️ Lydopptak (transkribering fra iPhone e.l.)
+
+Fjerde fane i «+ Ny sak»: last opp et lydopptak (typisk et intervju, f.eks. tatt opp med Talememoer på iPhone) + valgfrie bilder, skriv en arbeidstittel og et AI-notat (vinkling/lengde/hva saken skal handle om) — AI transkriberer og skriver et redaksjonelt førsteutkast basert på det som faktisk sies, akkurat som lenke-/opplastningsflytene i Steg 15.
+
+**Slik virker det i praksis:** saken opprettes med én gang (status «I arbeid», synlig for hele teamet), og du havner rett inne i den — selve transkriberingen og manusgenereringen skjer i bakgrunnen (kan ta noen minutter for et 30-45 minutters opptak) og dukker opp live i historikken når den er ferdig, akkurat som resten av appen allerede oppdaterer seg i sanntid.
+
+**Talere skilles automatisk** (`gpt-4o-transcribe-diarize`) — nyttig for intervjuer med flere personer, men **ikke feilfritt**: for lange opptak som må deles opp (se under) er ikke talermerkingen nødvendigvis konsistent på tvers av delene. AI-en legger derfor alltid inn et eget kontrollpunkt om å dobbeltsjekke sitater mot selve opptaket (håndhevet server-side, ikke bare en prompt-instruks) — og selve lydopptaket lagres som saken sin kilde (signert lenke, 1 år), slik at det er lett å spille av igjen.
+
+**Ingen praktisk lengdegrense:** OpenAI sitt transkripsjons-endepunkt har en hard grense på ca. 25 MB/25 min per kall — lengre opptak deles derfor automatisk opp i 15-minutters biter med en ekte `ffmpeg`-binær (`ffmpeg-static`-pakken, ingen systeminstallasjon nødvendig) før hver bit transkriberes for seg og settes sammen igjen. Verifisert med et ekte 79 MB/7,5 min testopptak delt i 4 biter.
+
+Ingen ny miljøvariabel — bruker samme `OPENAI_API_KEY` og `manus`-lagringsboksen som resten av manus-funksjonene. Ingen ny databasemigrering.
+
 ## Prosjektstruktur
 
 ```
