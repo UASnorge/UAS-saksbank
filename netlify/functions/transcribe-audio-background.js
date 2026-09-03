@@ -17,7 +17,7 @@
 // allerede lastet opp direkte til Supabase Storage av nettleseren).
 
 const { createClient } = require("@supabase/supabase-js");
-const { transcribeAudio } = require("./lib/transcribe.js");
+const { transcribeMultipleAudioFiles } = require("./lib/transcribe.js");
 const { generateManuscriptFromTranscript } = require("./lib/manuscript.js");
 const { isAuthorizedUser } = require("./lib/authCheck.js");
 
@@ -48,26 +48,40 @@ exports.handler = async function (event) {
   try { body = JSON.parse(event.body || "{}"); } catch (e) { return { statusCode: 400, body: "" }; }
 
   var caseId = body.caseId;
-  var audioPath = body.audioPath;
+  // audioPaths (flertall, ny) — én eller flere lydfiler for samme sak
+  // ("2 x 30 minutter"-intervju osv.). audioPath (entall) beholdt som
+  // fallback for bakoverkompatibilitet.
+  var audioPaths = body.audioPaths || (body.audioPath ? [body.audioPath] : []);
   var imagePaths = body.imagePaths || [];
   var aiNotat = body.aiNotat || "";
 
-  if (!caseId || !audioPath) return { statusCode: 400, body: "" };
+  if (!caseId || !audioPaths.length) return { statusCode: 400, body: "" };
 
   var supabase = getSupabase();
   if (!openaiKey) { await recordFailure(supabase, caseId, "OPENAI_API_KEY er ikke satt i Netlify ennå."); return { statusCode: 200, body: "" }; }
 
   try {
-    var dl = await supabase.storage.from("manus").download(audioPath);
-    if (dl.error || !dl.data) throw new Error("Kunne ikke laste ned lydfilen fra lagringen: " + (dl.error ? dl.error.message : "ukjent feil"));
-    var buffer = Buffer.from(await dl.data.arrayBuffer());
-    var extMatch = audioPath.match(/\.[a-zA-Z0-9]+$/);
-    var ext = extMatch ? extMatch[0] : ".m4a";
+    var files = [];
+    var audioUrls = [];
+    for (var p = 0; p < audioPaths.length; p++) {
+      var audioPath = audioPaths[p];
+      var dl = await supabase.storage.from("manus").download(audioPath);
+      if (dl.error || !dl.data) throw new Error("Kunne ikke laste ned lydfil " + (p + 1) + " fra lagringen: " + (dl.error ? dl.error.message : "ukjent feil"));
+      var buffer = Buffer.from(await dl.data.arrayBuffer());
+      var extMatch = audioPath.match(/\.[a-zA-Z0-9]+$/);
+      files.push({ buffer: buffer, ext: extMatch ? extMatch[0] : ".m4a" });
+      console.log("transcribe-audio-background: lydfil " + (p + 1) + "/" + audioPaths.length + " (" + audioPath + ", " + (buffer.length / 1024 / 1024).toFixed(1) + " MB)");
 
-    console.log("transcribe-audio-background: transkriberer " + audioPath + " (" + (buffer.length / 1024 / 1024).toFixed(1) + " MB)");
-    var transcription = await transcribeAudio(openaiKey, buffer, ext);
+      // Signert lenke til selve lydopptaket (1 år) — lagres som saken sine
+      // kilder, slik at noen faktisk kan spille det av igjen for å
+      // dobbeltsjekke et sitat senere.
+      var audioUrlRes = await supabase.storage.from("manus").createSignedUrl(audioPath, 60 * 60 * 24 * 365);
+      if (audioUrlRes.data && audioUrlRes.data.signedUrl) audioUrls.push(audioUrlRes.data.signedUrl);
+    }
+
+    var transcription = await transcribeMultipleAudioFiles(openaiKey, files);
     if (!transcription.text || !transcription.text.trim()) {
-      throw new Error("Fant ingen tale i opptaket — sjekk at filen faktisk inneholder lyd/tale.");
+      throw new Error("Fant ingen tale i opptaket/opptakene — sjekk at filen(e) faktisk inneholder lyd/tale.");
     }
 
     var imageUrls = [];
@@ -76,16 +90,10 @@ exports.handler = async function (event) {
       if (signed.data && signed.data.signedUrl) imageUrls.push(signed.data.signedUrl);
     }
 
-    // Signert lenke til selve lydopptaket (1 år) — lagres som saken sin
-    // kilde, slik at noen faktisk kan spille det av igjen for å dobbeltsjekke
-    // et sitat senere (se ensureAudioQuoteCheckpoint-kontrollpunktet under).
-    var audioUrlRes = await supabase.storage.from("manus").createSignedUrl(audioPath, 60 * 60 * 24 * 365);
-    var audioUrl = (audioUrlRes.data && audioUrlRes.data.signedUrl) || null;
-
     var result = await generateManuscriptFromTranscript(supabase, openaiKey, caseId, transcription.text, {
       aiNotat: aiNotat,
       imageUrls: imageUrls,
-      audioUrl: audioUrl,
+      audioUrls: audioUrls,
       flerBiter: transcription.flerBiter,
       antallBiter: transcription.antallBiter
     });

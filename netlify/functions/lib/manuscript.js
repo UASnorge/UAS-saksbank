@@ -621,11 +621,12 @@ async function generateManuscriptFromTranscript(supabase, openaiKey, caseId, tra
     " — " + fields.kontrollpunkter.length + " kontrollpunkt(er) å avklare før publisering";
   const historikk = [{ ts: new Date().toISOString(), text: historikkNote }].concat(c.historikk || []);
 
-  // audioUrl (signert, 1 år) legges inn som kilden for saken — det ER kilden
-  // for en lydopptak-basert sak, samme prinsipp som en lenke er kilden[0] for
-  // lenke-baserte saker. Rører aldri kilder om noe allerede er satt der.
+  // audioUrls (signerte, 1 år) legges inn som kildene for saken — det ER
+  // kilden/kildene for en lydopptak-basert sak (ett eller flere opplastede
+  // opptak), samme prinsipp som en lenke er kilden[0] for lenke-baserte
+  // saker. Rører aldri kilder om noe allerede er satt der.
   var kilderUpdate = {};
-  if (opts.audioUrl && !(c.kilder && c.kilder.length)) kilderUpdate.kilder = [opts.audioUrl];
+  if (opts.audioUrls && opts.audioUrls.length && !(c.kilder && c.kilder.length)) kilderUpdate.kilder = opts.audioUrls;
 
   const updateRes = await supabase.from("cases").update(Object.assign({
     manus_url: path,
