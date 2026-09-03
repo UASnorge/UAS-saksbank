@@ -1074,7 +1074,14 @@
         : '<button class="btn" data-action="generate-manus" data-id="' + c.id + '"' + (state.ui.manusBusy[c.id] ? " disabled" : "") + ">" + (state.ui.manusBusy[c.id] ? "Genererer …" : "📄 Manus") + "</button>";
       var nextStatus = nextAdvanceableStatus(c.status);
       var nextBtn = nextStatus ? '<button class="btn" data-action="advance-status-quick" data-id="' + c.id + '" data-next="' + nextStatus + '">→ ' + escapeHtml(statusLabel(nextStatus)) + "</button>" : "";
-      actionsHtml = '<div class="card-actions">' + manusBtn + nextBtn + "</div>";
+      // Direkte snarvei fra kortet, kun mens saken faktisk er "I arbeid" —
+      // hopper rett til den forstørrede, distraksjonsfrie manus-editoren
+      // (samme visning som "⛶ Forstørre"-knappen inne på saken), i stedet
+      // for å måtte åpne saken og trykke forstørre selv i to steg.
+      var previewBtn = c.status === "i-arbeid"
+        ? '<button class="btn" data-action="preview-manus" data-id="' + c.id + '">👁️ Forhåndsvis manus</button>'
+        : "";
+      actionsHtml = '<div class="card-actions">' + previewBtn + manusBtn + nextBtn + "</div>";
     }
 
     return (
@@ -1792,6 +1799,13 @@
       case "open-new-case": state.ui.modal = "new-case"; state.ui.newCaseTab = "lenke"; render(); break;
       case "set-new-case-tab": state.ui.newCaseTab = e.currentTarget.getAttribute("data-tab"); render(); break;
       case "open-case": state.ui.activeCaseId = e.currentTarget.getAttribute("data-id"); state.ui.modal = "case"; render(); break;
+      case "preview-manus":
+        e.stopPropagation();
+        state.ui.activeCaseId = e.currentTarget.getAttribute("data-id");
+        state.ui.modal = "case";
+        state.ui.manusExpanded = true;
+        render();
+        break;
       case "open-weights": state.ui.modal = "weights"; render(); break;
       case "open-sources": openSources(); break;
       case "toggle-filter-panel": state.ui.filterPanelOpen = !state.ui.filterPanelOpen; render(); break;
