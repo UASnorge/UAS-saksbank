@@ -713,6 +713,15 @@
     return true;
   }
 
+  // "Slett" på en idé-sak skal arkivere i stedet for å slette permanent —
+  // idéer forkastes ofte, og arkivet lar dem hentes fram igjen senere i
+  // stedet for å gå tapt for godt. Saker som har kommet lenger enn "Idé"
+  // slettes fortsatt permanent som før.
+  async function archiveCase(c, methodLabel) {
+    var historikk = [{ ts: nowIso(), text: "Arkivert (" + methodLabel + ") i stedet for slettet — sak var under «Idé»" }].concat(c.historikk);
+    return updateCase(c.id, { status: "arkivert", historikk: historikk });
+  }
+
   /* ---------- rendering ---------- */
 
   var root = document.getElementById("app");
@@ -2119,8 +2128,18 @@
   }
 
   async function deleteActiveCase() {
-    if (!window.confirm("Slette denne saken permanent?")) return;
     var id = state.ui.activeCaseId;
+    var c = getCase(id);
+    if (c && c.status === "ide") {
+      if (!window.confirm('Arkivere "' + c.title + '" i stedet for å slette den?')) return;
+      var ok1 = await archiveCase(c, "slett-knapp");
+      if (!ok1) return;
+      state.ui.modal = null; state.ui.activeCaseId = null;
+      await refreshAndRender();
+      showToast("Sak arkivert");
+      return;
+    }
+    if (!window.confirm("Slette denne saken permanent?")) return;
     var ok = await deleteCase(id);
     if (!ok) return;
     state.ui.modal = null; state.ui.activeCaseId = null;
@@ -2130,6 +2149,15 @@
 
   async function quickDeleteCase(id) {
     var c = getCase(id);
+    if (c && c.status === "ide") {
+      if (!window.confirm('Arkivere "' + (c.title || "denne saken") + '" i stedet for å slette den?')) return;
+      var ok1 = await archiveCase(c, "hurtigknapp");
+      if (!ok1) return;
+      delete state.ui.selectedIds[id];
+      await refreshAndRender();
+      showToast("Sak arkivert");
+      return;
+    }
     if (!window.confirm('Slette "' + (c ? c.title : "denne saken") + '" permanent?')) return;
     var ok = await deleteCase(id);
     if (!ok) return;
@@ -2141,12 +2169,31 @@
   async function deleteSelected() {
     var ids = Object.keys(state.ui.selectedIds);
     if (!ids.length) return;
-    if (!window.confirm("Slette " + ids.length + " valgte sak(er) permanent? Dette kan ikke angres.")) return;
-    var ok = await deleteCases(ids);
-    if (!ok) return;
+    var cases = ids.map(getCase).filter(Boolean);
+    var ideCases = cases.filter(function (c) { return c.status === "ide"; });
+    var otherIds = cases.filter(function (c) { return c.status !== "ide"; }).map(function (c) { return c.id; });
+    var msg;
+    if (ideCases.length && otherIds.length) {
+      msg = "Arkivere " + ideCases.length + " idé-sak(er) og slette " + otherIds.length + " annen/andre sak(er) permanent?";
+    } else if (ideCases.length) {
+      msg = "Arkivere " + ideCases.length + " idé-sak(er) i stedet for å slette dem?";
+    } else {
+      msg = "Slette " + otherIds.length + " valgte sak(er) permanent? Dette kan ikke angres.";
+    }
+    if (!window.confirm(msg)) return;
+    for (var i = 0; i < ideCases.length; i++) {
+      await archiveCase(ideCases[i], "massehandling");
+    }
+    if (otherIds.length) {
+      var ok = await deleteCases(otherIds);
+      if (!ok) return;
+    }
     state.ui.selectedIds = {};
     await refreshAndRender();
-    showToast(ids.length + " sak(er) slettet");
+    var parts = [];
+    if (ideCases.length) parts.push(ideCases.length + " arkivert");
+    if (otherIds.length) parts.push(otherIds.length + " slettet");
+    showToast(parts.join(", "));
   }
 
   async function approveCaseQuick(id) {
