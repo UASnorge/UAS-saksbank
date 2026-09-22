@@ -38,7 +38,7 @@ Du setter i tillegg ETT tema-merke per sak, til bruk i et filter/kategoriserings
 - ARRANGEMENT_UTDANNING: kurs, konferanser, utdanning, webinarer (typisk samme saker som får sakstype "content").
 - ANNET: passer ikke tydelig i noen av de over.
 
-Du setter i tillegg ETT land-merke — hvilket land saken HOVEDSAKELIG handler om/utspiller seg i (ikke bare hvor utgiveren er fra): NORGE, DANMARK, SVERIGE eller FINLAND. Er saken ikke tydelig knyttet til ett av disse fire (f.eks. et annet land, EU-nivå uten spesifikt land, eller internasjonalt produkt/selskap uten nordisk hovedvinkling), sett INTERNASJONALT.
+Du setter i tillegg ETT land-merke — hvilket land/region saken HOVEDSAKELIG handler om/utspiller seg i (ikke bare hvor utgiveren er fra): NORGE, DANMARK, SVERIGE eller FINLAND for de nordiske landene. For alt annet: forsøk ALLTID å si noe mer presist enn bare "internasjonalt" når det faktisk fremgår av saken — bruk EUROPA (øvrige europeiske land, f.eks. Tyskland, Frankrike, Storbritannia, Nederland, EU-nivå), USA, eller ASIA (f.eks. Kina, Japan, Sør-Korea). Sett kun INTERNASJONALT som SISTE utvei, når saken genuint ikke har noen tydelig enkelt-region/land som hovedvinkel (f.eks. en global bransjetrend, et selskap aktivt i mange verdensdeler samtidig, eller et rent produkt uten stedsangivelse). Unngå INTERNASJONALT der et konkret land/verdensdel faktisk fremgår av tittelen/konteksten — det skal være unntaket, ikke standardvalget.
 
 Tre sakstyper skal kunne skilles tydelig:
 - "redaksjonell" (vises som "Dronemagasin"): ordinær redaksjonell nyhetssak for dronemag.no/uasnorway.no.
@@ -82,7 +82,7 @@ const TRIAGE_SCHEMA = {
         enum: ["POLITI_SIKKERHET", "FORSVAR_MILITAERT", "REGELVERK_LUFTFART", "TEKNOLOGI_PRODUKT", "LANDBRUK", "INDUSTRI_KARTLEGGING",
           "LOGISTIKK_LEVERING", "SELSKAP_MARKED", "ULYKKE_HENDELSE", "ARRANGEMENT_UTDANNING", "ANNET"]
       },
-      land: { type: "string", enum: ["NORGE", "DANMARK", "SVERIGE", "FINLAND", "INTERNASJONALT"] },
+      land: { type: "string", enum: ["NORGE", "DANMARK", "SVERIGE", "FINLAND", "EUROPA", "USA", "ASIA", "INTERNASJONALT"] },
       hastegrad: { type: "string", enum: ["akutt", "planlagt", "tidlos"] },
       aktualitet: { type: "integer", minimum: 1, maximum: 5 },
       betydning: { type: "integer", minimum: 1, maximum: 5 },

@@ -478,8 +478,11 @@
   var TEMA_ORDER = ["POLITI_SIKKERHET", "REGELVERK_LUFTFART", "TEKNOLOGI_PRODUKT", "LANDBRUK", "INDUSTRI_KARTLEGGING",
     "LOGISTIKK_LEVERING", "SELSKAP_MARKED", "ULYKKE_HENDELSE", "ARRANGEMENT_UTDANNING", "FORSVAR_MILITAERT", "ANNET"];
   // AI-satt land per idé (lib/triage.js) — hvilket land saken hovedsakelig handler om.
-  var LAND_LABELS = { NORGE: "🇳🇴 Norge", DANMARK: "🇩🇰 Danmark", SVERIGE: "🇸🇪 Sverige", FINLAND: "🇫🇮 Finland", INTERNASJONALT: "🌍 Internasjonalt" };
-  var LAND_ORDER = ["NORGE", "DANMARK", "SVERIGE", "FINLAND", "INTERNASJONALT"];
+  var LAND_LABELS = {
+    NORGE: "🇳🇴 Norge", DANMARK: "🇩🇰 Danmark", SVERIGE: "🇸🇪 Sverige", FINLAND: "🇫🇮 Finland",
+    EUROPA: "🇪🇺 Europa", USA: "🇺🇸 USA", ASIA: "🌏 Asia", INTERNASJONALT: "🌍 Internasjonalt"
+  };
+  var LAND_ORDER = ["NORGE", "DANMARK", "SVERIGE", "FINLAND", "EUROPA", "USA", "ASIA", "INTERNASJONALT"];
   // WordPress-stikkord (tags) og -kategori (categories) ved publisering —
   // to atskilte WP-taksonomier, valgt av redaksjonen selv per sak, aldri
   // utledet stille fra andre felt. Se lib/wordpress.js.

@@ -519,3 +519,16 @@ begin
     'NORGE', 'DANMARK', 'SVERIGE', 'FINLAND', 'INTERNASJONALT'
   ));
 end $$;
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v14 — Mer presis land-merking: USA/Europa/Asia i stedet for bare
+-- "Internasjonalt" der det faktisk er mulig å si noe mer presist
+-- ═══════════════════════════════════════════════════════════════════
+-- Fra tilbakemelding: unngå at "Internasjonalt" blir en gjenstridig
+-- samlebøtte — AI-en skal heller forsøke å si HVOR (USA/Europa/Asia)
+-- når det faktisk fremgår av saken, og kun falle tilbake til
+-- INTERNASJONALT når ingen enkelt region er hovedvinkelen.
+alter table cases drop constraint if exists cases_land_check;
+alter table cases add constraint cases_land_check check (land is null or land in (
+  'NORGE', 'DANMARK', 'SVERIGE', 'FINLAND', 'EUROPA', 'USA', 'ASIA', 'INTERNASJONALT'
+));
