@@ -127,6 +127,34 @@ async function searchCivilianDroneNews(openaiKey, daysBack) {
   return callSearch(openaiKey, CIVILIAN_SYSTEM, userPrompt);
 }
 
+// ---------- 1b. Bransje/industri — dedikert, bredt søk for UAS Norway sine
+// egne medlemmer (profesjonelle operatører, droneselskaper/leverandører) ----------
+//
+// Egen, atskilt funksjon (i stedet for bare flere eksempler i CIVILIAN_SYSTEM
+// over) fordi et konkret, egenerfart tilfelle viste at bransje-/fagpresse-
+// saker (f.eks. et norsk droneselskap som induktivt lader droner på
+// kraftlinjer for Elvia, dekket av elektro247.no) rett og slett aldri dukket
+// opp i det generelle sivile søket — nisje-fagpresse drukner i et bredt søk
+// med mange andre temaer. Instruert til å AKTIVT lete i bransje-/fagpresse
+// (ikke bare de store, allment kjente nyhetsmediene), og eksplisitt dekke
+// flere bransjer enn CIVILIAN_SYSTEM sin liste — se brukerens instruks:
+// "gå bredere ut på nett... gå inn på industrinivå, særlig det som er
+// aktuelt for UAS Norway lesere og medlemmer" (operatører, bransje/
+// leverandører, nye operatører — se AUDIENCES i frontend).
+var INDUSTRY_SYSTEM = BASE_SYSTEM + `
+
+Søk ETTER norsk droneindustri/-bransjenytt relevant for UAS Norway sine medlemmer — profesjonelle droneoperatører, droneselskaper/leverandører, nye operatører. Dette er IKKE generelle forbrukernyheter — fokuser på PROFESJONELL/KOMMERSIELL bruk og bransjeutvikling: droneinspeksjon av infrastruktur (kraftlinjer/kraftnett, bruer, tak, rørledninger, vindturbiner), industriell overvåking, geodata/kartlegging/oppmåling/landmåling, bygg- og anleggsbransjen, energisektoren (olje/gass/fornybar), maritim/offshore, skogbruk/landbruk i NÆRINGSsammenheng (ikke bare enkelthendelser), forsikringsbransjens bruk av droner, eiendomsbransjen, droneselskaper som leverer tjenester (drone-as-a-service, inspeksjonstjenester), nye kommersielle sertifiseringer/kurs/PfO-relatert regelverk, offentlige anskaffelser av dronetjenester (kommuner/etater/Statnett/Bane NOR/Statens vegvesen e.l.).
+
+VIKTIG: søk AKTIVT i norsk BRANSJE-/FAGPRESSE, ikke bare de store, allment kjente nyhetsmediene — nisjefagmedier (elektro-/energi-bransjepresse, bygg-/anleggsbransjepresse, landbruks-/skogbruksfagpresse, geodata-/oppmålingsfagpresse, forsikringsbransjepresse, maritim fagpresse) dekker ofte konkrete, praktiske droneprosjekter som aldri når de store nyhetssidene — dette er nettopp den typen saker denne kategorien skal fange opp.
+
+KUN norske saker (dette søket er spesifikt for UAS Norway sitt norske medlemskap). Maks 10 treff.`;
+
+async function searchIndustryDroneNews(openaiKey, daysBack) {
+  var days = daysBack || 3;
+  var userPrompt = "Finn ekte, norske droneindustri-/bransjenyheter (inkl. fra norsk fagpresse/bransjemedier, ikke bare de store nyhetssidene) fra de siste " + days + " dagene, relevant for profesjonelle droneoperatører og droneselskaper.";
+  return callSearch(openaiKey, INDUSTRY_SYSTEM, userPrompt);
+}
+
 // ---------- 2. Politi/sikkerhet (norsk/nordisk) ----------
 
 var POLICY_SECURITY_SYSTEM = BASE_SYSTEM + `
@@ -199,6 +227,6 @@ async function searchKeywordMentions(openaiKey, keywords, daysBack) {
 }
 
 module.exports = {
-  searchCivilianDroneNews, searchPolicySecurityDroneNews, searchNordicRegulatoryNews, searchDefenseDroneNews,
+  searchCivilianDroneNews, searchIndustryDroneNews, searchPolicySecurityDroneNews, searchNordicRegulatoryNews, searchDefenseDroneNews,
   searchWebsiteSource, searchKeywordMentions, stripInlineCitations, SEARCH_MODEL
 };

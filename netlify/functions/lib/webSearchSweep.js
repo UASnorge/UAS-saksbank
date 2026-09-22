@@ -8,7 +8,7 @@
 const { checkRelevance } = require("./relevance.js");
 const { runTriage } = require("./triage.js");
 const {
-  searchCivilianDroneNews, searchPolicySecurityDroneNews, searchNordicRegulatoryNews, searchDefenseDroneNews,
+  searchCivilianDroneNews, searchIndustryDroneNews, searchPolicySecurityDroneNews, searchNordicRegulatoryNews, searchDefenseDroneNews,
   searchWebsiteSource, searchKeywordMentions
 } = require("./webSearch.js");
 
@@ -83,7 +83,7 @@ async function createCaseFromHit(supabase, openaiKey, hit, extraContext, kildeLa
 
 async function runWebSearchSweep(supabase, openaiKey) {
   var report = {
-    sivileTreff: 0, politiSikkerhetTreff: 0, regelverkTreff: 0, forsvarTreff: 0,
+    sivileTreff: 0, industriTreff: 0, politiSikkerhetTreff: 0, regelverkTreff: 0, forsvarTreff: 0,
     nettstedKilderSjekket: 0, sokeordSjekket: 0, nyeSaker: 0, hoppetOverIkkeRelevant: 0, feil: [], newCaseIds: []
   };
   if (!openaiKey) return report;
@@ -97,6 +97,19 @@ async function runWebSearchSweep(supabase, openaiKey) {
     }
   } catch (err) {
     report.feil.push("Sivilt websøk feilet: " + err.message);
+  }
+
+  // 1b. Bransje/industri (norsk) — dedikert, bredt søk i norsk fagpresse for
+  // UAS Norway sine egne medlemmer. Se lib/webSearch.js sin begrunnelse
+  // (elektro247.no/Nomadic Drones-eksempelet som glapp i det generelle søket).
+  try {
+    var industri = await searchIndustryDroneNews(openaiKey, DAYS_BACK);
+    report.industriTreff = industri.length;
+    for (var ind = 0; ind < industri.length; ind++) {
+      await createCaseFromHit(supabase, openaiKey, industri[ind], "", "generelt websøk (bransje/industri)", report);
+    }
+  } catch (err) {
+    report.feil.push("Bransje/industri-websøk feilet: " + err.message);
   }
 
   // 2. Politi/sikkerhet (norsk/nordisk) — den STØRSTE kategorien i praksis,
