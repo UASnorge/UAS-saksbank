@@ -7,7 +7,10 @@
 
 const { checkRelevance } = require("./relevance.js");
 const { runTriage } = require("./triage.js");
-const { searchCivilianDroneNews, searchDefenseDroneNews, searchWebsiteSource, searchKeywordMentions } = require("./webSearch.js");
+const {
+  searchCivilianDroneNews, searchPolicySecurityDroneNews, searchNordicRegulatoryNews, searchDefenseDroneNews,
+  searchWebsiteSource, searchKeywordMentions
+} = require("./webSearch.js");
 
 var DAYS_BACK = 3; // sveipet kjører daglig — 3 dager gir litt overlapp/buffer, ikke bare "siden i går"
 var KEYWORD_BATCH_SIZE = 15; // hold hvert søkekall til en håndterlig liste
@@ -79,10 +82,13 @@ async function createCaseFromHit(supabase, openaiKey, hit, extraContext, kildeLa
 }
 
 async function runWebSearchSweep(supabase, openaiKey) {
-  var report = { sivileTreff: 0, forsvarTreff: 0, nettstedKilderSjekket: 0, sokeordSjekket: 0, nyeSaker: 0, hoppetOverIkkeRelevant: 0, feil: [], newCaseIds: [] };
+  var report = {
+    sivileTreff: 0, politiSikkerhetTreff: 0, regelverkTreff: 0, forsvarTreff: 0,
+    nettstedKilderSjekket: 0, sokeordSjekket: 0, nyeSaker: 0, hoppetOverIkkeRelevant: 0, feil: [], newCaseIds: []
+  };
   if (!openaiKey) return report;
 
-  // 1a. Sivilt/kommersielt sveip
+  // 1. Sivilt/kommersielt sveip (norsk/nordisk)
   try {
     var sivile = await searchCivilianDroneNews(openaiKey, DAYS_BACK);
     report.sivileTreff = sivile.length;
@@ -93,20 +99,44 @@ async function runWebSearchSweep(supabase, openaiKey) {
     report.feil.push("Sivilt websøk feilet: " + err.message);
   }
 
-  // 1b. Forsvar/beredskap-sveip — atskilt fra det sivile søket over med
-  // vilje (se lib/webSearch.js) for å garantere en reell blanding, i stedet
-  // for å håpe at én prompt-instruks balanserer et enkelt bredt søk.
+  // 2. Politi/sikkerhet (norsk/nordisk) — den STØRSTE kategorien i praksis,
+  // se lib/triage.js sin begrunnelse. Atskilt fra forsvar/militært under.
+  try {
+    var politi = await searchPolicySecurityDroneNews(openaiKey, DAYS_BACK);
+    report.politiSikkerhetTreff = politi.length;
+    for (var p = 0; p < politi.length; p++) {
+      await createCaseFromHit(supabase, openaiKey, politi[p], "", "generelt websøk (politi/sikkerhet)", report);
+    }
+  } catch (err) {
+    report.feil.push("Politi/sikkerhet-websøk feilet: " + err.message);
+  }
+
+  // 3. Regelverk/infrastruktur (norsk/nordisk — Luftfartstilsynet/EASA/Avinor)
+  try {
+    var regelverk = await searchNordicRegulatoryNews(openaiKey, DAYS_BACK);
+    report.regelverkTreff = regelverk.length;
+    for (var r = 0; r < regelverk.length; r++) {
+      await createCaseFromHit(supabase, openaiKey, regelverk[r], "", "generelt websøk (regelverk/infrastruktur)", report);
+    }
+  } catch (err) {
+    report.feil.push("Regelverk-websøk feilet: " + err.message);
+  }
+
+  // 4. Forsvar/militært — holdes bevisst MEGET smalt (maks 2 treff per
+  // kjøring, se lib/webSearch.js). "Vi er ikke et forsvarsmagasin" —
+  // beholdt som egen, atskilt funksjon nettopp for å kunne holdes smal,
+  // i stedet for å blandes inn i et bredere søk og drukne det i volum.
   try {
     var forsvar = await searchDefenseDroneNews(openaiKey, DAYS_BACK);
     report.forsvarTreff = forsvar.length;
     for (var d = 0; d < forsvar.length; d++) {
-      await createCaseFromHit(supabase, openaiKey, forsvar[d], "", "generelt websøk (forsvar/beredskap)", report);
+      await createCaseFromHit(supabase, openaiKey, forsvar[d], "", "generelt websøk (forsvar/militært)", report);
     }
   } catch (err) {
-    report.feil.push("Forsvar/beredskap-websøk feilet: " + err.message);
+    report.feil.push("Forsvar/militært-websøk feilet: " + err.message);
   }
 
-  // 2. Nettsted-kilder uten RSS (sources.type = 'website')
+  // 5. Nettsted-kilder uten RSS (sources.type = 'website') — valgfritt, ikke en forutsetning
   var websiteRes = await supabase.from("sources").select("*").eq("active", true).eq("type", "website");
   if (!websiteRes.error) {
     for (var s = 0; s < (websiteRes.data || []).length; s++) {
@@ -124,7 +154,10 @@ async function runWebSearchSweep(supabase, openaiKey) {
     }
   }
 
-  // 3. Navngitte operatør-/selskapsnavn (watch_keywords)
+  // 6. Navngitte søkeord/temaer (watch_keywords) — selskapsnavn, men også
+  // generelle temaer/forskrifter/høringer redaksjonen ønsker tett
+  // oppfølging av. Dette er ment å kunne fungere som en fullverdig
+  // ingest-mekanisme på egen hånd, ikke bare et tillegg til kildelisten.
   var keywordsRes = await supabase.from("watch_keywords").select("term");
   if (!keywordsRes.error && keywordsRes.data && keywordsRes.data.length) {
     var terms = keywordsRes.data.map(function (r) { return r.term; });
@@ -134,8 +167,8 @@ async function runWebSearchSweep(supabase, openaiKey) {
       try {
         var kwHits = await searchKeywordMentions(openaiKey, batches[b], DAYS_BACK);
         for (var k = 0; k < kwHits.length; k++) {
-          var extra = "Nevner en registrert droneoperatør/-selskap UAS Norway følger med på — regn dette som en sterk relevans-indikasjon selv om ordet «drone» ikke står eksplisitt i tittelen.";
-          await createCaseFromHit(supabase, openaiKey, kwHits[k], extra, "søkeord (operatørnavn)", report);
+          var extra = "Treff på et søkeord/tema UAS Norway følger med på — regn dette som en sterk relevans-indikasjon selv om ordet «drone» ikke står eksplisitt i tittelen.";
+          await createCaseFromHit(supabase, openaiKey, kwHits[k], extra, "søkeord", report);
         }
       } catch (err) {
         report.feil.push("Søkeord-batch feilet: " + err.message);

@@ -463,3 +463,59 @@ begin
     ));
   end if;
 end $$;
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v12 — "Ikke et forsvarsmagasin": politi/sikkerhet skilt fra ren
+-- militær/forsvar, og forsvar minimert i kildevalg og websøk
+-- ═══════════════════════════════════════════════════════════════════
+-- Analyse av de siste 100 faktisk publiserte dronemag.no-sakene viste at
+-- ~90% er norske/nordiske, og at "politi/sikkerhetshendelser" er den
+-- STØRSTE kategorien — mens FORSVAR_BEREDSKAP (den gamle, brede
+-- tema-verdien) i praksis fyltes med generell internasjonal krigs-/
+-- forsvarsdekning (Ukraina, NATO, C-UAS-kontrakter) som nesten aldri ble
+-- til en publisert sak. Splittet derfor i to, med brukeren sin eksplisitte
+-- instruks "vi er ikke et forsvarsmagasin, helst så lite forsvar som
+-- mulig": POLITI_SIKKERHET (norske/nordiske politi-/sikkerhetshendelser —
+-- skal beholdes/prioriteres) og FORSVAR_MILITAERT (ren militær/forsvar —
+-- skal brukes sjelden, se lib/triage.js).
+-- Kyllingen-og-egget-problem: den GAMLE constrainten (fra v11) tillater
+-- ikke POLITI_SIKKERHET/FORSVAR_MILITAERT ennå, men den NYE constrainten
+-- (validert med én gang den legges til) tillater ikke gjenværende
+-- FORSVAR_BEREDSKAP-rader. Løsning: fjern constrainten helt midlertidig,
+-- kjør etterklassifiseringen, legg så til den nye constrainten (som da
+-- validerer mot data som allerede stemmer).
+alter table cases drop constraint if exists cases_tema_check;
+
+-- Engangs-etterklassifisering av eksisterende FORSVAR_BEREDSKAP-merkede
+-- idéer (fantes fra v11) — enkel nøkkelord-heuristikk, ikke perfekt, men
+-- langt bedre enn å la alt stå som "forsvar". Idempotent: rører aldri
+-- saker som allerede har fått en av de to nye verdiene (matcher aldri
+-- tema='FORSVAR_BEREDSKAP' igjen etter første kjøring).
+update cases set tema = 'POLITI_SIKKERHET'
+where tema = 'FORSVAR_BEREDSKAP'
+  and (title ilike '%politiet%' or title ilike '%zelensky%' or title ilike '%kongelig%'
+       or title ilike '%gravferd%' or title ilike '%porvoo%' or title ilike '%kystvakt%');
+
+update cases set tema = 'FORSVAR_MILITAERT'
+where tema = 'FORSVAR_BEREDSKAP';
+
+alter table cases add constraint cases_tema_check check (tema is null or tema in (
+  'POLITI_SIKKERHET', 'FORSVAR_MILITAERT', 'REGELVERK_LUFTFART', 'TEKNOLOGI_PRODUKT', 'LANDBRUK',
+  'INDUSTRI_KARTLEGGING', 'LOGISTIKK_LEVERING', 'SELSKAP_MARKED', 'ULYKKE_HENDELSE',
+  'ARRANGEMENT_UTDANNING', 'ANNET'
+));
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v13 — Land-merking på idéer (se hvilket land saken gjelder, rett fra kortet)
+-- ═══════════════════════════════════════════════════════════════════
+-- Satt automatisk av AI-vurderingen (lib/triage.js), samme kall som
+-- tema/sakstype — ingen ekstra AI-kostnad. Fast sett med verdier, samme
+-- prinsipp som tema (må matche et konkret filter-avkryssingsalternativ).
+alter table cases add column if not exists land text;
+do $$
+begin
+  alter table cases drop constraint if exists cases_land_check;
+  alter table cases add constraint cases_land_check check (land is null or land in (
+    'NORGE', 'DANMARK', 'SVERIGE', 'FINLAND', 'INTERNASJONALT'
+  ));
+end $$;

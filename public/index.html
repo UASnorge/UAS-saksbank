@@ -467,14 +467,19 @@
   var TYPE_LABELS = { redaksjonell: "Dronemagasin", content: "INFO", ai: "Kommentar" };
   // AI-satt tema per idé (lib/triage.js) — brukt til filter/kategorisering.
   var TEMA_LABELS = {
-    FORSVAR_BEREDSKAP: "🎖️ Forsvar/beredskap", REGELVERK_LUFTFART: "⚖️ Regelverk/luftfart",
+    POLITI_SIKKERHET: "🚓 Politi/sikkerhet", REGELVERK_LUFTFART: "⚖️ Regelverk/luftfart",
     TEKNOLOGI_PRODUKT: "🔧 Teknologi/produkt", LANDBRUK: "🌾 Landbruk",
     INDUSTRI_KARTLEGGING: "🏗️ Industri/kartlegging", LOGISTIKK_LEVERING: "📦 Logistikk/levering",
     SELSKAP_MARKED: "💼 Selskap/marked", ULYKKE_HENDELSE: "⚠️ Ulykke/hendelse",
-    ARRANGEMENT_UTDANNING: "🎓 Arrangement/utdanning", ANNET: "Annet"
+    ARRANGEMENT_UTDANNING: "🎓 Arrangement/utdanning", FORSVAR_MILITAERT: "🎖️ Forsvar/militært", ANNET: "Annet"
   };
-  var TEMA_ORDER = ["FORSVAR_BEREDSKAP", "REGELVERK_LUFTFART", "TEKNOLOGI_PRODUKT", "LANDBRUK", "INDUSTRI_KARTLEGGING",
-    "LOGISTIKK_LEVERING", "SELSKAP_MARKED", "ULYKKE_HENDELSE", "ARRANGEMENT_UTDANNING", "ANNET"];
+  // FORSVAR_MILITAERT sist med vilje — skal brukes sjelden (se lib/triage.js:
+  // "ikke et forsvarsmagasin"), ikke ligge fremst i filterlisten.
+  var TEMA_ORDER = ["POLITI_SIKKERHET", "REGELVERK_LUFTFART", "TEKNOLOGI_PRODUKT", "LANDBRUK", "INDUSTRI_KARTLEGGING",
+    "LOGISTIKK_LEVERING", "SELSKAP_MARKED", "ULYKKE_HENDELSE", "ARRANGEMENT_UTDANNING", "FORSVAR_MILITAERT", "ANNET"];
+  // AI-satt land per idé (lib/triage.js) — hvilket land saken hovedsakelig handler om.
+  var LAND_LABELS = { NORGE: "🇳🇴 Norge", DANMARK: "🇩🇰 Danmark", SVERIGE: "🇸🇪 Sverige", FINLAND: "🇫🇮 Finland", INTERNASJONALT: "🌍 Internasjonalt" };
+  var LAND_ORDER = ["NORGE", "DANMARK", "SVERIGE", "FINLAND", "INTERNASJONALT"];
   // WordPress-stikkord (tags) og -kategori (categories) ved publisering —
   // to atskilte WP-taksonomier, valgt av redaksjonen selv per sak, aldri
   // utledet stille fra andre felt. Se lib/wordpress.js.
@@ -529,7 +534,7 @@
 
   function dbToCase(row) {
     return {
-      id: row.id, title: row.title || "", sakstype: row.sakstype, tema: row.tema || "", hastegrad: row.hastegrad,
+      id: row.id, title: row.title || "", sakstype: row.sakstype, tema: row.tema || "", land: row.land || "", hastegrad: row.hastegrad,
       status: row.status, eier: row.eier || "Ikke tildelt", frist: row.frist || "",
       nesteHandling: row.neste_handling || "", kilder: row.kilder || [], kategori: row.kategori || "",
       malgruppe: row.malgruppe || "Ikke satt", nettsted: row.nettsted, triage: row.triage,
@@ -584,7 +589,7 @@
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
     ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, reviseBusy: {}, mobileMenuOpen: false, manusExpanded: false, newCaseTab: "lenke", newCaseBusy: false,
-      filterPanelOpen: false, filterGroupsOpen: { tema: true, sakstype: true }, filters: { tema: null, sakstype: null }, expandedTitleGroups: {} },
+      filterPanelOpen: false, filterGroupsOpen: { tema: true, land: true, sakstype: true }, filters: { tema: null, land: null, sakstype: null }, expandedTitleGroups: {} },
     chat: { messages: [], busy: false },
     session: null,
     realtimeOk: false
@@ -769,10 +774,13 @@
     if (!state.ui.filterPanelOpen) return "";
     var temaOptions = TEMA_ORDER.map(function (t) { return { value: t, label: TEMA_LABELS[t] }; })
       .concat([{ value: "UTEN_TEMA", label: "Uten tema (ikke AI-vurdert ennå)" }]);
+    var landOptions = LAND_ORDER.map(function (l) { return { value: l, label: LAND_LABELS[l] }; })
+      .concat([{ value: "UTEN_LAND", label: "Uten land (ikke AI-vurdert ennå)" }]);
     var sakstypeOptions = Object.keys(TYPE_LABELS).map(function (k) { return { value: k, label: TYPE_LABELS[k] }; });
     return (
       '<div class="filter-dropdown" role="dialog" aria-label="Filter">' +
         filterGroupHtml("tema", "Tema", temaOptions) +
+        filterGroupHtml("land", "Land", landOptions) +
         filterGroupHtml("sakstype", "Sakstype", sakstypeOptions) +
         '<div class="filter-dropdown-footer">' +
           '<button class="btn btn-ghost" type="button" data-action="reset-filters">Nullstill filter</button>' +
@@ -824,6 +832,7 @@
         '<div class="topbar-actions' + (state.ui.mobileMenuOpen ? " open" : "") + '">' +
           '<button class="btn" data-action="open-sources">Kilder</button>' +
           '<button class="btn" data-action="toggle-filter-panel">🔎 Filter' + (activeFilterCount() ? ' <span class="badge-count">' + activeFilterCount() + "</span>" : "") + "</button>" +
+          '<button class="btn" data-action="open-archive">🗄️ Arkiv</button>' +
           '<button class="btn" data-action="run-ai-triage-bulk"' + (state.ui.aiBulkBusy ? " disabled" : "") + ">" + (state.ui.aiBulkBusy ? "Vurderer …" : "Kjør AI-vurdering (nye idéer)") + "</button>" +
           '<button class="btn" data-action="open-weights">Prioriteringsmodell</button>' +
           '<button class="btn btn-ghost" data-action="toggle-aside" aria-label="Aktivitet">Aktivitet ' + (alertCount ? '<span class="badge-count">' + alertCount + "</span>" : "") + "</button>" +
@@ -891,9 +900,9 @@
               );
             }).join("") : '<p class="aside-empty">Ingen kilder lagt til ennå.</p>') +
 
-            '<div class="section-label" style="margin-top:22px;">Søkeord — operatør-/selskapsnavn</div>' +
-            '<p class="helper">Fersk omtale av disse selskapene fanges opp automatisk hver natt (websøk), selv om «drone» ikke nevnes eksplisitt. Kun bedriftsnavn — ikke privatpersoner. Ett navn per linje.</p>' +
-            '<textarea id="bulk-keywords-input" rows="4" placeholder="Firma AS&#10;Et annet Selskap AS&#10;…"></textarea>' +
+            '<div class="section-label" style="margin-top:22px;">Søkeord — selskaper, temaer, høringer, forskrifter</div>' +
+            '<p class="helper">Fersk omtale fanges opp automatisk hver natt (websøk) — fungerer helt uavhengig av kildelisten over, trenger ingen RSS-/nettsted-kilde. Kan være selskapsnavn (bedrifter, ikke privatpersoner — fanges opp selv om «drone» ikke nevnes eksplisitt), eller generelle temaer/forskrifter/navngitte høringer dere ønsker tett oppfølging av. Ett søkeord/tema per linje.</p>' +
+            '<textarea id="bulk-keywords-input" rows="4" placeholder="Firma AS&#10;Luftfartstilsynet høring dronedeteksjon&#10;…"></textarea>' +
             '<button class="btn btn-primary" data-action="import-keywords"' + (state.ui.keywordImportBusy ? " disabled" : "") + '>' +
               (state.ui.keywordImportBusy ? "Importerer …" : "Importer søkeord") +
             "</button>" +
@@ -975,13 +984,14 @@
     return order.map(function (key) { return { key: key, label: monthGroupLabel(key), items: groups[key] }; });
   }
 
-  // Filter-panelet (Tema/Sakstype) — null i state.ui.filters[dim] = ingen
-  // filtrering på den dimensjonen (vis alt), ellers et objekt/set med
+  // Filter-panelet (Tema/Land/Sakstype) — null i state.ui.filters[dim] =
+  // ingen filtrering på den dimensjonen (vis alt), ellers et objekt/set med
   // verdiene som skal vises.
   function visibleCases() {
     var f = state.ui.filters;
     return state.cases.filter(function (c) {
       if (f.tema && !f.tema[c.tema || "UTEN_TEMA"]) return false;
+      if (f.land && !f.land[c.land || "UTEN_LAND"]) return false;
       if (f.sakstype && !f.sakstype[c.sakstype]) return false;
       return true;
     });
@@ -991,6 +1001,7 @@
     var f = state.ui.filters;
     var n = 0;
     if (f.tema) n++;
+    if (f.land) n++;
     if (f.sakstype) n++;
     return n;
   }
@@ -1103,6 +1114,7 @@
           '<span class="chip chip-type-' + c.sakstype + '">' + TYPE_LABELS[c.sakstype] + "</span>" +
           '<span class="chip chip-urg-' + c.hastegrad + '">' + URGENCY_LABELS[c.hastegrad] + "</span>" +
           '<span class="chip chip-site">' + (SITE_LABELS[c.nettsted] || c.nettsted) + "</span>" +
+          (c.land && LAND_LABELS[c.land] ? '<span class="chip chip-tema">' + LAND_LABELS[c.land] + "</span>" : "") +
           (c.tema && TEMA_LABELS[c.tema] ? '<span class="chip chip-tema">' + TEMA_LABELS[c.tema] + "</span>" : "") +
           (c.isRss ? '<span class="chip chip-rss">RSS</span>' : "") +
           (ev ? '<span class="chip chip-event">📅 ' + escapeHtml(ev.title) + "</span>" : "") +
@@ -1243,7 +1255,39 @@
     if (m === "weights") return renderWeightsModal();
     if (m === "sources") return renderSourcesModal();
     if (m === "wp-report") return renderWpReportModal();
+    if (m === "archive") return renderArchiveModal();
     return "";
+  }
+
+  // "Slett" på en idé arkiverer i stedet for å slette permanent (se
+  // archiveCase) — dette er stedet man faktisk finner de arkiverte sakene
+  // igjen (pluss avviste), med mulighet til å gjenopprette til «Idé» eller
+  // slette permanent for godt.
+  function renderArchiveModal() {
+    var rows = state.cases.filter(function (c) { return c.status === "arkivert" || c.status === "avvist"; })
+      .sort(function (a, b) { return (b.createdAt || "").localeCompare(a.createdAt || ""); });
+    return (
+      '<div class="overlay center" data-action="close-modal-bg">' +
+        '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="archive-title">' +
+          '<div class="panel-header"><h2 id="archive-title">🗄️ Arkiv (' + rows.length + ')</h2><button class="icon-btn" data-action="close-modal">✕</button></div>' +
+          '<div class="panel-body">' +
+            '<p class="helper">Saker som er arkivert (i stedet for slettet, mens de lå under «Idé») eller avvist. Gjenopprett til «Idé», eller slett permanent — det finnes ingen vei tilbake etter det.</p>' +
+            (rows.length ? rows.map(function (c) {
+              return (
+                '<div class="source-row">' +
+                  '<div class="source-main"><div class="source-name">' + escapeHtml(c.title || "(uten tittel)") + '</div>' +
+                    '<div class="source-url">' + escapeHtml(c.status === "arkivert" ? "Arkivert" : "Avvist") + "</div></div>" +
+                  '<button class="btn" data-action="open-case" data-id="' + c.id + '">Åpne</button>' +
+                  '<button class="btn" data-action="restore-case" data-id="' + c.id + '">↩ Gjenopprett</button>' +
+                  '<button class="icon-btn" data-action="delete-case-quick" data-id="' + c.id + '" title="Slett permanent" aria-label="Slett permanent">✕</button>' +
+                "</div>"
+              );
+            }).join("") : '<p class="aside-empty">Arkivet er tomt.</p>') +
+          "</div>" +
+          '<div class="panel-footer"><button class="btn btn-primary" data-action="close-modal">Lukk</button></div>' +
+        "</div>" +
+      "</div>"
+    );
   }
 
   function newCaseTabBtn(id, label) {
@@ -1817,6 +1861,13 @@
         break;
       case "open-weights": state.ui.modal = "weights"; render(); break;
       case "open-sources": openSources(); break;
+      case "open-archive": state.ui.modal = "archive"; render(); break;
+      case "restore-case": {
+        var restoreId = e.currentTarget.getAttribute("data-id");
+        var restoreCase = getCase(restoreId);
+        if (restoreCase) trySetStatus(restoreCase, "ide", "gjenopprettet fra arkiv");
+        break;
+      }
       case "toggle-filter-panel": state.ui.filterPanelOpen = !state.ui.filterPanelOpen; render(); break;
       case "toggle-filter-group": {
         var dim = e.currentTarget.getAttribute("data-dim");
@@ -1824,7 +1875,7 @@
         render();
         break;
       }
-      case "reset-filters": state.ui.filters = { tema: null, sakstype: null }; render(); break;
+      case "reset-filters": state.ui.filters = { tema: null, land: null, sakstype: null }; render(); break;
       case "toggle-title-group": {
         var groupId = e.currentTarget.getAttribute("data-id");
         state.ui.expandedTitleGroups[groupId] = !state.ui.expandedTitleGroups[groupId];
@@ -2333,6 +2384,7 @@
 
   var FILTER_DIM_VALUES = {
     tema: TEMA_ORDER.concat(["UTEN_TEMA"]),
+    land: LAND_ORDER.concat(["UTEN_LAND"]),
     sakstype: Object.keys(TYPE_LABELS)
   };
 

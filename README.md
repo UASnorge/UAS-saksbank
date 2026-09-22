@@ -213,17 +213,20 @@ Rammer kun *nye* brukere (en e-post som ikke finnes i `auth.users` fra før) —
 
 RSS-kildelisten (Steg 6) fanger kun opp det de faste kildene faktisk publiserer selv. For å dekke resten — generelle norske nettsteder uten (eller med ukjent) RSS, navngitte selskaper dere vil følge med på, og et bevisst mer sivilt fokus i tillegg til forsvar — kjører appen nå et eget websøk-sveip én gang i døgnet (`web-search-trigger.js` kl. 05:00 UTC → `web-search-background.js`, samme to-funksjons-mønster som kildekontrollen i Steg 14, siden ekte websøk-kall er for trege for en vanlig 30-sekunders scheduled function).
 
-Bruker `gpt-5-search-api` (samme søkekapable AI-verktøy som kildevurdering/bilderesearch) til tre ting, alle med samme "grunnregel" som resten av appen — modellen skal ALDRI dikte opp en URL, bare rapportere ekte treff funnet ved faktisk søk:
+Bruker `gpt-5-search-api` (samme søkekapable AI-verktøy som kildevurdering/bilderesearch) til flere ting, alle med samme "grunnregel" som resten av appen — modellen skal ALDRI dikte opp en URL, bare rapportere ekte treff funnet ved faktisk søk. **Oppdatert etter en gjennomgang av de 100 sist faktisk publiserte dronemag.no-sakene** (viste at ~90 % er norske/nordiske, og at politi/sikkerhet er den største kategorien — se v12/Steg 19) — fire separate, smale søk i stedet for ett bredt:
 
-1. **Generelt sveip** — ikke bundet til noen bestemt kildeliste. Instruert eksplisitt til å dekke BÅDE sivilt (landbruksdroner, dronelevering, film/foto, kartlegging/inspeksjon, droneselskaper/næringsliv, droneregelverk for sivil bruk) og forsvar/beredskap — den faste RSS-listen har i praksis vært forsvarstung (Forsvaret, Forsvarsdepartementet, FFI, TWZ), så dette sveipet er tenkt som en bevisst motvekt.
-2. **Nettsted-kilder uten RSS** — i «Kilder»-panelet limer dere inn en helt vanlig nettside-URL (f.eks. `https://www.aftenposten.no/`) akkurat som en RSS-lenke. Har den ingen RSS-feed, avvises den IKKE lenger (slik den gjorde før) — den lagres i stedet automatisk som en `type='website'`-kilde og overvåkes med et nettstedbegrenset søk (`site:domene`) i stedet for RSS-parsing. Utenlandske luftfartstilsyn uten kjent RSS (Trafikstyrelsen/Transportstyrelsen/Traficom, FAA) legges inn på samme måte — EASA har allerede en fungerende RSS-feed og trenger ingen endring.
-3. **Søkeord (operatør-/selskapsnavn)** — samme panel, egen seksjon: lim inn navn på registrerte droneoperatører/-selskaper, ett per linje (KUN bedriftsnavn, ikke privatpersoner — håndheves redaksjonelt av den som limer inn listen, ikke teknisk). Websøket leter aktivt etter fersk omtale av disse selskapene, selv i saker som ikke eksplisitt nevner ordet "drone".
+1. **Sivilt/kommersielt** (`searchCivilianDroneNews`) — landbruksdroner, dronelevering, film/foto, kartlegging/inspeksjon, norske droneselskaper. KUN norsk/nordisk, med sjeldne unntak for store internasjonale produktnyheter.
+2. **Politi/sikkerhet** (`searchPolicySecurityDroneNews`) — droneforbud ved arrangementer, politiets egen dronebruk, PST, ulovlig flyging, luftromskrenkelser. Norsk/nordisk. Den STØRSTE kategorien i praksis.
+3. **Regelverk/infrastruktur** (`searchNordicRegulatoryNews`) — Luftfartstilsynet, EASA, Avinor, registreringsplikt, høringer. Norsk/nordisk.
+4. **Forsvar/militært** (`searchDefenseDroneNews`) — holdes MEGET smalt (maks 2 treff/dag) og KUN genuint vesentlige norske/nordiske saker, aldri generell internasjonal krigsdekning — se v12/Steg 19: "Dronemagasinet er ikke et forsvarsmagasin".
 
-Hvert treff går gjennom nøyaktig samme AI-relevanssjekk som RSS-treff (`lib/relevance.js`) før det blir en sak i «Idé», og samme automatiske AI-vurdering (Steg 9) rett etterpå. Egen dedup-tabell (`seen_urls`) hindrer at samme artikkel dukker opp på nytt neste sveip.
+I tillegg, uavhengig av kildeliste:
+- **Nettsted-kilder uten RSS** — i «Kilder»-panelet limer dere inn en helt vanlig nettside-URL (f.eks. `https://www.aftenposten.no/`) akkurat som en RSS-lenke. Har den ingen RSS-feed, avvises den IKKE (den lagres som en `type='website'`-kilde og overvåkes med et nettstedbegrenset søk i stedet for RSS-parsing). Valgfritt, ikke en forutsetning for at websøket skal fungere.
+- **Søkeord** — samme panel, egen seksjon: lim inn selskapsnavn ELLER generelle temaer/forskrifter/navngitte høringer, ett per linje. Fungerer helt uavhengig av kildelisten — fanger opp omtale selv om ordet "drone" ikke nevnes eksplisitt (for kjente selskaper).
+
+Hvert treff går gjennom nøyaktig samme AI-relevanssjekk som RSS-treff (`lib/relevance.js`) før det blir en sak i «Idé», og samme automatiske AI-vurdering (Steg 9, nå med tema+land, se Steg 19) rett etterpå. Egen dedup-tabell (`seen_urls`) hindrer at samme artikkel dukker opp på nytt neste sveip.
 
 Ingen ny miljøvariabel — bruker samme `OPENAI_API_KEY`. Kjør `supabase/schema.sql` på nytt (v10-delen legger til `sources.type`, `watch_keywords`- og `seen_urls`-tabellene, idempotent som resten av filen).
-
-**Sivilt fokus, også i selve AI-vurderingen:** `lib/triage.js` sin husstil-beskrivelse er justert til eksplisitt IKKE å vekte forsvar/militært høyere enn sivil bruk i aktualitet/betydning-scoringen — den beskrev tidligere kun det faktisk publiserte (forsvarstunge) volumet, noe som i praksis kunne forsterke skjevheten videre.
 
 ## Steg 18 — «+ Ny sak»: 🎙️ Lydopptak (transkribering fra iPhone e.l.)
 
@@ -233,9 +236,19 @@ Fjerde fane i «+ Ny sak»: last opp et lydopptak (typisk et intervju, f.eks. ta
 
 **Talere skilles automatisk** (`gpt-4o-transcribe-diarize`) — nyttig for intervjuer med flere personer, men **ikke feilfritt**: for lange opptak som må deles opp (se under) er ikke talermerkingen nødvendigvis konsistent på tvers av delene. AI-en legger derfor alltid inn et eget kontrollpunkt om å dobbeltsjekke sitater mot selve opptaket (håndhevet server-side, ikke bare en prompt-instruks) — og selve lydopptaket lagres som saken sin kilde (signert lenke, 1 år), slik at det er lett å spille av igjen.
 
-**Ingen praktisk lengdegrense:** OpenAI sitt transkripsjons-endepunkt har en hard grense på ca. 25 MB/25 min per kall — lengre opptak deles derfor automatisk opp i 15-minutters biter med en ekte `ffmpeg`-binær (`ffmpeg-static`-pakken, ingen systeminstallasjon nødvendig) før hver bit transkriberes for seg og settes sammen igjen. Verifisert med et ekte 79 MB/7,5 min testopptak delt i 4 biter.
+**Ingen praktisk lengdegrense, og flere opptak per sak:** OpenAI sitt transkripsjons-endepunkt har en hard grense på ca. 25 MB OG ca. 25 min per kall — et komprimert taleopptak treffer nesten alltid varighetsgrensen lenge før størrelsesgrensen, så begge sjekkes (ekte `ffmpeg`-probing av faktisk varighet, ikke et anslag). Lengre opptak deles automatisk opp i 12-minutters biter med en ekte `ffmpeg`-binær (`ffmpeg-static`-pakken, ingen systeminstallasjon nødvendig) før hver bit transkriberes for seg og settes sammen igjen. «Lydopptak»-fanen tillater også å velge flere lydfiler samtidig (f.eks. et intervju tatt opp i to økter, «2×30 minutter») — alle transkriberes og settes sammen i riktig rekkefølge.
 
 Ingen ny miljøvariabel — bruker samme `OPENAI_API_KEY` og `manus`-lagringsboksen som resten av manus-funksjonene. Ingen ny databasemigrering.
+
+## Steg 19 — «Ikke et forsvarsmagasin»: tema, land og arkiv
+
+Etter en gjennomgang av de 100 sist faktisk publiserte dronemag.no-sakene (se historikk/commit-loggen for detaljene) — ~90 % var norske/nordiske, og politi/sikkerhetshendelser var den klart største kategorien, mens saksbankens daværende kildemiks (bl.a. TWZ/The War Zone, Forsvaret, Forsvarsdepartementet, FFI, Nammo) i praksis fylte «Idé» med generell internasjonal krigs-/forsvarsdekning som nesten aldri ble til en sak — fikk saksbanken tre relaterte endringer:
+
+**1. Tema splittet, forsvar minimert.** Det gamle, brede temaet FORSVAR_BEREDSKAP er delt i to: **POLITI_SIKKERHET** (norske/nordiske politi-/sikkerhetshendelser — skal beholdes/prioriteres) og **FORSVAR_MILITAERT** (ren militær/forsvarsdekning — skal forekomme sjelden, "vi er ikke et forsvarsmagasin"). `lib/triage.js` sin husstil-beskrivelse er omskrevet til eksplisitt å instruere lavt fokus på forsvar. De rene forsvarskildene i RSS-listen (TWZ, Forsvaret, Forsvarsdepartementet, FFI, Nammo) og FAA (amerikansk, ikke EASA) er deaktivert (ikke slettet — reversibelt via «Kilder»-panelet). Politiet.no er lagt til som ny kilde. `supabase/schema.sql` v12 gjør denne omleggingen, inkludert en engangs-etterklassifisering av eksisterende FORSVAR_BEREDSKAP-merkede idéer.
+
+**2. Land-merking.** AI-vurderingen (samme kall som tema/sakstype, ingen ekstra kostnad) setter nå også et land-merke — Norge/Danmark/Sverige/Finland/Internasjonalt — vist som en egen chip på hvert kort, og filtrerbart i filter-panelet (`supabase/schema.sql` v13).
+
+**3. Arkivet er synlig.** «Slett» på en idé under «Idé» har lenge arkivert i stedet for å slette permanent (se `archiveCase` i frontend) — men det fantes ingen god måte å faktisk se arkivet igjen (kun nederst i listevisningen). Ny **🗄️ Arkiv**-knapp i toppmenyen åpner en dedikert oversikt over arkiverte/avviste saker, med mulighet til å åpne, gjenopprette til «Idé», eller slette permanent (ingen vei tilbake etter det).
 
 ## Prosjektstruktur
 

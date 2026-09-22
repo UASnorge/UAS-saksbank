@@ -1,10 +1,12 @@
-// Masseimport av søkeord — i praksis navn på registrerte droneoperatører/
-// -selskaper UAS Norway ønsker at websøket (lib/webSearch.js) aktivt leter
-// etter fersk omtale av, selv i saker som ikke eksplisitt nevner "drone".
+// Masseimport av søkeord — kan være navn på registrerte droneoperatører/
+// -selskaper, men også generelle temaer/forskrifter/høringer UAS Norway
+// ønsker at websøket (lib/webSearch.js) aktivt leter etter fersk omtale av,
+// selv i saker som ikke eksplisitt nevner "drone". Fungerer helt uavhengig
+// av "sources"-kildelisten — krever ingen RSS-/nettsted-kilde.
 //
-// KUN bedriftsnavn skal legges inn her, ikke privatpersoner — dette
-// håndheves redaksjonelt (av den som limer inn listen), ikke teknisk av
-// funksjonen, som ikke har noen pålitelig måte å skille firmanavn fra
+// For selskapsnavn: KUN bedriftsnavn skal legges inn, ikke privatpersoner —
+// dette håndheves redaksjonelt (av den som limer inn listen), ikke teknisk
+// av funksjonen, som ikke har noen pålitelig måte å skille firmanavn fra
 // personnavn på.
 //
 // Samme mønster som add-sources.js: én linje per navn, krever innlogget

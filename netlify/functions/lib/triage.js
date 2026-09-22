@@ -8,25 +8,37 @@ const MAX_PER_RUN = 15;
 
 const HOUSE_STYLE = `Du er redaksjonell rådgiver for Dronemagasinet (dronemag.no) og UAS Norway (uasnorway.no).
 Dronemagasinet er et fagpressemedlem som skriver faktabasert, nøktern norsk fagjournalistikk om droner.
-Redaksjonen dekker et BREDT spekter, og militær/forsvar/beredskap skal IKKE vektes høyere enn sivil bruk —
-begge deler er like sentrale: sikkerhet og antidrone-hendelser, norsk og europeisk regelverk (Luftfartstilsynet,
-EASA), forsvar og beredskap, OG sivil/kommersiell bruk (landbruksdroner, dronelevering/logistikk, kartlegging/
-inspeksjon/anleggsbransjen, film/foto, viltredning, arrangementsflyging, droneselskaper/oppstartsselskaper i
-Norge, droneutdanning). Vurder aktualitet og betydning ut fra saken selv, ikke ut fra om den er militær eller
-sivil — en god sivil sak skal aldri få lavere score bare fordi den ikke handler om forsvar. De skriver LITE om
-forbrukerdrone-anmeldelser (produkttest-aktige artikler), det er en annen avgrensning enn sivil/militær.
+
+VIKTIG, redaksjonell grunnregel: Dronemagasinet er IKKE et forsvarsmagasin. Ren militær/forsvarsdekning
+(forsvarsanskaffelser, forsvarsstrategi, NATO-øvelser, C-UAS-kontrakter, generell internasjonal krigsdekning
+med droner — Ukraina, Midtøsten osv.) skal ha LAV aktualitet/betydning-score og forekomme SJELDEN — dette er
+en bevisst, uttalt redaksjonell linje ("helst så lite forsvar som mulig"), ikke en tilfeldighet. Analyse av
+faktisk publiserte saker viser at nesten ingen slike saker noensinne blir til en artikkel.
+
+Det redaksjonen faktisk skriver mest om (skal ha HØY aktualitet/betydning når relevant), i prioritert
+rekkefølge: (1) norske/nordiske politi- og sikkerhetshendelser med droner (droneforbud ved arrangementer,
+politiets egen dronebruk, PST, ulovlig flyging, luftromskrenkelser) — den klart største kategorien i praksis,
+(2) norsk/nordisk regelverk og infrastruktur (Luftfartstilsynet, EASA, Avinor, registreringsplikt, høringer),
+(3) sivil/kommersiell bruk i Norge/Norden (landbruksdroner, dronelevering/logistikk, kartlegging/inspeksjon,
+viltredning, arrangementsflyging), (4) norske droneselskaper (lansering, krise, konkurs, svindel). Internasjonale
+saker (ikke-nordiske) skal kun få høy score når de er en vesentlig EASA-regelendring eller en stor,
+allmenngyldig produktnyhet — ikke bare fordi de handler om droner. De skriver også LITE om forbrukerdrone-
+anmeldelser (produkttest-aktige artikler).
 
 Du setter i tillegg ETT tema-merke per sak, til bruk i et filter/kategoriseringspanel — velg det som passer BEST (ikke flere), ut fra hovedvinkelen i saken:
-- FORSVAR_BEREDSKAP: forsvar, militært, beredskap, politi, motdrone/antidrone, sikkerhetshendelser.
-- REGELVERK_LUFTFART: regelverk, sertifisering, luftromsintegrasjon, Luftfartstilsynet/EASA/andre myndigheter.
+- POLITI_SIKKERHET: politi, PST, droneforbud/luftromsrestriksjoner, sikkerhetshendelser, ulovlig droneflyging — IKKE ren militær/forsvarsanskaffelse (se FORSVAR_MILITAERT).
+- FORSVAR_MILITAERT: ren militær/forsvarsdekning (forsvarsanskaffelser, forsvarsstrategi, NATO/øvelser, C-UAS-kontrakter, krigsdekning) — brukes SJELDEN, kun når saken faktisk ikke passer bedre i POLITI_SIKKERHET eller et sivilt tema. Husk grunnregelen over: dette skal IKKE være en default-bøtte for "alt med sikkerhetsvinkel".
+- REGELVERK_LUFTFART: regelverk, sertifisering, luftromsintegrasjon, høringer, Luftfartstilsynet/EASA/Avinor/andre myndigheter.
 - TEKNOLOGI_PRODUKT: ny drone/komponent/programvare, produktlansering, teknisk gjennombrudd — uten at forsvar eller landbruk er hovedvinkelen.
 - LANDBRUK: landbruksdroner, sprøyting, jordbruk.
 - INDUSTRI_KARTLEGGING: kartlegging, inspeksjon, anlegg/bygg, industri, geodata.
 - LOGISTIKK_LEVERING: dronelevering, logistikk, transport.
-- SELSKAP_MARKED: selskapsnyheter, finansiering, marked, oppkjøp, børs — uten at et konkret produkt/en konkret teknologi er hovedvinkelen.
-- ULYKKE_HENDELSE: ulykker, kræsj, kriminalitet/misbruk av droner, rettssaker.
+- SELSKAP_MARKED: selskapsnyheter, finansiering, marked, oppkjøp, børs, konkurs/svindel — uten at et konkret produkt/en konkret teknologi er hovedvinkelen.
+- ULYKKE_HENDELSE: ulykker, kræsj (ikke-politi/sikkerhet), rettssaker som ikke er selskapssvindel.
 - ARRANGEMENT_UTDANNING: kurs, konferanser, utdanning, webinarer (typisk samme saker som får sakstype "content").
 - ANNET: passer ikke tydelig i noen av de over.
+
+Du setter i tillegg ETT land-merke — hvilket land saken HOVEDSAKELIG handler om/utspiller seg i (ikke bare hvor utgiveren er fra): NORGE, DANMARK, SVERIGE eller FINLAND. Er saken ikke tydelig knyttet til ett av disse fire (f.eks. et annet land, EU-nivå uten spesifikt land, eller internasjonalt produkt/selskap uten nordisk hovedvinkling), sett INTERNASJONALT.
 
 Tre sakstyper skal kunne skilles tydelig:
 - "redaksjonell" (vises som "Dronemagasin"): ordinær redaksjonell nyhetssak for dronemag.no/uasnorway.no.
@@ -67,9 +79,10 @@ const TRIAGE_SCHEMA = {
       sakstype: { type: "string", enum: ["redaksjonell", "content", "ai"] },
       tema: {
         type: "string",
-        enum: ["FORSVAR_BEREDSKAP", "REGELVERK_LUFTFART", "TEKNOLOGI_PRODUKT", "LANDBRUK", "INDUSTRI_KARTLEGGING",
+        enum: ["POLITI_SIKKERHET", "FORSVAR_MILITAERT", "REGELVERK_LUFTFART", "TEKNOLOGI_PRODUKT", "LANDBRUK", "INDUSTRI_KARTLEGGING",
           "LOGISTIKK_LEVERING", "SELSKAP_MARKED", "ULYKKE_HENDELSE", "ARRANGEMENT_UTDANNING", "ANNET"]
       },
+      land: { type: "string", enum: ["NORGE", "DANMARK", "SVERIGE", "FINLAND", "INTERNASJONALT"] },
       hastegrad: { type: "string", enum: ["akutt", "planlagt", "tidlos"] },
       aktualitet: { type: "integer", minimum: 1, maximum: 5 },
       betydning: { type: "integer", minimum: 1, maximum: 5 },
@@ -79,7 +92,7 @@ const TRIAGE_SCHEMA = {
       arrangement_tittel: { type: ["string", "null"], description: "Eksakt tittel på arrangementet fra listen, kun hvis sakstype er content. Ellers null." },
       begrunnelse: { type: "string", description: "Kort, én setning, til historikklogg." }
     },
-    required: ["sakstype", "tema", "hastegrad", "aktualitet", "betydning", "innsats", "eksklusivitet", "oppsummering", "arrangement_tittel", "begrunnelse"]
+    required: ["sakstype", "tema", "land", "hastegrad", "aktualitet", "betydning", "innsats", "eksklusivitet", "oppsummering", "arrangement_tittel", "begrunnelse"]
   }
 };
 
@@ -132,6 +145,7 @@ async function runTriage(supabase, openaiKey, caseIds) {
     const update = {
       sakstype: result.sakstype,
       tema: result.tema,
+      land: result.land,
       hastegrad: result.hastegrad,
       triage: { aktualitet: result.aktualitet, betydning: result.betydning, innsats: result.innsats, eksklusivitet: result.eksklusivitet },
       oppsummering: result.oppsummering,

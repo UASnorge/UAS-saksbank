@@ -1,23 +1,31 @@
-// Generelt websøk — finner nye saker UTENFOR den faste RSS-kildelisten,
-// via et søkekapabelt AI-verktøy (gpt-5-search-api, samme modell som
-// kildevurdering/bilderesearch/manusgenerering allerede bruker).
+// Generelt websøk — finner nye saker UTEN Å TRENGE en konfigurert RSS-/
+// nettsted-kilde i det hele tatt, via et søkekapabelt AI-verktøy
+// (gpt-5-search-api, samme modell som kildevurdering/bilderesearch/
+// manusgenerering allerede bruker). Dette er ment som HOVEDMEKANISMEN for
+// å finne nye saker, ikke bare et supplement til kildelisten — kildelisten
+// (RSS/nettsted-typene) er valgfri, ikke en forutsetning.
 //
 // Bruksområder, alle bygget på samme prinsipp — spør etter EKTE treff funnet
 // ved faktisk websøk, aldri diktet opp (samme "grunnregel" som resten av appen):
 //
-//  1a. searchCivilianDroneNews / 1b. searchDefenseDroneNews — TO ATSKILTE søk
-//      i stedet for ett bredt sveip. Testet live: ett enkelt sveip med kun en
-//      "husk å dekke sivilt også"-instruks endte likevel opp 100% militært/
-//      krigsrelatert (6/6 treff) — det globale nyhetsbildet (Ukraina-krigen)
-//      overdøver enhver enkelt instruks om balanse. Løsningen er strukturell,
-//      ikke enda en formulering: to helt separate kall med hvert sitt smale
-//      tema garanterer en reell blanding, uansett hva som ellers er i nyhetsbildet.
-//  2.  searchWebsiteSource     — ett bestemt nettsted (lagt inn som en
-//      "sources"-rad med type='website', typisk fordi det ikke har RSS —
-//      se add-sources.js) — nettstedbegrenset søk (site:domene).
-//  3.  searchKeywordMentions   — ferske treff som nevner navngitte
-//      operatør-/selskapsnavn (watch_keywords-tabellen), selv om selve
-//      teksten ikke eksplisitt sier "drone".
+//  1. searchCivilianDroneNews    — sivil/kommersiell bruk, Norge/Norden.
+//  2. searchPolicySecurityDroneNews — politi-/sikkerhetshendelser med droner,
+//     Norge/Norden. IKKE ren militær/forsvarsdekning (se punkt 4 under —
+//     "vi er ikke et forsvarsmagasin", brukerens eksplisitte instruks).
+//  3. searchNordicRegulatoryNews — regelverk/høringer/infrastruktur
+//     (Luftfartstilsynet, EASA, Avinor, andre nordiske luftfartsmyndigheter).
+//  4. searchDefenseDroneNews     — ren militær/forsvarsdekning. Holdes MEGET
+//     smalt med vilje (maks 1-2 treff, kun genuint vesentlige norske/nordiske
+//     forsvarssaker) — beholdt som egen, atskilt funksjon (i stedet for helt
+//     fjernet) nettopp FORDI en tidligere, bredere "sivilt + forsvar i ett
+//     søk"-utgave viste seg (testet live) å drukne i internasjonal
+//     krigsdekning uansett hvor mye promptet ba om balanse/måtehold — en
+//     egen, smal bøtte er den eneste pålitelige måten å holde volumet nede på.
+//  5. searchWebsiteSource — ett bestemt nettsted (valgfri "sources"-rad med
+//     type='website') — nettstedbegrenset søk (site:domene). Ikke påkrevd.
+//  6. searchKeywordMentions — ferske treff på navngitte søkeord/temaer
+//     (watch_keywords-tabellen) — kan være selskapsnavn, men også generelle
+//     temaer/forskrifter/høringer redaksjonen ønsker tett oppfølging av.
 //
 // GRUNNREGEL: url-feltet skal ALLTID være en ekte, funnet lenke — aldri en
 // gjettet/konstruert URL. web-search-background.js stoler uansett ikke blindt
@@ -95,43 +103,75 @@ async function callSearch(openaiKey, systemPrompt, userPrompt) {
 
 var BASE_SYSTEM = `Du finner nye, ferske nyhetssaker for Dronemagasinet (dronemag.no) og UAS Norway, et norsk redaktørstyrt fagmedium om droner, UAS/UAV, droneindustri, droneteknologi, droneregelverk og tilgrensende felt.
 
-Bruk websøk AKTIVT til å finne ekte, eksisterende artikler — GRUNNREGEL: dikt aldri opp en tittel, utgiver eller URL. Finner du ingen ekte treff som passer, returner en tom liste. En URL som ikke faktisk ble funnet ved søk skal ALDRI være med.
+VIKTIG, redaksjonell grunnregel: Dronemagasinet er IKKE et forsvarsmagasin. Redaksjonen skal HOVEDSAKELIG dekke norske/nordiske saker — ikke generell internasjonal nyhetsstrøm.
+
+Bruk websøk AKTIVT til å finne ekte, eksisterende artikler — dikt aldri opp en tittel, utgiver eller URL. Finner du ingen ekte treff som passer, returner en tom liste. En URL som ikke faktisk ble funnet ved søk skal ALDRI være med.
 
 Skriv rene tekstfelt — ALDRI sett inn kildehenvisnings-/sitatlenker i formatet "([kilde](url))" eller "[kilde](url)" inni tittel/utgiver/kort_hvorfor_relevant. Selve funnet skal kun rapporteres via url-feltet.
 
 Unngå åpenbare duplikater av samme hendelse fra flere nettsteder — velg den beste/mest opprinnelige kilden per hendelse.`;
 
-// ---------- 1a. Sivilt/kommersielt sveip ----------
+// ---------- 1. Sivilt/kommersielt sveip ----------
 
 var CIVILIAN_SYSTEM = BASE_SYSTEM + `
 
-Søk ETTER SIVIL/KOMMERSIELL/REGULATORISK dronebruk — IKKE krig, konflikt, militære angrep eller forsvarsmateriell. Prioriter norske kilder, men ta gjerne med sentrale internasjonale saker med tydelig relevans for norsk dronebransje.
+Søk ETTER SIVIL/KOMMERSIELL dronebruk — IKKE politi/sikkerhet (eget søk) og IKKE forsvar/krig/konflikt (eget søk, holdes minimalt). KUN norske/nordiske kilder, MED MINDRE saken er en vesentlig internasjonal produktnyhet med klar relevans for norsk dronebransje (sjeldent unntak, ikke standard).
 
-Let aktivt etter: landbruksdroner, dronelevering/logistikk, film/foto/drone-video, kartlegging/inspeksjon/anleggsbransjen, droneracing/hobby/fritid, droneselskaper/oppstartsselskaper i Norge, droneregelverk for sivil bruk, luftfartstilsyn/sertifisering, droneutdanning/kurs, redningsaksjoner/viltredning med drone.
+Let aktivt etter: landbruksdroner, dronelevering/logistikk, film/foto/drone-video, kartlegging/inspeksjon/anleggsbransjen, droneracing/hobby/fritid, norske droneselskaper (lansering, finansiering, krise, konkurs, svindel — dette er en fast, viktig sakstype), droneutdanning/kurs, redningsaksjoner/viltredning med drone.
 
-Maks 6 treff. IKKE ta med krigs-/konfliktrelaterte droneangrep eller ren forsvarsmaterielldekning her — det dekkes av et eget søk.`;
+Maks 6 treff.`;
 
 async function searchCivilianDroneNews(openaiKey, daysBack) {
   var days = daysBack || 3;
-  var userPrompt = "Finn ekte, sivile/kommersielle drone-/UAS-relaterte nyhetssaker fra de siste " + days + " dagene.";
+  var userPrompt = "Finn ekte, sivile/kommersielle norske/nordiske drone-/UAS-relaterte nyhetssaker fra de siste " + days + " dagene.";
   return callSearch(openaiKey, CIVILIAN_SYSTEM, userPrompt);
 }
 
-// ---------- 1b. Forsvar/beredskap-sveip ----------
+// ---------- 2. Politi/sikkerhet (norsk/nordisk) ----------
+
+var POLICY_SECURITY_SYSTEM = BASE_SYSTEM + `
+
+Søk ETTER norske/nordiske politi- og sikkerhetshendelser med droner — dette er DEN STØRSTE og viktigste kategorien for redaksjonen i praksis. Eksempler å aktivt lete etter: droneforbud/luftromsrestriksjoner rundt arrangementer (kongelige hendelser, statsbesøk, idrettsarrangementer, 17. mai), politiets egen dronebruk (respons, overvåkning, redning), PST-relatert droneomtale, ulovlig droneflyging, luftromskrenkelser/droneobservasjoner ved norske/nordiske flyplasser eller kritisk infrastruktur, dronehendelser ved militære/sivile anlegg i Norge/Norden.
+
+IKKE ta med ren militær/forsvarsanskaffelse, forsvarsstrategi eller generell internasjonal krigsdekning her — det er et eget, bevisst smalt søk. Denne kategorien handler om POLITI og SIKKERHET I SIVILT LUFTROM, ikke om Forsvaret sine egne anskaffelser/øvelser.
+
+KUN norske/nordiske saker. Maks 6 treff.`;
+
+async function searchPolicySecurityDroneNews(openaiKey, daysBack) {
+  var days = daysBack || 3;
+  var userPrompt = "Finn ekte, norske/nordiske politi-/sikkerhetsrelaterte drone-/UAS-nyhetssaker fra de siste " + days + " dagene.";
+  return callSearch(openaiKey, POLICY_SECURITY_SYSTEM, userPrompt);
+}
+
+// ---------- 3. Regelverk/infrastruktur (norsk/nordisk) ----------
+
+var REGULATORY_SYSTEM = BASE_SYSTEM + `
+
+Søk ETTER norsk/nordisk droneregelverk, høringer og luftfarts-infrastruktur: Luftfartstilsynet (nye regler, restriksjonsområder, høringer, sertifisering), EASA-regelendringer med praktisk betydning for Norge/Norden, Avinor (dronedeteksjon/CUAS-infrastruktur, luftromsintegrasjon), registreringsplikt/dronedata, tilsvarende myndigheter i Danmark/Sverige/Finland. Dette er en fast, viktig kategori for redaksjonen — inkluder gjerne saker om konkrete, navngitte prosjekter (f.eks. Avinor sitt dronedeteksjonssystem) når det er nytt å melde.
+
+KUN norske/nordiske saker, MED MINDRE det er en vesentlig EASA-regelendring med direkte betydning for Norge. Maks 5 treff.`;
+
+async function searchNordicRegulatoryNews(openaiKey, daysBack) {
+  var days = daysBack || 3;
+  var userPrompt = "Finn ekte, norsk/nordisk droneregelverk-/luftfarts-infrastruktur-nyheter (inkl. høringer) fra de siste " + days + " dagene.";
+  return callSearch(openaiKey, REGULATORY_SYSTEM, userPrompt);
+}
+
+// ---------- 4. Forsvar/militært — holdes bevisst smalt ----------
 
 var DEFENSE_SYSTEM = BASE_SYSTEM + `
 
-Søk ETTER forsvars-/beredskaps-/politirelatert dronebruk: motdrone/antidrone-teknologi, droneregelverk for forsvar/beredskap, norsk/europeisk forsvarsmateriell, droneøvelser, dronehendelser ved flyplasser/kritisk infrastruktur. Prioriter norske/nordiske/europeiske kilder.
+Dronemagasinet er IKKE et forsvarsmagasin — dette søket skal holdes MEGET smalt. Søk KUN etter genuint vesentlige norske/nordiske forsvars-/militærsaker med droner (f.eks. en norsk forsvarsdronestrategi, et konkret norsk/nordisk forsvarsanskaffelsesvedtak). IKKE generell internasjonal krigsdekning (Ukraina, Midtøsten, NATO-øvelser utenfor Norden, generelle C-UAS-kontrakter i andre land) — dette dekkes allerede godt av andre medier og blir nesten aldri til en Dronemagasinet-sak.
 
-Maks 4 treff. IKKE ta med generelle daglige krigsoppdateringer fra Ukraina/Midtøsten (droneangrep-etter-droneangrep) med mindre saken har en TYDELIG norsk/nordisk vinkling eller representerer en vesentlig ny teknologisk/strategisk utvikling — den daglige krigsrapporteringen dekkes allerede godt av andre medier og er sjelden noe Dronemagasinet selv publiserer om.`;
+Maks 2 treff — returner heller en tom liste enn å fylle på med internasjonal krigsdekning bare for å ha noe.`;
 
 async function searchDefenseDroneNews(openaiKey, daysBack) {
   var days = daysBack || 3;
-  var userPrompt = "Finn ekte, forsvars-/beredskapsrelaterte drone-/UAS-nyhetssaker fra de siste " + days + " dagene, med vekt på norsk/nordisk/europeisk relevans fremfor generell krigsrapportering.";
+  var userPrompt = "Finn KUN genuint vesentlige norske/nordiske forsvars-/militærrelaterte drone-nyheter fra de siste " + days + " dagene — ikke generell internasjonal krigsdekning.";
   return callSearch(openaiKey, DEFENSE_SYSTEM, userPrompt);
 }
 
-// ---------- 2. Ett bestemt nettsted (uten RSS) ----------
+// ---------- 5. Ett bestemt nettsted (valgfritt, uten RSS) ----------
 
 var WEBSITE_SYSTEM = BASE_SYSTEM + `
 
@@ -145,20 +185,20 @@ async function searchWebsiteSource(openaiKey, siteUrl, siteName, daysBack) {
   return callSearch(openaiKey, WEBSITE_SYSTEM, userPrompt);
 }
 
-// ---------- 3. Navngitte operatør-/selskapsnavn ----------
+// ---------- 6. Navngitte søkeord/temaer (ikke bare selskapsnavn) ----------
 
 var KEYWORD_SYSTEM = BASE_SYSTEM + `
 
-Du skal finne ferske nyhetsomtaler som nevner ett eller flere av de navngitte selskapene brukeren oppgir — SELV OM omtalen ikke eksplisitt nevner ordet "drone" (selskapet er allerede kjent som en droneoperatør/-aktør, så enhver reell nyhetsomtale av dem er potensielt interessant for redaksjonen). Ikke ta med generiske treningskurs-/rekrutteringsannonser eller åpenbart uinteressant selskapsomtale (f.eks. rene aksjekurs-/børsnoteringslister uten redaksjonelt innhold) — bruk skjønn.`;
+Du skal finne ferske nyhetsomtaler, høringer og nyheter som gjelder ett eller flere av søkeordene/temaene brukeren oppgir. Disse kan være selskapsnavn (finn da omtale av selskapet SELV OM "drone" ikke nevnes eksplisitt — selskapet er allerede kjent som en droneaktør), men kan også være generelle temaer, forskrifter, prosjektnavn eller stikkord redaksjonen ønsker tett oppfølging av (f.eks. et konkret regelverksforslag, en navngitt høring, et prosjektnavn). Ikke ta med generiske treningskurs-/rekrutteringsannonser eller åpenbart uinteressant omtale (f.eks. rene aksjekurslister uten redaksjonelt innhold) — bruk skjønn.`;
 
 async function searchKeywordMentions(openaiKey, keywords, daysBack) {
   var days = daysBack || 3;
-  var userPrompt = "Registrerte droneoperatører/-selskaper å søke etter fersk omtale av: " + keywords.join(", ") + "\n" +
-    "Finn ekte nyhetsomtaler av disse selskapene fra de siste " + days + " dagene.";
+  var userPrompt = "Søkeord/temaer å finne fersk omtale av: " + keywords.join(", ") + "\n" +
+    "Finn ekte nyhetsomtaler, høringer eller nyheter om disse fra de siste " + days + " dagene.";
   return callSearch(openaiKey, KEYWORD_SYSTEM, userPrompt);
 }
 
 module.exports = {
-  searchCivilianDroneNews, searchDefenseDroneNews, searchWebsiteSource, searchKeywordMentions,
-  stripInlineCitations, SEARCH_MODEL
+  searchCivilianDroneNews, searchPolicySecurityDroneNews, searchNordicRegulatoryNews, searchDefenseDroneNews,
+  searchWebsiteSource, searchKeywordMentions, stripInlineCitations, SEARCH_MODEL
 };
