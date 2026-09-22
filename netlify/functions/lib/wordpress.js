@@ -263,21 +263,43 @@ async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, by
   // allerede er bekreftet virkende i denne appen.
   if (featuredMediaId) meta["_yoast_wpseo_opengraph-image-id"] = String(featuredMediaId);
   const acf = site.acfFieldKeys;
+  // WordPress sin REST API kan eksponere ACF-felt på TO uavhengige måter,
+  // og et gitt nettsted kan ha kun én av dem faktisk satt opp:
+  //  (a) flate postmeta-nøkler (meta.content/meta._content osv.) — krever
+  //      at hvert felt er registrert med register_post_meta() PHP-side.
+  //      Dette er det uasnorway.no faktisk har (bekreftet 22.09.2026).
+  //  (b) et eget "acf"-objekt i forespørselen — krever kun at ACF sin egen
+  //      "Vis i REST API"-bryter er skrudd på for feltgruppen. Dette er det
+  //      dronemag.no hadde AVSKRUDD (funnet og rettet 22.09.2026, se
+  //      commit-historikken — men selve REST-metoden i koden her sendte
+  //      fortsatt kun (a), som dronemag.no aldri har hatt registrert, så
+  //      innhold/byline/bilde-felt ble alltid stille forkastet der).
+  // Sender derfor BEGGE — harmløst uansett hvilken mekanisme et gitt
+  // nettsted faktisk støtter, ingen egen konfigurasjon å holde styr på per
+  // nettsted i denne koden.
+  var acfObject = null;
   if (acf) {
-    // Egendefinerte felt styrer selve visningen på siden (bekreftet for
-    // uasnorway.no) — sett disse i tillegg til WordPress sine standardfelt.
+    // (a) Flate postmeta-nøkler.
     meta.content = contentHtml; meta._content = acf.content;
     meta.excerpt = ingress || ""; meta._excerpt = acf.excerpt;
     if (byline) { meta.byline = byline; meta._byline = acf.byline; }
     if (caption) { meta.imageTxt = caption; meta._imageTxt = acf.imageTxt; }
     if (photoCredit) { meta.photoCredits = photoCredit; meta._photoCredits = acf.photoCredits; }
     if (featuredMediaId) { meta.image = String(featuredMediaId); meta._image = acf.image; }
+
+    // (b) ACF sitt eget "acf"-objekt — adresserer felt ved NAVN (samme
+    // navn som (a) over bruker som meta-nøkkel), ikke ved field_xxx-nøkkel.
+    acfObject = { content: contentHtml, excerpt: ingress || "" };
+    if (byline) acfObject.byline = byline;
+    if (caption) acfObject.imageTxt = caption;
+    if (photoCredit) acfObject.photoCredits = photoCredit;
+    if (featuredMediaId) acfObject.image = featuredMediaId;
   }
 
   const post = await wpFetch(site, "/wp/v2/posts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+    body: JSON.stringify(Object.assign({
       title,
       content: contentHtml,
       excerpt: ingress || "",
@@ -286,7 +308,7 @@ async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, by
       categories: categoryIds.length ? categoryIds : undefined,
       featured_media: featuredMediaId || undefined,
       meta,
-    }),
+    }, acfObject ? { acf: acfObject } : {})),
   });
 
   return {
