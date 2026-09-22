@@ -180,6 +180,19 @@ function escapeHtmlText(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// Tolker "**fet tekst**" (markdown-stil fet skrift, som AI-en av og til bruker
+// for å fremheve noe) til ekte <strong>-fet skrift i stedet for at
+// stjernetegnene vises bokstavelig i WordPress — det var nettopp DETTE som
+// fikk teksten til å se "rar" ut (bokstavelige ** midt i avsnittene), ikke en
+// feil i selve avsnitts-/overskriftsformateringen. Brukes med vilje sjelden —
+// se punkt om fet skrift i lib/manuscript.js sine systemprompter.
+function inlineMarkdownToHtml(text) {
+  var parts = String(text).split(/\*\*(.+?)\*\*/g);
+  return parts.map(function (seg, i) {
+    return i % 2 === 1 ? "<strong>" + escapeHtmlText(seg) + "</strong>" : escapeHtmlText(seg);
+  }).join("");
+}
+
 // Samme bildemarkør-konvensjon som lib/manuscript.js (duplisert her bevisst,
 // ikke krysset inn fra manuscript.js — de to lib-modulene er ellers
 // uavhengige av hverandre): "![alt-tekst](url)" for et ekstra bilde midt i
@@ -227,15 +240,17 @@ function paragraphsToHtml(paragraphs, imageUrlMap) {
     .map((p) => String(p || "").trim())
     .filter(Boolean)
     .map((p) => {
-      if (p.indexOf("## ") === 0) return "<h3>" + escapeHtmlText(p.slice(3)) + "</h3>";
-      if (p.indexOf("> ") === 0) return "<blockquote>" + escapeHtmlText(p.slice(2)) + "</blockquote>";
+      // "Overskrift 2" i WordPress sin formatvelger, ikke "Overskrift 3" —
+      // presisert av redaksjonen (mellomtitler skal være h2, ikke h3).
+      if (p.indexOf("## ") === 0) return "<h2>" + inlineMarkdownToHtml(p.slice(3)) + "</h2>";
+      if (p.indexOf("> ") === 0) return "<blockquote>" + inlineMarkdownToHtml(p.slice(2)) + "</blockquote>";
       const imgMatch = p.match(WP_IMAGE_MARKER_RE);
       if (imgMatch) {
         const resolvedUrl = imageUrlMap[imgMatch[2]] || imgMatch[2];
         return '<img src="' + escapeHtmlText(resolvedUrl) + '" alt="' + escapeHtmlText(imgMatch[1] || "") + '" />' +
           (imgMatch[1] ? '<em>' + escapeHtmlText(imgMatch[1]) + '</em>' : "");
       }
-      return "<p>" + escapeHtmlText(p) + "</p>";
+      return "<p>" + inlineMarkdownToHtml(p) + "</p>";
     })
     .join("\n");
 }
@@ -323,4 +338,4 @@ async function uploadMediaForSite(nettsted, args) {
   return uploadMedia(site, args);
 }
 
-module.exports = { getSiteConfig, uploadMediaForSite, createDraftPost, UASNORWAY_ACF_FIELD_KEYS };
+module.exports = { getSiteConfig, uploadMediaForSite, createDraftPost, UASNORWAY_ACF_FIELD_KEYS, paragraphsToHtml };

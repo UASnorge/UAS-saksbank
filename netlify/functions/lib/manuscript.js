@@ -27,7 +27,8 @@ Skriv nøktern, faktabasert norsk fagjournalistikk — kort ingress (1-3 setning
 konkrete avsnitt. Bruk aktiv form, unngå synsing. Oppgi alltid hvor informasjon kommer fra når det er naturlig
 (f.eks. "ifølge X" eller "skriver Y"). Basér deg UTELUKKENDE på fakta som faktisk står i kildeteksten du får
 oppgitt under — finn ALDRI på detaljer, tall, sitater eller navn som ikke står der. Er noe uklart eller mangler
-i kildeteksten, skriv det tydelig i feltet "usikkerhetsnotat" i stedet for å gjette i selve teksten.`;
+i kildeteksten, skriv det tydelig i feltet "usikkerhetsnotat" i stedet for å gjette i selve teksten.
+Fet skrift ("**tekst**") kun unntaksvis for noe genuint viktig — aldri som standard virkemiddel i vanlige avsnitt.`;
 
 // Systemprompt for selve FØRSTEUTKASTET — vesentlig mer krevende enn
 // HOUSE_STYLE over, fordi dette er der research faktisk skal skje.
@@ -55,6 +56,7 @@ VIKTIG OM KILDEHENVISNING I TEKSTEN: sett ALDRI inn klikkbare lenker, parenteser
    - et vanlig avsnitt er bare teksten
    - en mellomtittel skrives som eget listeelement med prefiks "## " (f.eks. "## Del av et større system") — bruk 2-4 mellomtitler i en middels lang sak, aldri i en veldig kort
    - et direkte sitat med god kildeverdi skrives som eget listeelement med prefiks "> " i formatet '> «sitatet» – navn, rolle, til Kilde' (kun når kildeartikkelen faktisk inneholder et sitat verdt å fremheve — dikt aldri opp et sitat)
+   - fet skrift ("**tekst**") kan brukes UNNTAKSVIS, for å fremheve noe genuint viktig (f.eks. ett enkelt nøkkeltall eller en avgjørende presisering) — ALDRI som standard virkemiddel. De aller fleste avsnitt skal IKKE inneholde noe fet skrift i det hele tatt.
 
 7. BILDE. Vurder om bildet fra kildeartikkelen er et generisk produsent-/arkivbilde som IKKE er bekreftet å vise den faktiske, konkrete situasjonen saken handler om (typisk for produkt-/pressebilder brukt til å illustrere en spesifikk hendelse) — sett bilde_er_illustrasjon til true i så fall, og skriv det tydelig i alt-teksten.
 
@@ -304,6 +306,21 @@ function parseImageMarker(text) {
   return m ? { alt: m[1], url: m[2] } : null;
 }
 
+// Tolker "**fet tekst**" (markdown-stil, som AI-en av og til bruker for å
+// fremheve noe) til ekte fete TextRun-er i .docx-en, i stedet for at
+// stjernetegnene vises bokstavelig — samme rettelse som gjort i
+// lib/wordpress.js (duplisert, ikke importert — de to lib-modulene er
+// ellers uavhengige av hverandre).
+function textRunsFromMarkdownBold(text) {
+  var parts = String(text).split(/\*\*(.+?)\*\*/g);
+  var runs = [];
+  parts.forEach(function (seg, i) {
+    if (!seg) return;
+    runs.push(new TextRun({ text: seg, bold: i % 2 === 1 }));
+  });
+  return runs.length ? runs : [new TextRun({ text: "" })];
+}
+
 // Returnerer en LISTE med paragrafer (et vanlig avsnitt blir én, et bilde kan
 // bli to — selve bildet og en bildetekst). Async fordi et bildemarkør-avsnitt
 // må hente bildet før det kan legges inn i dokumentet.
@@ -325,7 +342,7 @@ async function paragraphsFromMarkedText(text) {
     }
     return [new Paragraph({ children: [new TextRun({ text: "(Bilde ikke funnet automatisk: " + imgMarker.url + (imgMarker.alt ? " — " + imgMarker.alt : "") + ")", italics: true })] })];
   }
-  return [new Paragraph({ children: [new TextRun({ text: text })] })];
+  return [new Paragraph({ children: textRunsFromMarkdownBold(text) })];
 }
 
 async function buildDocxParagraphs(fields, image) {
@@ -550,7 +567,7 @@ Gjør, i denne rekkefølgen:
 2. Følg det redaksjonelle notatet (vinkling/lengde/hva saken skal handle om) hvis det er oppgitt — det styrer hvordan saken vinkles og hvor omfattende den blir, men overstyrer ALDRI grunnregelen om å aldri dikte opp innhold utover det som faktisk sies i opptaket.
 3. BRUK WEBSØK til å: verifisere/utdype faktapåstander som nevnes i intervjuet (selskapsnavn, produkter, tall, hendelser) mot åpne kilder der det er naturlig, og søke Dronemagasinets/UAS Norways EGET arkiv (site:dronemag.no / site:uasnorway.no) etter tidligere dekning av samme tema/selskap/person — akkurat som ved vanlig kildebasert manusgenerering. Finner du ingen relevant tidligere dekning, sett tidligere_dekning til null.
 4. Sitatblokker (prefiks "> ") skal formateres '> «sitatet» – navn, rolle' (navn/rolle fra intervjuobjektet om det er kjent fra konteksten/arbeidstittelen/notatet — er navn/rolle ukjent, skriv "– intervjuobjektet" og noter i usikkerhetsnotat at navn/rolle bør bekreftes før publisering). IKKE skriv "til Dronemagasinet" e.l. etter sitatet — det er unødvendig når kilden er redaksjonens eget intervju.
-5. STRUKTUR: samme avsnittskonvensjon som ellers — mellomtittel "## Tittel", sitatblokk "> ...", vanlig avsnitt uten prefiks.
+5. STRUKTUR: samme avsnittskonvensjon som ellers — mellomtittel "## Tittel", sitatblokk "> ...", vanlig avsnitt uten prefiks. Fet skrift ("**tekst**") kun unntaksvis for noe genuint viktig, aldri som standard.
 6. kilder_brukt: list eventuelle EKSTERNE kilder du faktisk fant/brukte til faktasjekk/kontekst (ekte, funnet URL-er, aldri oppdiktet). Selve intervjuet er ikke en URL og skal ikke stå i denne listen.
 7. KONTROLLPUNKTER: konkrete, saksspesifikke ting redaksjonen bør avklare før publisering — inkluder ALLTID et punkt om å dobbeltsjekke sitater/attribusjon mot selve lydopptaket, i tillegg til andre sakspesifikke punkter.
 8. alt_tekst_bilde: sett til en kort, generisk beskrivelse basert på temaet (redaksjonen laster selv opp egne bilder til saken, ingen bilde-URL er hentet automatisk her) — bilde_er_illustrasjon settes til false.
