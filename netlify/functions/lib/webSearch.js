@@ -77,18 +77,50 @@ const DISCOVERY_SCHEMA = {
   }
 };
 
+function sleep(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+// gpt-5-search-api deler en org-omfattende TPM-kvote (tokens per minutt) med
+// resten av appen, og et fullt websøk-sveip gjør 15+ kall etter hverandre
+// (lib/webSearchSweep.js) — det traff jevnlig 429 (rate limit) i praksis selv
+// med noen sekunders pause mellom hvert kall. Retry med backoff er en
+// vesentlig mer robust fiks enn å bare gjette på en lang nok fast pause:
+// bruker serverens egen "prøv igjen om Xms"-hint når den finnes.
+var RATE_LIMIT_RETRIES = 3;
+var RATE_LIMIT_FALLBACK_MS = 10000;
+
 async function callSearch(openaiKey, systemPrompt, userPrompt) {
-  var res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: "Bearer " + openaiKey },
-    body: JSON.stringify({
-      model: SEARCH_MODEL,
-      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      response_format: { type: "json_schema", json_schema: DISCOVERY_SCHEMA }
-    })
-  });
-  if (!res.ok) throw new Error("OpenAI-feil (" + res.status + "): " + (await res.text()).slice(0, 300));
-  var data = await res.json();
+  var lastErrText = "";
+  for (var attempt = 0; attempt <= RATE_LIMIT_RETRIES; attempt++) {
+    var res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + openaiKey },
+      body: JSON.stringify({
+        model: SEARCH_MODEL,
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+        response_format: { type: "json_schema", json_schema: DISCOVERY_SCHEMA }
+      })
+    });
+    if (res.ok) return parseSearchResponse(await res.json());
+
+    var errText = await res.text();
+    lastErrText = errText.slice(0, 300);
+    if (res.status !== 429 || attempt === RATE_LIMIT_RETRIES) {
+      throw new Error("OpenAI-feil (" + res.status + "): " + lastErrText);
+    }
+    var waitMs = RATE_LIMIT_FALLBACK_MS;
+    var hint = errText.match(/try again in ([\d.]+)(ms|s)/i);
+    if (hint) waitMs = Math.ceil(parseFloat(hint[1]) * (hint[2] === "s" ? 1000 : 1)) + 500;
+    // Serverens hint gjelder ofte kun de siste tokenene i kvoten — legg på
+    // litt margin (og en økende faktor per forsøk) i stedet for å stole
+    // blindt på millisekund-tallet fra en enkelt feilmelding.
+    await sleep(Math.max(waitMs, RATE_LIMIT_FALLBACK_MS * (attempt + 1)));
+  }
+  throw new Error("OpenAI-feil (429): " + lastErrText);
+}
+
+function parseSearchResponse(data) {
   var parsed = JSON.parse(data.choices[0].message.content);
   return (parsed.treff || []).map(function (t) {
     return {

@@ -43,6 +43,17 @@ function chunk(arr, size) {
   return out;
 }
 
+function sleep(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+// gpt-5-search-api deler en org-omfattende TPM-kvote (tokens per minutt) med
+// resten av appen. Et fullt sveip gjør 10+ søkekall etter hverandre (seks
+// faste bukter + én per nettsted-kilde + én per søkeord-batch) — uten en
+// liten pause mellom hvert kall traff produksjonskjøringen 429-feil på 7 av 9
+// nettsted-kilder i praksis (oppdaget live under feilsøking 2026-09-23).
+var SEARCH_CALL_DELAY_MS = 3000;
+
 async function createCaseFromHit(supabase, openaiKey, hit, extraContext, kildeLabel, report) {
   if (!hit.url || !/^https?:\/\//i.test(hit.url)) return;
   if (isOwnDomain(hit.url)) return; // egen, allerede publisert sak — ikke en ny "idé"
@@ -130,6 +141,7 @@ async function runWebSearchSweep(supabase, openaiKey) {
   // 1b. Bransje/industri (norsk) — dedikert, bredt søk i norsk fagpresse for
   // UAS Norway sine egne medlemmer. Se lib/webSearch.js sin begrunnelse
   // (elektro247.no/Nomadic Drones-eksempelet som glapp i det generelle søket).
+  await sleep(SEARCH_CALL_DELAY_MS);
   try {
     // Litt bredere tidsvindu enn resten av sveipet (7 vs. 3 dager) — norsk
     // nisje-fagpresse publiserer sjeldnere enn de store nyhetssidene, så et
@@ -145,6 +157,7 @@ async function runWebSearchSweep(supabase, openaiKey) {
 
   // 2. Politi/sikkerhet (norsk/nordisk) — den STØRSTE kategorien i praksis,
   // se lib/triage.js sin begrunnelse. Atskilt fra forsvar/militært under.
+  await sleep(SEARCH_CALL_DELAY_MS);
   try {
     var politi = await searchPolicySecurityDroneNews(openaiKey, DAYS_BACK);
     report.politiSikkerhetTreff = politi.length;
@@ -156,6 +169,7 @@ async function runWebSearchSweep(supabase, openaiKey) {
   }
 
   // 3. Regelverk/infrastruktur (norsk/nordisk — Luftfartstilsynet/EASA/Avinor)
+  await sleep(SEARCH_CALL_DELAY_MS);
   try {
     var regelverk = await searchNordicRegulatoryNews(openaiKey, DAYS_BACK);
     report.regelverkTreff = regelverk.length;
@@ -170,6 +184,7 @@ async function runWebSearchSweep(supabase, openaiKey) {
   // kjøring, se lib/webSearch.js). "Vi er ikke et forsvarsmagasin" —
   // beholdt som egen, atskilt funksjon nettopp for å kunne holdes smal,
   // i stedet for å blandes inn i et bredere søk og drukne det i volum.
+  await sleep(SEARCH_CALL_DELAY_MS);
   try {
     var forsvar = await searchDefenseDroneNews(openaiKey, DAYS_BACK);
     report.forsvarTreff = forsvar.length;
@@ -181,9 +196,11 @@ async function runWebSearchSweep(supabase, openaiKey) {
   }
 
   // 5. Nettsted-kilder uten RSS (sources.type = 'website') — valgfritt, ikke en forutsetning
+  await sleep(SEARCH_CALL_DELAY_MS);
   var websiteRes = await supabase.from("sources").select("*").eq("active", true).eq("type", "website");
   if (!websiteRes.error) {
     for (var s = 0; s < (websiteRes.data || []).length; s++) {
+      if (s > 0) await sleep(SEARCH_CALL_DELAY_MS);
       var site = websiteRes.data[s];
       report.nettstedKilderSjekket++;
       try {
@@ -207,6 +224,7 @@ async function runWebSearchSweep(supabase, openaiKey) {
     var terms = keywordsRes.data.map(function (r) { return r.term; });
     var batches = chunk(terms, KEYWORD_BATCH_SIZE);
     for (var b = 0; b < batches.length; b++) {
+      await sleep(SEARCH_CALL_DELAY_MS);
       report.sokeordSjekket += batches[b].length;
       try {
         var kwHits = await searchKeywordMentions(openaiKey, batches[b], DAYS_BACK);
