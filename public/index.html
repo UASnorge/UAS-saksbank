@@ -1491,7 +1491,10 @@
         : '<span style="color:var(--danger,#c33)">❌ Lenken kunne IKKE bekreftes automatisk — ' + escapeHtml(v.detalj || "sjekk manuelt før bruk") + "</span>";
       return (
         '<div class="kildevurdering-report" style="border-top:1px solid var(--border,#3333);padding-top:10px;margin-top:10px;">' +
-          "<p><b>Alternativ " + (i + 1) + (isBest ? " – ANBEFALT" : "") + "</b></p>" +
+          "<p><b>Alternativ " + (i + 1) + (isBest ? " – ANBEFALT" : "") + "</b>" +
+            (alt.er_logo ? ' <span style="color:var(--danger,#c33)">🏢 LOGO — skal IKKE brukes som hovedbilde</span>' : "") +
+            (alt.ai_generert ? ' <span style="color:var(--ok,#2a7)">🤖 AI-generert illustrasjon (ingen tredjeparts rettighet)</span>' : "") +
+          "</p>" +
           previewHtml +
           "<p><b>Motiv:</b> " + escapeHtml(alt.motiv || "") + "</p>" +
           "<p><b>Hvorfor relevant:</b> " + escapeHtml(alt.hvorfor_relevant || "") + "</p>" +

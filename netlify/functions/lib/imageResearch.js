@@ -27,6 +27,7 @@
 const { verifyUrl } = require("./linkCheck.js");
 
 const MODEL = "gpt-5-search-api";
+const IMAGE_GEN_MODEL = "gpt-image-1";
 
 const SYSTEM_PROMPT = `Du er bilde researcher for Dronemagasinet, et norsk redaktørstyrt fagmedium om droner, droneindustri, teknologi, luftfart, beredskap, forsvar, public safety og CUAS.
 
@@ -48,6 +49,8 @@ Rettighetskategorier: A=dokumentert tilgjengelig for redaksjonell bruk (offisiel
 
 Flagg eldre bilder som kan vise en tidligere produktversjon enn saken faktisk gjelder.
 
+VIKTIG om logoer: en organisasjons/etats/selskaps LOGO, merke eller symbol (f.eks. Luftfartstilsynets logo) er ALDRI et egnet hovedbilde til en artikkel — en logo illustrerer ikke hendelsen/saken, den identifiserer bare avsenderen. Sett "er_logo": true for ethvert alternativ som er en logo/merke/symbol fremfor et redaksjonelt bilde av selve saken. Du kan fortsatt liste en logo som ett av alternativene (kan være nyttig som siste utvei eller referanse), men den skal ALDRI være "beste_valg_index" eller "best_visuelt_index" — pek disse to feltene på et faktisk redaksjonelt bilde, eller sett dem til null hvis ALLE alternativene er logoer/ikke-redaksjonelle.
+
 ABSOLUTT REGEL: skriv ALDRI "fritt bilde", "kan brukes" eller "fri bruk" uten at du faktisk har funnet dokumentasjon som underbygger det. Kan du ikke fastslå rettighetene: bruk kategori D eller E, og si tydelig fra at bruksretten ikke er verifisert og må avklares før publisering. Det er bedre å vise et godt forslag med tydelig advarsel enn å feilaktig hevde at det kan brukes.
 
 For HVER alternativ, oppgi ALLTID både a) "kildeside_url": den vanlige nettsiden (artikkel/mediebank/pressekit) der du fant bildet, og b) "bilde_url": den mest spesifikke direkte bildefil-lenken du klarer å finne (kan være lik kildeside_url dersom ingen mer spesifikk fillenke finnes — ikke dikt opp en fillenke du ikke faktisk har sett).
@@ -66,6 +69,7 @@ const ALTERNATIVE_PROPS = {
   bruksrett: { type: "string", enum: ["A", "B", "C", "D", "E"] },
   dokumentasjon_url: { type: ["string", "null"], description: "URL der bruksretten/lisensen faktisk beskrives." },
   eldre_enn_saken: { type: "boolean" },
+  er_logo: { type: "boolean", description: "true hvis dette er en organisasjons logo/merke/symbol, ikke et redaksjonelt bilde av selve saken." },
   kommentar: { type: "string" }
 };
 const ALTERNATIVE_REQUIRED = Object.keys(ALTERNATIVE_PROPS);
@@ -170,6 +174,75 @@ async function callOpenAI(openaiKey, userPrompt) {
   return JSON.parse(data.choices[0].message.content);
 }
 
+// Et alternativ regnes som faktisk brukbart som hovedbilde når det IKKE er en
+// logo, bruksretten er avklart (A/B), og lenken faktisk er bekreftet å virke.
+// Kategori C/D/E eller er_logo=true kan fortsatt vises til redaksjonen som
+// referanse, men skal aldri telle som "vi har et bilde vi kan bruke".
+function isUsableAlternative(alt) {
+  return !!(alt && alt.verifisering && alt.verifisering.lenke_virker && !alt.er_logo && (alt.bruksrett === "A" || alt.bruksrett === "B"));
+}
+
+// Finner beste brukbare index blant alternativene, eller null.
+function bestUsableIndex(alternativer) {
+  for (var i = 0; i < alternativer.length; i++) {
+    if (isUsableAlternative(alternativer[i])) return i;
+  }
+  return null;
+}
+
+// Genererer 3 alternative, rettighetsfrie illustrasjoner med AI når research
+// ikke fant noe faktisk brukbart bilde (kun logoer, uklar bruksrett, eller
+// ingenting i det hele tatt) — direkte svar på tilbakemeldingen om at en
+// etats logo (Luftfartstilsynet) endte opp som hovedbilde på en sak uten
+// ordentlige bilder. Egengenererte illustrasjoner har ingen tredjeparts-
+// rettighet å avklare, så de er alltid trygge å tilby som reelle alternativ.
+async function generateIllustrations(supabase, openaiKey, caseId, title, oppsummering) {
+  var prompt =
+    "Redaksjonell nyhetsillustrasjon for en norsk fagartikkel om droner/UAS. Saken handler om: " + title +
+    (oppsummering ? ". " + oppsummering : "") +
+    ". Stil: nøktern, realistisk redaksjonell illustrasjon/grafikk i lys, moderne stil — IKKE fotorealistisk portrett av navngitte, virkelige personer, IKKE noen logo, varemerke eller tekst av noe slag i bildet, IKKE noen konkret merkevare. Generisk, gjenkjennelig motiv som illustrerer temaet.";
+
+  var res = await fetch("https://api.openai.com/v1/images/generations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + openaiKey },
+    body: JSON.stringify({ model: IMAGE_GEN_MODEL, prompt: prompt, size: "1536x1024", n: 3 })
+  });
+  if (!res.ok) throw new Error("Bildegenerering feilet (" + res.status + "): " + (await res.text()).slice(0, 300));
+  var data = await res.json();
+  var images = data.data || [];
+
+  var uploaded = await Promise.all(images.map(async function (img, i) {
+    if (!img.b64_json) return null;
+    var buf = Buffer.from(img.b64_json, "base64");
+    var path = caseId + "/ai-illustrasjon-" + (i + 1) + "-" + Date.now() + ".png";
+    var uploadRes = await supabase.storage.from("manus").upload(path, buf, { contentType: "image/png", upsert: false });
+    if (uploadRes.error) return null;
+    var signedRes = await supabase.storage.from("manus").createSignedUrl(path, 60 * 60 * 24 * 365);
+    if (signedRes.error || !signedRes.data) return null;
+    return signedRes.data.signedUrl;
+  }));
+
+  return uploaded.filter(Boolean).map(function (url, i) {
+    return {
+      motiv: "AI-generert illustrasjon " + (i + 1),
+      hvorfor_relevant: "Egengenerert illustrasjon — laget fordi research ikke fant et faktisk brukbart pressebilde til denne saken.",
+      originalkilde_navn: "AI-generert (Dronemagasinet)",
+      kildeside_url: url,
+      bilde_url: url,
+      rettighetshaver: "Dronemagasinet",
+      fotograf: null,
+      foreslatt_kreditering: null,
+      bruksrett: "A",
+      dokumentasjon_url: null,
+      eldre_enn_saken: false,
+      er_logo: false,
+      kommentar: "Generert av AI som erstatning fordi ingen brukbart, rettighetsavklart pressebilde ble funnet.",
+      verifisering: { lenke_virker: true, verifisert_bilde_url: url, verifiseringsmetode: "AI-generert og lastet opp direkte — ingen ekstern lenke å verifisere", detalj: "" },
+      ai_generert: true
+    };
+  });
+}
+
 // supabase: klient autentisert SOM den innloggede brukeren (RLS gjelder).
 async function researchImages(supabase, openaiKey, caseId) {
   var caseRes = await supabase.from("cases").select("*").eq("id", caseId).maybeSingle();
@@ -190,20 +263,46 @@ async function researchImages(supabase, openaiKey, caseId) {
     return Object.assign({}, alt, { verifisering: verifisering });
   }));
 
+  // Ikke stol blindt på modellens egne indekser — en logo skal aldri være
+  // "beste"/"mest visuelle" valg selv om modellen skulle foreslå det.
+  function safeIndex(idx) {
+    return (typeof idx === "number" && alternativer[idx] && !alternativer[idx].er_logo) ? idx : null;
+  }
+
+  var genererteIllustrasjoner = 0;
+  if (bestUsableIndex(alternativer) === null) {
+    try {
+      var generert = await generateIllustrations(supabase, openaiKey, caseId, c.title, c.oppsummering);
+      genererteIllustrasjoner = generert.length;
+      alternativer = alternativer.concat(generert);
+    } catch (err) {
+      // Feiler bildegenerering: behold de opprinnelige (svake) forslagene i
+      // stedet for å la hele bilderesearchen feile — redaksjonen ser da
+      // fortsatt hva som ble funnet, bare uten AI-illustrasjoner i tillegg.
+    }
+  }
+
+  var beste = safeIndex(raw.beste_valg_index);
+  var visuelt = safeIndex(raw.best_visuelt_index);
+  if (genererteIllustrasjoner > 0 && (beste === null || visuelt === null)) {
+    var forsteGenererteIndex = alternativer.length - genererteIllustrasjoner;
+    if (beste === null) beste = forsteGenererteIndex;
+    if (visuelt === null) visuelt = forsteGenererteIndex;
+  }
+
   var result = {
     alternativer: alternativer,
-    beste_valg_index: raw.beste_valg_index,
-    sikrest_juridisk_index: raw.sikrest_juridisk_index,
-    best_visuelt_index: raw.best_visuelt_index,
+    beste_valg_index: beste,
+    sikrest_juridisk_index: safeIndex(raw.sikrest_juridisk_index),
+    best_visuelt_index: visuelt,
     manuell_avklaring_indekser: raw.manuell_avklaring_indekser || [],
     generert_ts: new Date().toISOString()
   };
 
   var verifiserteAntall = alternativer.filter(function (a) { return a.verifisering.lenke_virker; }).length;
-  var historikk = [{
-    ts: result.generert_ts,
-    text: "Bilderesearch kjørt — " + alternativer.length + " forslag, " + verifiserteAntall + " med bekreftet fungerende bildelenke"
-  }].concat(c.historikk || []);
+  var historikkTekst = "Bilderesearch kjørt — " + alternativer.length + " forslag, " + verifiserteAntall + " med bekreftet fungerende bildelenke";
+  if (genererteIllustrasjoner > 0) historikkTekst += " (ingen brukbart pressebilde funnet — " + genererteIllustrasjoner + " AI-illustrasjoner generert som alternativ)";
+  var historikk = [{ ts: result.generert_ts, text: historikkTekst }].concat(c.historikk || []);
 
   var updateRes = await supabase.from("cases").update({
     bildeforslag: result, bildeforslag_ts: result.generert_ts, historikk: historikk
