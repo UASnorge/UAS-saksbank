@@ -11,7 +11,7 @@ const Parser = require("rss-parser");
 const { createClient } = require("@supabase/supabase-js");
 const { checkRelevance } = require("./lib/relevance.js");
 const { runTriage } = require("./lib/triage.js");
-const { archiveOldIdeas, DEFAULT_MAX_AGE_MONTHS } = require("./lib/ageGate.js");
+const { archiveOldIdeas, isBeforeCaseStartDate } = require("./lib/ageGate.js");
 
 const parser = new Parser({ timeout: 15000 });
 
@@ -36,12 +36,6 @@ function parsePublishedDate(item) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-function monthsAgo(n) {
-  var d = new Date();
-  d.setMonth(d.getMonth() - n);
-  return d;
-}
-
 async function pollAllSources(supabase) {
   const { data: sources, error } = await supabase
     .from("sources")
@@ -51,7 +45,6 @@ async function pollAllSources(supabase) {
   if (error) throw new Error("Kunne ikke hente kildeliste: " + error.message);
 
   const openaiKey = process.env.OPENAI_API_KEY;
-  const ageCutoff = monthsAgo(DEFAULT_MAX_AGE_MONTHS);
   const report = { kilderSjekket: 0, nyeSaker: 0, hoppetOverIkkeRelevant: 0, hoppetOverForGammel: 0, feil: [] };
   const newCaseIds = [];
 
@@ -88,8 +81,11 @@ async function pollAllSources(supabase) {
       // For gammel til å i det hele tatt bli en idé — samme prinsipp som
       // relevans- og kildekontrollen: ALDRI opprett saken i utgangspunktet,
       // ikke rydd den bort etterpå. Ukjent dato (publishedAt === null)
-      // blokkeres IKKE her — vi skal ikke anta at ukjent = gammel.
-      if (publishedAt && publishedAt < ageCutoff) {
+      // blokkeres IKKE her — vi skal ikke anta at ukjent = gammel. Fast
+      // startdato (CASE_START_DATE, lib/ageGate.js) i stedet for et
+      // rullerende tidsvindu — kilder eldre enn dette skal aldri bli en ny
+      // sak, men kan fortsatt brukes som research/faktagrunnlag i en sak.
+      if (isBeforeCaseStartDate(publishedAt)) {
         const { error: seenErr } = await supabase.from("seen_items").insert({ source_id: source.id, guid });
         if (seenErr) continue;
         report.hoppetOverForGammel++;

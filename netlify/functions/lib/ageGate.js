@@ -14,10 +14,28 @@
 
 const DEFAULT_MAX_AGE_MONTHS = 2;
 
+// Absolutt startdato for NYE saker — kilder eldre enn dette skal aldri bli en
+// "idé" i utgangspunktet (uavhengig av DEFAULT_MAX_AGE_MONTHS over, som
+// gjelder noe annet: hvor lenge en allerede opprettet idé får ligge ubehandlet
+// før den arkiveres). Innført etter tilbakemelding om at saksbanken plukket
+// opp kildeartikler over 4 år gamle — en fast dato er enklere å resonnere om
+// enn et rullerende tidsvindu, og gir et tydelig "fra og med"-punkt for når
+// automatikken begynte å lage saker. Eldre kilder kan fortsatt BRUKES (som
+// research/faktagrunnlag i et allerede opprettet manus), denne sjekker kun om
+// en NY sak skal opprettes i utgangspunktet.
+var CASE_START_DATE = new Date("2026-01-01T00:00:00Z");
+
 function monthsAgo(n) {
   var d = new Date();
   d.setMonth(d.getMonth() - n);
   return d;
+}
+
+// publishedAt: en Date, eller null/undefined hvis ukjent. Ukjent dato regnes
+// bevisst IKKE som "for gammel" — vi skal ikke anta at ukjent er gammelt
+// (samme prinsipp som ellers i appen, se rss-poll.js/webSearchSweep.js).
+function isBeforeCaseStartDate(publishedAt) {
+  return !!(publishedAt && !isNaN(publishedAt.getTime()) && publishedAt < CASE_START_DATE);
 }
 
 // supabase: service_role- eller RLS-klient — begge fungerer, samme som resten
@@ -56,4 +74,4 @@ async function archiveOldIdeas(supabase, maxAgeMonths) {
   return { arkivert: arkivert, feilet: feilet };
 }
 
-module.exports = { archiveOldIdeas, DEFAULT_MAX_AGE_MONTHS };
+module.exports = { archiveOldIdeas, DEFAULT_MAX_AGE_MONTHS, CASE_START_DATE, isBeforeCaseStartDate };

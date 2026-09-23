@@ -8,6 +8,7 @@
 const { checkRelevance } = require("./relevance.js");
 const { runTriage } = require("./triage.js");
 const { verifyUrl } = require("./linkCheck.js");
+const { isBeforeCaseStartDate } = require("./ageGate.js");
 const {
   searchCivilianDroneNews, searchIndustryDroneNews, searchPolicySecurityDroneNews, searchNordicRegulatoryNews, searchDefenseDroneNews,
   searchWebsiteSource, searchKeywordMentions
@@ -72,6 +73,16 @@ async function createCaseFromHit(supabase, openaiKey, hit, extraContext, kildeLa
     return;
   }
 
+  // Fast startdato (CASE_START_DATE, lib/ageGate.js) — kilder eldre enn dette
+  // skal aldri bli en ny sak (innført etter tilbakemelding om at søket
+  // plukket opp kildeartikler over 4 år gamle). Ukjent dato blokkeres ikke.
+  var publishedAt = parseDate(hit.publisert_dato);
+  if (isBeforeCaseStartDate(publishedAt)) {
+    var seenOld = await supabase.from("seen_urls").insert({ url: hit.url });
+    if (!seenOld.error) report.hoppetOverForGammel++;
+    return;
+  }
+
   var relevant = true, relevansBegrunnelse = "";
   if (openaiKey) {
     try {
@@ -93,7 +104,6 @@ async function createCaseFromHit(supabase, openaiKey, hit, extraContext, kildeLa
   }
 
   var nowIso = new Date().toISOString();
-  var publishedAt = parseDate(hit.publisert_dato);
   var caseRes = await supabase.from("cases").insert({
     title: hit.tittel || "(uten tittel)",
     sakstype: "redaksjonell",
@@ -123,7 +133,7 @@ async function createCaseFromHit(supabase, openaiKey, hit, extraContext, kildeLa
 async function runWebSearchSweep(supabase, openaiKey) {
   var report = {
     sivileTreff: 0, industriTreff: 0, politiSikkerhetTreff: 0, regelverkTreff: 0, forsvarTreff: 0,
-    nettstedKilderSjekket: 0, sokeordSjekket: 0, nyeSaker: 0, hoppetOverIkkeRelevant: 0, hoppetOverUrlFeilet: 0, feil: [], newCaseIds: []
+    nettstedKilderSjekket: 0, sokeordSjekket: 0, nyeSaker: 0, hoppetOverIkkeRelevant: 0, hoppetOverUrlFeilet: 0, hoppetOverForGammel: 0, feil: [], newCaseIds: []
   };
   if (!openaiKey) return report;
 
