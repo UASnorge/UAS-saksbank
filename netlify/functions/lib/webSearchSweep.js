@@ -7,10 +7,26 @@
 
 const { checkRelevance } = require("./relevance.js");
 const { runTriage } = require("./triage.js");
+const { verifyUrl } = require("./linkCheck.js");
 const {
   searchCivilianDroneNews, searchIndustryDroneNews, searchPolicySecurityDroneNews, searchNordicRegulatoryNews, searchDefenseDroneNews,
   searchWebsiteSource, searchKeywordMentions
 } = require("./webSearch.js");
+
+// Nettsteder vi selv publiserer på — gpt-5-search-api har vist seg å av og
+// til "finne" en sak som egentlig er egen, tidligere publisert
+// dronemag.no/uasnorway.no-artikkel gjenkjent fra treningsdata, fremstilt
+// som et ferskt, eksternt funn. Slike treff skal aldri bli en ny "idé".
+var OWN_DOMAINS = ["dronemag.no", "uasnorway.no"];
+
+function isOwnDomain(u) {
+  try {
+    var host = new URL(u).hostname.replace(/^www\./, "");
+    return OWN_DOMAINS.some(function (d) { return host === d || host.endsWith("." + d); });
+  } catch (e) {
+    return false;
+  }
+}
 
 var DAYS_BACK = 3; // sveipet kjører daglig — 3 dager gir litt overlapp/buffer, ikke bare "siden i går"
 var KEYWORD_BATCH_SIZE = 15; // hold hvert søkekall til en håndterlig liste
@@ -29,9 +45,21 @@ function chunk(arr, size) {
 
 async function createCaseFromHit(supabase, openaiKey, hit, extraContext, kildeLabel, report) {
   if (!hit.url || !/^https?:\/\//i.test(hit.url)) return;
+  if (isOwnDomain(hit.url)) return; // egen, allerede publisert sak — ikke en ny "idé"
 
   var seenRes = await supabase.from("seen_urls").select("url").eq("url", hit.url).maybeSingle();
   if (seenRes.data) return; // allerede sett (av dette eller et tidligere sveip)
+
+  // Ekte HTTP-sjekk FØR noe annet — gpt-5-search-api kan dikte opp
+  // troverdig utseende URL-er (samme svakhet som lib/linkCheck.js sin
+  // begrunnelse beskriver for bilde-URL-er). En sak bygget på en lenke som
+  // ikke faktisk finnes, er verre enn ingen sak.
+  var urlCheck = await verifyUrl(hit.url);
+  if (!urlCheck.ok) {
+    var seenBad = await supabase.from("seen_urls").insert({ url: hit.url });
+    if (!seenBad.error) report.hoppetOverUrlFeilet++;
+    return;
+  }
 
   var relevant = true, relevansBegrunnelse = "";
   if (openaiKey) {
@@ -84,7 +112,7 @@ async function createCaseFromHit(supabase, openaiKey, hit, extraContext, kildeLa
 async function runWebSearchSweep(supabase, openaiKey) {
   var report = {
     sivileTreff: 0, industriTreff: 0, politiSikkerhetTreff: 0, regelverkTreff: 0, forsvarTreff: 0,
-    nettstedKilderSjekket: 0, sokeordSjekket: 0, nyeSaker: 0, hoppetOverIkkeRelevant: 0, feil: [], newCaseIds: []
+    nettstedKilderSjekket: 0, sokeordSjekket: 0, nyeSaker: 0, hoppetOverIkkeRelevant: 0, hoppetOverUrlFeilet: 0, feil: [], newCaseIds: []
   };
   if (!openaiKey) return report;
 
@@ -103,7 +131,10 @@ async function runWebSearchSweep(supabase, openaiKey) {
   // UAS Norway sine egne medlemmer. Se lib/webSearch.js sin begrunnelse
   // (elektro247.no/Nomadic Drones-eksempelet som glapp i det generelle søket).
   try {
-    var industri = await searchIndustryDroneNews(openaiKey, DAYS_BACK);
+    // Litt bredere tidsvindu enn resten av sveipet (7 vs. 3 dager) — norsk
+    // nisje-fagpresse publiserer sjeldnere enn de store nyhetssidene, så et
+    // 3-dagersvindu ga for tynt utvalg i praksis.
+    var industri = await searchIndustryDroneNews(openaiKey, 7);
     report.industriTreff = industri.length;
     for (var ind = 0; ind < industri.length; ind++) {
       await createCaseFromHit(supabase, openaiKey, industri[ind], "", "generelt websøk (bransje/industri)", report);

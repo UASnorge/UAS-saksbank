@@ -115,11 +115,13 @@ Unngå åpenbare duplikater av samme hendelse fra flere nettsteder — velg den 
 
 var CIVILIAN_SYSTEM = BASE_SYSTEM + `
 
-Søk ETTER SIVIL/KOMMERSIELL dronebruk — IKKE politi/sikkerhet (eget søk) og IKKE forsvar/krig/konflikt (eget søk, holdes minimalt). KUN norske/nordiske kilder, MED MINDRE saken er en vesentlig internasjonal produktnyhet med klar relevans for norsk dronebransje (sjeldent unntak, ikke standard).
+Søk ETTER SIVIL/KOMMERSIELL dronebruk — IKKE politi/sikkerhet (eget søk) og IKKE forsvar/krig/konflikt (eget søk, holdes minimalt). KUN norske/nordiske kilder. Det finnes ETT sjeldent unntak (en vesentlig internasjonal produktnyhet med klar, direkte relevans for norsk dronebransje) — men dette skal være unntaket i praksis også, ikke bare i teorien. Er du i tvil om noe kvalifiserer som unntaket: det gjør det ikke, dropp treffet.
+
+IKKE ta med, uansett hvor "nyhetsverdig" det virker: amerikansk droneleverings-/logistikkutrulling (Zipline, Amazon Prime Air, Wing, Flytrex, Matternet o.l. med mindre de faktisk lanserer i Norge/Norden), amerikansk regelverksprosess uten nordisk kobling (FAA, FCC, Part 108/BVLOS-regelverk i USA), generelle internasjonale bransjemesser/konferanser, eller produktomtaler fra utenlandske fagmedier (DroneXL, UASFeed, Commercial UAV News, TechRadar, Axios, DroneLife, sUAS News, The War Zone o.l.) uten en norsk/nordisk vinkel. Disse fyller opp med volum, men blir så godt som aldri en Dronemagasin-sak.
 
 Let aktivt etter: landbruksdroner, dronelevering/logistikk, film/foto/drone-video, kartlegging/inspeksjon/anleggsbransjen, droneracing/hobby/fritid, norske droneselskaper (lansering, finansiering, krise, konkurs, svindel — dette er en fast, viktig sakstype), droneutdanning/kurs, redningsaksjoner/viltredning med drone.
 
-Maks 6 treff.`;
+Maks 6 treff — returner heller færre eller en tom liste enn å fylle på med internasjonalt stoff bare for å ha noe.`;
 
 async function searchCivilianDroneNews(openaiKey, daysBack) {
   var days = daysBack || 3;
