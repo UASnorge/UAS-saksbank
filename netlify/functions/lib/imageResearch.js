@@ -49,7 +49,7 @@ Rettighetskategorier: A=dokumentert tilgjengelig for redaksjonell bruk (offisiel
 
 Flagg eldre bilder som kan vise en tidligere produktversjon enn saken faktisk gjelder.
 
-VIKTIG om logoer: en organisasjons/etats/selskaps LOGO, merke eller symbol (f.eks. Luftfartstilsynets logo) er ALDRI et egnet hovedbilde til en artikkel — en logo illustrerer ikke hendelsen/saken, den identifiserer bare avsenderen. Sett "er_logo": true for ethvert alternativ som er en logo/merke/symbol fremfor et redaksjonelt bilde av selve saken. Du kan fortsatt liste en logo som ett av alternativene (kan være nyttig som siste utvei eller referanse), men den skal ALDRI være "beste_valg_index" eller "best_visuelt_index" — pek disse to feltene på et faktisk redaksjonelt bilde, eller sett dem til null hvis ALLE alternativene er logoer/ikke-redaksjonelle.
+VIKTIG om logoer og generisk merkevaregrafikk: en organisasjons/etats/selskaps LOGO, merke eller symbol (f.eks. Luftfartstilsynets logo) er ALDRI et egnet hovedbilde til en artikkel — en logo illustrerer ikke hendelsen/saken, den identifiserer bare avsenderen. Det samme gjelder generiske "social media fallback"-bilder, standard delingsbilder/OG-bilder, mastheads eller andre generiske merkevaregrafikk-elementer en nettside bruker som standardbilde når ingen spesifikk artikkel-illustrasjon finnes (kjennetegn: filnavn/URL med ord som "fallback", "default", "social", "share", "og-image", "placeholder", eller et bilde som bare viser et flagg/emblem/wordmark uten noen konkret scene). Sett "er_logo": true for ALLE disse tilfellene, ikke bare bokstavelige logoer. Du kan fortsatt liste dem som alternativer (kan være nyttig som siste utvei eller referanse), men de skal ALDRI være "beste_valg_index" eller "best_visuelt_index" — pek disse to feltene på et faktisk redaksjonelt bilde av selve saken/hendelsen/utstyret, eller sett dem til null hvis ALLE alternativene er logoer/generisk merkevaregrafikk/ikke-redaksjonelle.
 
 ABSOLUTT REGEL: skriv ALDRI "fritt bilde", "kan brukes" eller "fri bruk" uten at du faktisk har funnet dokumentasjon som underbygger det. Kan du ikke fastslå rettighetene: bruk kategori D eller E, og si tydelig fra at bruksretten ikke er verifisert og må avklares før publisering. Det er bedre å vise et godt forslag med tydelig advarsel enn å feilaktig hevde at det kan brukes.
 
@@ -174,12 +174,25 @@ async function callOpenAI(openaiKey, userPrompt) {
   return JSON.parse(data.choices[0].message.content);
 }
 
+// Kode-nivå sikkerhetsnett i tillegg til AI-ens egen er_logo-vurdering —
+// funnet nødvendig i praksis: EUs "ec-socialmedia-fallback.png" (et generisk
+// delingsbilde, ikke en redaksjonell illustrasjon) ble første gang vurdert
+// av modellen som brukbart (er_logo: false, bruksrett: A). URL-mønsteret
+// alene er en pålitelig indikator uansett hva modellen konkluderer.
+var GENERIC_IMAGE_URL_PATTERN = /fallback|placeholder|default[-_]?image|og[-_]image|social[-_]?(share|media)|logo/i;
+
+function looksGeneric(alt) {
+  var url = (alt && (alt.verifisering && alt.verifisering.verifisert_bilde_url || alt.bilde_url)) || "";
+  return GENERIC_IMAGE_URL_PATTERN.test(url);
+}
+
 // Et alternativ regnes som faktisk brukbart som hovedbilde når det IKKE er en
-// logo, bruksretten er avklart (A/B), og lenken faktisk er bekreftet å virke.
-// Kategori C/D/E eller er_logo=true kan fortsatt vises til redaksjonen som
-// referanse, men skal aldri telle som "vi har et bilde vi kan bruke".
+// logo/generisk merkevaregrafikk, bruksretten er avklart (A/B), og lenken
+// faktisk er bekreftet å virke. Kategori C/D/E eller er_logo=true kan
+// fortsatt vises til redaksjonen som referanse, men skal aldri telle som
+// "vi har et bilde vi kan bruke".
 function isUsableAlternative(alt) {
-  return !!(alt && alt.verifisering && alt.verifisering.lenke_virker && !alt.er_logo && (alt.bruksrett === "A" || alt.bruksrett === "B"));
+  return !!(alt && alt.verifisering && alt.verifisering.lenke_virker && !alt.er_logo && !looksGeneric(alt) && (alt.bruksrett === "A" || alt.bruksrett === "B"));
 }
 
 // Finner beste brukbare index blant alternativene, eller null.
@@ -260,17 +273,27 @@ async function researchImages(supabase, openaiKey, caseId) {
 
   var alternativer = await Promise.all((raw.alternativer || []).map(async function (alt) {
     var verifisering = await verifyAlternative(alt);
-    return Object.assign({}, alt, { verifisering: verifisering });
+    var merged = Object.assign({}, alt, { verifisering: verifisering });
+    // Kode-nivå overstyring, ikke bare stole på modellens egen er_logo-flagg
+    // (se looksGeneric-begrunnelsen) — slår igjennom i både backend-logikk
+    // og UI-visning siden begge leser samme er_logo-felt.
+    if (looksGeneric(merged)) merged.er_logo = true;
+    return merged;
   }));
 
   // Ikke stol blindt på modellens egne indekser — en logo skal aldri være
-  // "beste"/"mest visuelle" valg selv om modellen skulle foreslå det.
+  // "beste"/"mest visuelle" valg selv om modellen skulle foreslå det, og
+  // "beste"/"mest visuelle"/"sikrest juridisk" skal ALDRI peke på noe som
+  // faktisk ikke er verifisert brukbart (se isUsableAlternative) — en lenke
+  // som feilet den ekte HTTP-sjekken er ikke et trygt "beste valg" bare
+  // fordi den ikke er en logo.
   function safeIndex(idx) {
-    return (typeof idx === "number" && alternativer[idx] && !alternativer[idx].er_logo) ? idx : null;
+    return (typeof idx === "number" && isUsableAlternative(alternativer[idx])) ? idx : null;
   }
 
+  var opprinneligUsableIndex = bestUsableIndex(alternativer);
   var genererteIllustrasjoner = 0;
-  if (bestUsableIndex(alternativer) === null) {
+  if (opprinneligUsableIndex === null) {
     try {
       var generert = await generateIllustrations(supabase, openaiKey, caseId, c.title, c.oppsummering);
       genererteIllustrasjoner = generert.length;
@@ -284,16 +307,32 @@ async function researchImages(supabase, openaiKey, caseId) {
 
   var beste = safeIndex(raw.beste_valg_index);
   var visuelt = safeIndex(raw.best_visuelt_index);
-  if (genererteIllustrasjoner > 0 && (beste === null || visuelt === null)) {
+  var juridisk = safeIndex(raw.sikrest_juridisk_index);
+  if (genererteIllustrasjoner > 0) {
+    // Fallback-generering ble trigget nettopp fordi INGEN av de opprinnelige
+    // forslagene var faktisk brukbare — pek derfor alltid videre til en
+    // generert illustrasjon her, ikke bare når indeksene er tomme, siden en
+    // "trygg" indeks fra FØR fallback fortsatt kan referere til et forslag
+    // som ikke besto den ekte lenke-/rettighetssjekken.
     var forsteGenererteIndex = alternativer.length - genererteIllustrasjoner;
-    if (beste === null) beste = forsteGenererteIndex;
-    if (visuelt === null) visuelt = forsteGenererteIndex;
+    beste = forsteGenererteIndex;
+    visuelt = forsteGenererteIndex;
+    juridisk = forsteGenererteIndex;
+  } else if (opprinneligUsableIndex !== null) {
+    // Det FINNES et faktisk brukbart forslag, men modellens egen indeks
+    // pekte feil sted (f.eks. på noe som feilet lenke-/rettighetssjekken) —
+    // da er det mer nyttig å automatisk peke på det brukbare forslaget enn å
+    // la redaksjonen se et unødvendig "ingen anbefaling" når det faktisk
+    // finnes et godt alternativ i listen.
+    if (beste === null) beste = opprinneligUsableIndex;
+    if (visuelt === null) visuelt = opprinneligUsableIndex;
+    if (juridisk === null) juridisk = opprinneligUsableIndex;
   }
 
   var result = {
     alternativer: alternativer,
     beste_valg_index: beste,
-    sikrest_juridisk_index: safeIndex(raw.sikrest_juridisk_index),
+    sikrest_juridisk_index: juridisk,
     best_visuelt_index: visuelt,
     manuell_avklaring_indekser: raw.manuell_avklaring_indekser || [],
     generert_ts: new Date().toISOString()
