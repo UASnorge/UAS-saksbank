@@ -1370,6 +1370,7 @@
       newCaseTabBtn("opplasting", "📄 Last opp manus") +
       newCaseTabBtn("lydopptak", "🎙️ Lydopptak") +
       newCaseTabBtn("skriv", "✍️ Skriv selv") +
+      newCaseTabBtn("bestill", "🎯 Bestill innhold") +
     "</div>";
 
     var bodyHtml;
@@ -1392,6 +1393,25 @@
         '<div class="field"><label for="nc-audio-notat">AI-notat (valgfritt)</label><textarea id="nc-audio-notat" rows="3" placeholder="Vinkling, hva saken skal handle om, ønsket lengde, e.l."></textarea></div>' +
         '<p class="helper">AI transkriberer opptaket og skriver et redaksjonelt førsteutkast basert på det som faktisk sies — du havner rett i «I arbeid» og ser fremdriften i historikken mens det jobbes.</p>' +
         '<button class="btn btn-primary" type="button" data-action="submit-new-case-audio"' + (busy ? " disabled" : "") + ">" + (busy ? "Laster opp …" : "Last opp og opprett sak") + "</button>";
+    } else if (tab === "bestill") {
+      var idagStr = new Date().toISOString().slice(0, 10);
+      var eventOptions = '<option value="">(ingen bestemt arrangement)</option>' + state.events.slice().sort(function (a, b) {
+        var aUp = a.starts_on >= idagStr, bUp = b.starts_on >= idagStr;
+        if (aUp !== bUp) return aUp ? -1 : 1;
+        return aUp ? a.starts_on.localeCompare(b.starts_on) : b.starts_on.localeCompare(a.starts_on);
+      }).map(function (e) {
+        return '<option value="' + escapeHtml(e.id) + '">' + escapeHtml(e.title) + " — " + escapeHtml(e.starts_on) + (e.location ? ", " + escapeHtml(e.location) : "") + "</option>";
+      }).join("");
+      bodyHtml =
+        '<div class="field"><label for="nc-bestill-oppdrag">Hva skal produseres? *</label><textarea id="nc-bestill-oppdrag" rows="3" placeholder="F.eks. Selge kurset «LiDAR &amp; Fotogrammetri» til profesjonelle droneoperatører og landmålere"></textarea></div>' +
+        '<div class="field-row">' +
+          '<div class="field"><label for="nc-bestill-antall">Antall saker (1–8)</label><input id="nc-bestill-antall" type="number" min="1" max="8" value="4" /></div>' +
+          '<div class="field"><label for="nc-bestill-event">Arrangement (valgfritt)</label><select id="nc-bestill-event">' + eventOptions + "</select></div>" +
+        "</div>" +
+        '<div class="field"><label for="nc-bestill-lenke">Lenke med mer info (valgfritt)</label><input id="nc-bestill-lenke" type="url" placeholder="https://… (f.eks. arrangementssiden — AI leser den og bruker kun det som faktisk står der)" /></div>' +
+        '<div class="field"><label for="nc-bestill-ekstra">Målgruppe, vinkler, budskap (valgfritt)</label><textarea id="nc-bestill-ekstra" rows="3" placeholder="F.eks. en sak rettet mot energibransjen, en om early bird-pris, en om å sende med kollegene …"></textarea></div>' +
+        '<p class="helper">AI leser de nyeste INFO-sakene fra uasnorway.no og skriver i samme språk og stil. Hver sak får en egen vinkel og havner i «I arbeid» som førsteutkast (tar ca. 30–60 sekunder). AI dikter aldri opp priser, frister eller navn — det som mangler settes som [PLASSHOLDER] og listes som kontrollpunkt du må fylle inn før publisering.</p>' +
+        '<button class="btn btn-primary" type="button" data-action="submit-new-content-batch"' + (busy ? " disabled" : "") + ">" + (busy ? "Bestiller …" : "Produser saker") + "</button>";
     } else {
       bodyHtml =
         '<form id="new-tip-form">' +
@@ -2014,6 +2034,7 @@
       case "move-selected": e.stopPropagation(); moveSelected(document.getElementById("bulk-status-select").value); break;
       case "close-modal": case "close-modal-bg": state.ui.modal = null; state.ui.activeCaseId = null; render(); break;
       case "submit-new-tip": submitNewTip(); break;
+      case "submit-new-content-batch": submitNewContentBatch(); break;
       case "submit-new-case-link": submitNewCaseFromLink(); break;
       case "submit-new-case-upload": submitNewCaseFromUpload(); break;
       case "submit-new-case-audio": submitNewCaseFromAudio(); break;
@@ -2130,6 +2151,53 @@
   // og brukeren havner rett inne i den — transkribering/manusgenerering
   // skjer i en Background Function og dukker opp live via historikken
   // (Supabase Realtime, allerede koblet opp) når den er ferdig.
+  // "Bestill innhold": oppretter N plassholder-saker (så fremdriften synes
+  // med en gang i «I arbeid») og ber en Background Function fylle dem med
+  // AI-skrevne INFO-saker i uasnorway.no sin stil (lib/contentBatch.js).
+  async function submitNewContentBatch() {
+    var oppdrag = (document.getElementById("nc-bestill-oppdrag").value || "").trim();
+    if (!oppdrag) { document.getElementById("nc-bestill-oppdrag").focus(); showToast("Skriv hva som skal produseres først"); return; }
+    var antall = parseInt(document.getElementById("nc-bestill-antall").value, 10);
+    if (isNaN(antall) || antall < 1) antall = 1;
+    if (antall > 8) antall = 8;
+    var eventId = document.getElementById("nc-bestill-event").value || null;
+    var infoUrl = (document.getElementById("nc-bestill-lenke").value || "").trim();
+    var ekstra = (document.getElementById("nc-bestill-ekstra").value || "").trim();
+    if (infoUrl && !/^https?:\/\//i.test(infoUrl)) { showToast("Lenken må starte med http:// eller https://"); return; }
+    if (!state.session) { showToast("Du må være innlogget"); return; }
+
+    state.ui.newCaseBusy = true;
+    render();
+    try {
+      var caseIds = [];
+      for (var i = 1; i <= antall; i++) {
+        var created = await createCase(Object.assign({
+          title: "⏳ Innholdssak " + i + " av " + antall + " — produseres …",
+          sakstype: "content", status: "i-arbeid", nettsted: "uasnorway.no", wp_kategori: ["INFO"],
+          neste_handling: "Fyll inn plassholdere og gå gjennom kontrollpunktene før publisering",
+          historikk: [{ ts: nowIso(), text: "🎯 Bestilt: " + oppdrag + " (" + i + " av " + antall + ") — AI skriver i INFO-stil …" }]
+        }, eventId ? { event_id: eventId, tema: "ARRANGEMENT_UTDANNING" } : {}));
+        if (!created) { showToast("Avbrøt bestillingen — kunne ikke opprette sak " + i); break; }
+        caseIds.push(created.id);
+      }
+      if (!caseIds.length) return;
+
+      fetch("/.netlify/functions/generate-content-batch-background", {
+        method: "POST", headers: authHeader(),
+        body: JSON.stringify({ caseIds: caseIds, oppdrag: oppdrag, eventId: eventId, infoUrl: infoUrl, ekstra: ekstra })
+      }).catch(function () {});
+
+      state.ui.modal = null;
+      await refreshAndRender();
+      showToast(caseIds.length + " innholdssaker bestilt — de fylles ut i «I arbeid» om ca. 30–60 sekunder");
+    } catch (err) {
+      showToast("Kunne ikke bestille innhold: " + err.message);
+    } finally {
+      state.ui.newCaseBusy = false;
+      render();
+    }
+  }
+
   async function submitNewCaseFromAudio() {
     var audioInput = document.getElementById("nc-audio");
     var audioFiles = audioInput && audioInput.files ? Array.prototype.slice.call(audioInput.files) : [];
