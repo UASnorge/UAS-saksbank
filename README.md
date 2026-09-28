@@ -268,6 +268,12 @@ Etter en gjennomgang av de 100 sist faktisk publiserte dronemag.no-sakene (se hi
 
 **«🎯 Bestill innhold»**: AI produserer flere INFO-saker (f.eks. 4 saker som selger et arrangement) i uasnorway.no sin stil, lært live fra de nyeste INFO-sakene (`lib/contentBatch.js`); ingen oppdiktede priser/frister — manglende opplysninger blir `[PLASSHOLDER]` + kontrollpunkt.
 
+**Lenke- og lydopptak-saker bruker nå samme dype research** (`lib/manuscript.js`): i stedet for ett søkekall der modellen både skulle lete og skrive, gjøres først en dyp research (`lib/materialResearch.js`, tre runder + HTTP-verifiserte kilder med faktisk tekst), og deretter skriver en tekstmodell saken (350–600 ord som hovedregel) med kilde og research som grunnlag. Kildelisten kommer alltid fra verifiserte URL-er (modellen refererer kun med E-nummer).
+
+**Henvisninger til egne saker:** i tillegg til websøket søker appen *deterministisk* i Dronemagasinets og UAS Norways eget arkiv via de to WordPress-nettstedenes offentlige REST-søk (ekte URL-er, ingen hallucinasjon). Hver gang teksten viser til en tidligere sak, skal det stå som lenke i teksten (`[tekst](URL)`, vises som klikkbar lenke i WordPress og Word) og med kildehenvisning i prosa («som Dronemagasinet skrev 18. september»). En egen kontroll (`ensureOwnLinks`) legger inn manglende lenker, og lenker som ikke finnes i det verifiserte grunnlaget fjernes.
+
+**Foto-kreditering** angir kun hvor bildet er hentet fra (f.eks. `polisen.se`, `Luftfartstilsynet`) — aldri «produsentbilde/illustrasjon». **Bildetekster er alltid på norsk** (en egen språkkontroll oversetter svensk/engelsk uten å røre norsk tekst).
+
 **På forsiden:** nye saker (siste 48 t) ligger alltid øverst i «Idé» med grønn «Ny»-merking, uavhengig av score, og hvert idékort viser når saken ble publisert hos kilden (eller «Dato ukjent»).
 
 Ny avhengighet: `pdf-parse`, `pdf-lib`. `pdf-parse` lastes med `external_node_modules` i `netlify.toml` (den laster PDF-motoren med et dynamisk require som esbuild ellers ikke tar med — ville feilet i produksjon, ikke lokalt). Ingen nye miljøvariabler eller databasemigreringer.

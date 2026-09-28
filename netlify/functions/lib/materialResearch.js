@@ -15,8 +15,8 @@ const { verifyUrls } = require("./linkCheck.js");
 const { fetchSourceArticle } = require("./manuscript.js");
 const pdfParse = require("pdf-parse/lib/pdf-parse.js");
 
-const MAX_SOURCES = 8;
-const SOURCE_TEXT_CHARS = 3500;
+const MAX_SOURCES = 10;
+const SOURCE_TEXT_CHARS = 4500;
 const OWN_HOSTS = /(^|\.)(dronemag\.no|uasnorway\.no)$/i;
 
 const FUNN_SCHEMA = {
@@ -57,7 +57,7 @@ KRAV:
 
 const PROMPT_PRIMAER = BASE + `
 
-DIN OPPGAVE (runde 1 — primærkilder og bakgrunn): finn (a) regelverket, forskriften, EU-forordningen, rapporten eller vedtaket dokumentet bygger på eller endrer, (b) myndighetens/avsenderens egen saksside, høringsside eller pressemelding om saken, (c) tidligere versjoner, relaterte høringer eller vedtak, (d) relevante bakgrunnstall/statistikk fra offisielle kilder. Bruk type «primaerkilde» eller «bakgrunn».`;
+DIN OPPGAVE (runde 1 — primærkilder og bakgrunn): finn (a) regelverket, forskriften, EU-forordningen, rapporten eller vedtaket dokumentet bygger på eller endrer, (b) myndighetens/avsenderens egen saksside, høringsside eller pressemelding om saken, (c) tidligere versjoner, relaterte høringer eller vedtak, (d) relevante bakgrunnstall/statistikk fra offisielle kilder. Gjelder saken utlandet (f.eks. Sverige, Danmark, EU, USA): finn også (e) de aktuelle norske reglene/forholdene som gir leseren en norsk sammenligning (Luftfartstilsynet, Datatilsynet, politiloven, regjeringen.no) og (f) selve vedtaket/lovgrunnlaget i landet saken gjelder (f.eks. svensk kamerabevakningslag). Bruk type «primaerkilde» eller «bakgrunn».`;
 
 const PROMPT_OMTALE = BASE + `
 
@@ -130,6 +130,69 @@ async function readExternalSource(url, queryText) {
   }
 }
 
+// ---------- Deterministisk søk i EGET arkiv (dronemag.no + uasnorway.no) ----------
+// Websøkemodellen finner egne saker upålitelig (av og til ingen, av og til feil
+// side merket som «tidligere dekning»). Redaksjonelt krav: henvisning til en
+// tidligere sak skal ha direkte URL. Derfor søkes de to WordPress-
+// nettstedenes offentlige REST-søk direkte — ekte URL-er, ingen hallucinasjon.
+// WordPress-søk krever at ALLE ord treffer, så vi søker på ett og ett
+// nøkkelord og rangerer treffene etter hvor mange av sakens nøkkelord som
+// faktisk står i tittel/ingress.
+var ARKIV_STOPP = /^(og|som|for|det|den|til|med|av|på|en|et|er|har|skal|kan|vil|fra|om|ved|ikke|dette|disse|eller|også|mellom|under|over|etter|blir|ble|være|drone|droner|dronen|dronene|dronemagasinet|norge|norsk|norske|sak|saken|saker|søknad|høring)$/i;
+var ARKIV_SITER = [{ base: "https://www.dronemag.no", navn: "Dronemagasinet" }, { base: "https://www.uasnorway.no", navn: "UAS Norway" }];
+
+function decodeEntities(t) {
+  return String(t || "").replace(/&#(\d+);/g, function (m, d) { return String.fromCodePoint(+d); })
+    .replace(/&#x([0-9a-f]+);/gi, function (m, h) { return String.fromCodePoint(parseInt(h, 16)); })
+    .replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&laquo;/g, "«").replace(/&raquo;/g, "»").replace(/&nbsp;/g, " ");
+}
+function plainLower(t) { return decodeEntities(String(t || "").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim().toLowerCase(); }
+function slugOf(url) { return String(url).replace(/\/+$/, "").split("/").pop(); }
+
+async function searchOwnArchive(queryText, opts) {
+  opts = opts || {};
+  var max = opts.max || 4, minHits = opts.minHits || 2;
+  var seenTok = {}, toks = [];
+  (String(queryText || "").toLowerCase().match(/[a-zæøåäöüéè0-9]{4,}/g) || []).forEach(function (w) {
+    if (!ARKIV_STOPP.test(w) && !seenTok[w]) { seenTok[w] = true; toks.push(w); }
+  });
+  toks.sort(function (a, b) { return b.length - a.length; });
+  var searchTerms = toks.slice(0, 8);
+  if (!searchTerms.length) return [];
+
+  var found = {}; // slug -> { treff }
+  var jobs = [];
+  searchTerms.forEach(function (term) {
+    ARKIV_SITER.forEach(function (site) {
+      jobs.push(fetch(site.base + "/wp-json/wp/v2/posts?search=" + encodeURIComponent(term) + "&per_page=8&orderby=relevance&_fields=link,title,date,excerpt")
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (rows) {
+          rows.forEach(function (x) {
+            var hay = plainLower((x.title && x.title.rendered) + " " + (x.excerpt && x.excerpt.rendered));
+            var hits = toks.filter(function (w) { return hay.indexOf(w) !== -1; });
+            var slug = slugOf(x.link);
+            var cur = found[slug];
+            // Samme sak ligger ofte på begge nettsteder — foretrekk dronemag.no.
+            if (!cur || (site.navn === "Dronemagasinet" && cur.navn !== "Dronemagasinet")) {
+              found[slug] = { url: x.link, tittel: decodeEntities(x.title && x.title.rendered), dato: (x.date || "").slice(0, 10), navn: site.navn, hits: hits };
+            } else { hits.forEach(function (h) { if (cur.hits.indexOf(h) === -1) cur.hits.push(h); }); }
+          });
+        }).catch(function () {}));
+    });
+  });
+  await Promise.all(jobs);
+
+  var ranked = Object.keys(found).map(function (k) { return found[k]; })
+    .filter(function (e) { return e.hits.length >= minHits; })
+    .sort(function (a, b) { return b.hits.length - a.hits.length || b.dato.localeCompare(a.dato); })
+    .slice(0, max);
+
+  return Promise.all(ranked.map(async function (e) {
+    var tekst = await readExternalSource(e.url, queryText);
+    return { kilde_navn: e.navn, tittel: e.tittel, url: e.url, type: "tidligere_dekning", hva_den_sier: "", publisert: e.dato, egen: true, tekst: tekst || "", fulltekst: !!tekst };
+  }));
+}
+
 // opts: { materialUtdrag, beskrivelse, dokumentNavn[], lenker[] }
 // Returnerer { kilder: [{ nr, kilde_navn, tittel, url, type, hva_den_sier, publisert, tekst, fulltekst }], antallFunnet, antallVerifisert, feil }
 async function deepResearch(openaiKey, opts) {
@@ -171,6 +234,18 @@ async function deepResearch(openaiKey, opts) {
   var checks = await verifyUrls(unike.map(function (f) { return f.url; }));
   var verifisert = unike.filter(function (f) { return checks[f.url] && checks[f.url].ok; });
 
+  // Egne saker (Dronemagasinet/UAS Norway) merkes — skribenten SKAL lenke til
+  // dem i teksten. Omvendt: modellen har av og til feilaktig merket en
+  // utenforstående side (f.eks. polisen.se) som «tidligere dekning» — det
+  // korrigeres til bakgrunn her, deterministisk.
+  verifisert.forEach(function (f) {
+    var host = "";
+    try { host = new URL(f.url).hostname; } catch (e) {}
+    f.egen = OWN_HOSTS.test(host);
+    if (f.egen) f.type = "tidligere_dekning";
+    else if (f.type === "tidligere_dekning") f.type = "bakgrunn";
+  });
+
   // Primærkilder først, deretter omtale/bakgrunn/tidligere dekning.
   var rank = { primaerkilde: 0, bakgrunn: 1, nyhetsomtale: 2, tidligere_dekning: 3 };
   verifisert.sort(function (a, b) { return (rank[a.type] || 9) - (rank[b.type] || 9); });
@@ -180,9 +255,24 @@ async function deepResearch(openaiKey, opts) {
     var tekst = await readExternalSource(f.url, f.hva_den_sier + " " + f.tittel + " " + opts.beskrivelse);
     return Object.assign({}, f, { tekst: tekst || "", fulltekst: !!tekst });
   }));
+  // Egne saker: deterministisk arkivsøk (ekte URL-er) — flettes med de
+  // websøkefunne egne sakene, dedupliseres på sak-slug, og får eget tak.
+  var egne = [];
+  try { egne = await searchOwnArchive(opts.egenSok || (opts.beskrivelse + " " + (opts.dokumentNavn || []).join(" "))); } catch (e) { egne = []; }
+  var gitteSlugs = {};
+  (opts.lenker || []).forEach(function (u) { gitteSlugs[slugOf(u)] = true; });
+  var egneSlugs = {};
+  kilder = kilder.filter(function (k) { if (k.egen) { egneSlugs[slugOf(k.url)] = true; } return true; });
+  egne.forEach(function (e) {
+    var sl = slugOf(e.url);
+    if (gitteSlugs[sl] || egneSlugs[sl]) return;
+    egneSlugs[sl] = true;
+    kilder.push(e);
+  });
+  kilder.sort(function (a, b) { return (a.egen === b.egen ? 0 : a.egen ? 1 : -1); }); // eksterne først, egne sist
   kilder.forEach(function (k, idx) { k.nr = idx + 1; });
 
   return { kilder: kilder, antallFunnet: unike.length, antallVerifisert: verifisert.length, feil: feil };
 }
 
-module.exports = { deepResearch, readExternalSource, OWN_HOSTS };
+module.exports = { deepResearch, readExternalSource, searchOwnArchive, OWN_HOSTS };

@@ -11,13 +11,21 @@
 # den ferdige funksjonspakken. external_node_modules kopierer hele pakken
 # (inkl. binærfilen) uendret med i stedet for å forsøke å "bundle" den.
 [functions."transcribe-audio-background"]
-  external_node_modules = ["ffmpeg-static"]
+  external_node_modules = ["ffmpeg-static", "pdf-parse"]
 
 # pdf-parse laster sin PDF-motor med et dynamisk require (require(`./pdf.js/${versjon}/...`))
 # som esbuild ikke kan følge — uten dette mangler motor-filene i den ferdige
 # funksjonspakken og all PDF-lesing feiler i produksjon (men ikke lokalt).
 # external_node_modules kopierer hele pakken uendret med i stedet.
 [functions."generate-cases-from-material-background"]
+  external_node_modules = ["pdf-parse"]
+
+# Alle funksjoner som kaller den dype researchen (lib/materialResearch.js) kan
+# støte på en PDF som kilde (f.eks. en forskrift eller rapport) og trenger samme.
+[functions."generate-manuscript-background"]
+  external_node_modules = ["pdf-parse"]
+
+[functions."assistant-chat"]
   external_node_modules = ["pdf-parse"]
 
 # Sikkerhetsheader — statisk side, ingen grunn til å tillate innramming el.l.

@@ -3,25 +3,23 @@
 // av AI-assistenten) — samme, allerede testede logikk.
 //
 // VIKTIG, etter redaksjonell tilbakemelding: dette skal være faktisk
-// redaksjonelt arbeid, ikke bare en omskriving av én artikkel. Bruker derfor
-// gpt-5-search-api (søkekapabelt, samme som kildevurdering/bilderesearch) til
-// å: navngi og lenke avsenderen korrekt, finne primærkilder bak påstandene,
-// søke Dronemagasinets EGET arkiv etter tidligere dekning av samme sak,
-// og sjekke om nyere kilder oppdaterer eller motsier fakta i kildeartikkelen
-// — i stedet for kun å lese én fastlåst artikkeltekst og skrive den om.
-//
-// Samme "grunnregel" som resten av søke-baserte funksjoner (kildevurdering,
-// bilderesearch): AI-en dikter ALDRI opp en URL — enhver lenke den oppgir
-// (kilder_brukt, tidligere_dekning) verifiseres her med en ekte HTTP-
-// forespørsel (lib/linkCheck.js) før den presenteres som en ekte kilde.
+// redaksjonelt arbeid, ikke bare en omskriving av én artikkel — og saker som
+// er «litt korte» med for tynt websøk er ikke godt nok. Flyten er derfor delt:
+//  1. DYP RESEARCH (lib/materialResearch.js, gpt-5-search-api, tre runder):
+//     avsenderens egen side, primærkilder/regelverk/bakgrunn, omtale og
+//     tidligere dekning i Dronemagasinet/UAS Norway. Hver lenke HTTP-verifiseres
+//     og kildens faktiske tekst hentes.
+//  2. SKRIVING (gpt-5.5, ingen søk): bygger saken på kildeartikkelen + de
+//     verifiserte utdragene, i redaksjonens skrivestil (lib/styleGuide.js).
+// Grunnregel som ellers i appen: AI-en dikter ALDRI opp en URL — skribenten
+// refererer kun til kilder med E-nummer, og URL-ene i kildelisten og i lenker
+// til egne saker kommer alltid fra det verifiserte researchgrunnlaget.
 
-const { Document, Packer, Paragraph, TextRun, ImageRun } = require("docx");
-const { verifyUrls } = require("./linkCheck.js");
-const { STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, todayLine } = require("./styleGuide.js");
+const { Document, Packer, Paragraph, TextRun, ImageRun, ExternalHyperlink } = require("docx");
+const { STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, todayLine, hostCredit, cleanCredit, norwegianCaptions } = require("./styleGuide.js");
 const { pickArticleImages } = require("./articleImages.js");
 
 const MODEL = "gpt-5.5"; // brukt av lib/reviseManuscript.js (rask tekstrevidering, ikke ny research)
-const RESEARCH_MODEL = "gpt-5-search-api"; // brukt her, til selve førsteutkastet — ekte websøk
 const MAX_SOURCE_CHARS = 6000;
 
 const HOUSE_STYLE = `Du er journalist i Dronemagasinet (dronemag.no), medlem av Fagpressen og underlagt Redaktørplakaten.
@@ -34,65 +32,43 @@ Fet skrift ("**tekst**") kun unntaksvis for noe genuint viktig — aldri som sta
 
 ${STYLE_PRINCIPLES}`;
 
-// Systemprompt for selve FØRSTEUTKASTET — vesentlig mer krevende enn
-// HOUSE_STYLE over, fordi dette er der research faktisk skal skje.
-const RESEARCH_SYSTEM_PROMPT = `Du er journalist i Dronemagasinet (dronemag.no), medlem av Fagpressen og underlagt Redaktørplakaten. Du har fått en kildeartikkel (og eventuelt et tidligere AI-sammendrag) om en sak redaksjonen vurderer å skrive om. Din jobb er IKKE å omskrive kildeartikkelen — det er å gjøre det redaksjonelle grunnarbeidet en journalist normalt ville gjort før publisering, og levere et gjennomarbeidet, dokumentert utkast.
+// Systemprompt for selve FØRSTEUTKASTET (lenke-basert). Skriveren søker IKKE
+// selv — websøket er gjort i forkant av lib/materialResearch.js (tre runder,
+// HTTP-verifiserte kilder, faktisk kildetekst), og resultatet gis hit som
+// nummererte kilder (E1, E2 …). Dette skiller research (søkemodell) fra
+// skriving (tekstmodell) og ga vesentlig grundigere saker enn ett samlet
+// søkekall der modellen både skulle lete og skrive.
+const WRITER_SYSTEM_PROMPT = `Du er journalist i Dronemagasinet (dronemag.no), medlem av Fagpressen og underlagt Redaktørplakaten. Du har fått en kildeartikkel om en sak redaksjonen skal skrive om, og et verifisert RESEARCH-GRUNNLAG: nummererte eksterne kilder (E1, E2 …) med utdrag av kildenes egen tekst. Kilder merket EGEN er tidligere saker fra Dronemagasinet/UAS Norway. Din jobb er IKKE å omskrive kildeartikkelen — det er å bygge en gjennomarbeidet, dokumentert sak som går videre enn kilden, med bakgrunn, regelverk, tall og norsk relevans hentet fra research-grunnlaget.
 
-Gjør FAKTISK, i denne rekkefølgen:
-
-1. IDENTIFISER KILDEN KORREKT OG NAVNGI DEN I PROSA — DETTE ER OBLIGATORISK, UANSETT HVOR MANGE ANDRE KILDER DU FINNER. Du får oppgitt navnet på kildemediet nedenfor (f.eks. "NRK") — dette ER kildeartikkelen denne konkrete saken bygger på. Selv om du under research finner andre, kanskje bedre primærkilder (myndighetens egen pressemelding, produsentens nettside osv.) — det ERSTATTER ALDRI plikten til å navngi og kreditere kildemediet for opplysningene/sitatet som faktisk kommer derfra. Krav, ufravikelig:
-   - Kildemediet skal navngis eksplisitt i PROSA allerede i FØRSTE avsnitt av hovedtekst_avsnitt (f.eks. "NRK skriver at ..." / "Det kommer frem i en sak fra NRK ..."), og gjentas med varierte formuleringer der det er naturlig ("skriver NRK", "ifølge NRK", "sier X, rolle, til NRK") — ikke samme frase i hvert avsnitt.
-   - Kildemediet skal ALLTID stå som eget element i kilder_brukt-listen, med den nøyaktige kildelenken du fikk oppgitt — dette gjelder selv om du finner andre, «bedre» kilder i tillegg.
-   - Inneholder saken en sitatblokk (prefiks "> "), skal den ALLTID avsluttes med "– navn, rolle, til [nøyaktig kildemedium]" — ALDRI "til Dronemagasinet", og ALDRI uten et navngitt kildemedium der sitatet faktisk kommer fra kildeartikkelen.
+1. IDENTIFISER KILDEN KORREKT OG NAVNGI DEN I PROSA — OBLIGATORISK. Du får navnet på kildemediet (f.eks. «NRK») — dette ER kildeartikkelen saken bygger på. Selv om research-grunnlaget gir bedre primærkilder, ERSTATTER det aldri plikten til å navngi kildemediet for det som faktisk kommer derfra. Krav:
+   - Kildemediet navngis i PROSA i første eller andre avsnitt (f.eks. «NRK skriver at …», «Det kommer frem i en sak fra NRK …») og gjentas med varierte formuleringer der det er naturlig.
+   - Inneholder saken en sitatblokk (prefiks "> "), skal den ALLTID avsluttes med «– navn, rolle, til [nøyaktig kildemedium]» — ALDRI «til Dronemagasinet», og aldri uten navngitt kildemedium der sitatet kommer fra kildeartikkelen.
    - La ALDRI et sitat et annet medium har innhentet fremstå som om Dronemagasinet selv har intervjuet personen.
 
-VIKTIG OM KILDEHENVISNING I TEKSTEN: sett ALDRI inn klikkbare lenker, parenteser med URL-er, eller referanse-fotnoter midt i brødteksten (f.eks. ALDRI noe i stil med "... (dronemag.no)" eller "[tekst](url)" inni en setning). All kildehenvisning i selve artikkelteksten skjer UTELUKKENDE i prosaform ("ifølge NRK", "skriver Forsvarsmateriell i en pressemelding") — de faktiske, klikkbare lenkene hører KUN hjemme i kilder_brukt-listen, ikke i løpeteksten. Dette er en ferdig redigert artikkel, ikke et forskningsnotat.
+2. LENKER I TEKSTEN: sett ALDRI inn klikkbare lenker, URL-er eller fotnoter i brødteksten — med ÉN ufravikelig unntak: når du viser til en tidligere sak fra Dronemagasinet/UAS Norway (kilder merket EGEN), skal du skrive en markdown-lenke [lenketekst](URL) med NØYAKTIG den URL-en du har fått oppgitt, og kildehenvise i prosa («som Dronemagasinet skrev 18. september», «Dronemagasinet har tidligere omtalt saken»). HVER henvisning til en tidligere sak skal ha sin lenke — også «i 2021 skrev Dronemagasinet …» og «allerede i 2019 fortalte politiet til Dronemagasinet …». Henviser du til en tidligere sak du ikke har URL til, skal du la være å henvise til den. Alle andre kilder (NRK, myndigheter, Lovdata osv.) navngis KUN i prosa («ifølge forskriften § 20», «skriver Luftfartstilsynet») — ingen lenke.
 
-2. FINN PRIMÆRKILDEN. Skill mellom den som PUBLISERER saken og den OPPRINNELIGE kilden til opplysningene (myndighet, produsent, pressemelding, kontraktskunngjøring osv.). Søk aktivt etter denne primærkilden og bruk den — ikke bare gjenta det publikasjonen skrev.
+3. BRUK RESEARCH-GRUNNLAGET AKTIVT OG DYPT. Les utdragene og bruk det de faktisk sier: primærkilden/vedtaket/lovteksten bak saken, bakgrunn og forhistorie, tall, reaksjoner og motstridende syn, og — når saken gjelder utlandet — hva reglene er i Norge (kun når en kilde i grunnlaget sier det). Bruk KUN det utdragene faktisk sier, og KUN når kilden gjelder samme sak. Utdrag merket «kunne ikke lese fulltekst» er ikke grunnlag for fakta. Motsier en nyere/bedre kilde kildeartikkelen, si det åpent i teksten.
 
-3. SØK DRONEMAGASINETS/UAS NORWAYS EGET ARKIV. Søk faktisk (f.eks. "site:dronemag.no [selskap/teknologi/anskaffelse]") etter tidligere dekning av samme selskap, teknologi, anskaffelse/prosjekt, personer eller myndighet. Finner du en relevant tidligere sak: bruk den til å forklare HVA SOM FAKTISK ER NYTT nå (ikke bare gjenta at anskaffelsen finnes), og oppgi den som tidligere_dekning. Finner du ingenting relevant, sett tidligere_dekning til null — ikke dikt opp en tidligere sak.
+4. EGET ARKIV: kilder merket EGEN er funnet automatisk ved søk i Dronemagasinets/UAS Norways arkiv på nøkkelord, og kan i blant være uten reell relevans. Handler en av dem om samme sak, selskap eller tema — bruk den som forhistorie («hva har vi skrevet før?») og forklar HVA SOM ER NYTT nå, og LENK til den etter regel 2. Finnes det en EGEN kilde som handler om NØYAKTIG samme sak eller samme selskap/prosjekt (samme navn går igjen i tittelen), SKAL saken vise til den med lenke minst én gang. Handler den om noe annet, ignorer den.
 
-4. FAKTASJEKK MOT NYERE KILDER. Søk etter om noe i kildeartikkelen faktisk er blitt oppdatert, presisert eller motsagt av en NYERE kilde (f.eks. en senere pressemelding, en annen base/lokasjon som har fått samme system, en avklaring av status). Oppdater teksten deretter, og vær eksplisitt i selve brødteksten når noe i kildeartikkelen viste seg å være utdatert eller upresist.
+5. IKKE GJETT — MARKÉR USIKKERHET. Er noe uklart (om noe er operativt eller under innføring, hvem som var «først», motstridende tall), skriv det rett ut i brødteksten («det er ikke bekreftet at …») — presenter det ALDRI som bekreftet. Unngå kategoriske formuleringer («først i Norge», «tatt i bruk») med mindre en primærkilde bekrefter det presist.
 
-5. IKKE GJETT — MARKÉR USIKKERHET TYDELIG I TEKSTEN. Er noe uklart (nøyaktig hvilken effektor/komponent, om noe er operativt eller under innføring, om to steder faktisk har identisk konfigurasjon, hvem som egentlig var "først"), skriv det rett ut i brødteksten ("dette bør avklares", "kildene dokumenterer ikke...", "det er ikke bekreftet at...") — presenter det ALDRI som bekreftet fakta. Unngå kategoriske formuleringer ("skyter ned", "først i Norge", "tatt i bruk") med mindre en primærkilde faktisk bekrefter det presist.
+6. STRUKTUR. hovedtekst_avsnitt er en ordnet liste der: et vanlig avsnitt er bare teksten; en mellomtittel er eget listeelement med prefiks "## " (2–4 i en middels lang sak, aldri i en veldig kort); et direkte sitat med god kildeverdi er eget listeelement med prefiks "> " i formatet '> «sitatet» – navn, rolle, til Kilde' (kun når kilden faktisk inneholder sitatet — dikt aldri opp et sitat). Fet skrift ("**tekst**") UNNTAKSVIS.
 
-6. STRUKTUR. Bygg avsnittslisten (hovedtekst_avsnitt) som en ordnet liste der:
-   - et vanlig avsnitt er bare teksten
-   - en mellomtittel skrives som eget listeelement med prefiks "## " (f.eks. "## Del av et større system") — bruk 2-4 mellomtitler i en middels lang sak, aldri i en veldig kort
-   - et direkte sitat med god kildeverdi skrives som eget listeelement med prefiks "> " i formatet '> «sitatet» – navn, rolle, til Kilde' (kun når kildeartikkelen faktisk inneholder et sitat verdt å fremheve — dikt aldri opp et sitat)
-   - fet skrift ("**tekst**") kan brukes UNNTAKSVIS, for å fremheve noe genuint viktig (f.eks. ett enkelt nøkkeltall eller en avgjørende presisering) — ALDRI som standard virkemiddel. De aller fleste avsnitt skal IKKE inneholde noe fet skrift i det hele tatt.
+7. BILDE. alt_tekst_bilde er en kort, konkret BILDETEKST på NORSK (bokmål) — også når kilden er svensk/engelsk: oversett. Beskriv kun det saken/kilden faktisk sier bildet viser; er bildet et generisk arkiv- eller produsentbilde som ikke viser den konkrete situasjonen, sett bilde_er_illustrasjon til true og skriv en nøktern, generisk bildetekst.
 
-7. BILDE. Vurder om bildet fra kildeartikkelen er et generisk produsent-/arkivbilde som IKKE er bekreftet å vise den faktiske, konkrete situasjonen saken handler om (typisk for produkt-/pressebilder brukt til å illustrere en spesifikk hendelse) — sett bilde_er_illustrasjon til true i så fall, og skriv det tydelig i alt-teksten.
+8. KILDER BRUKT. brukte_eksterne lister NUMRENE (E-nummer) til de eksterne kildene du faktisk har brukt i teksten — ikke flere. Kildeartikkelen selv legges til automatisk.
 
-8. KILDER BRUKT. List ALLE kildene du faktisk har brukt (kildeartikkelen selv, primærkilder du fant, eventuell egen tidligere dekning) med ekte, funnet URL-er. ALDRI oppgi en URL du ikke faktisk har funnet/sett — det er bedre å utelate en kilde enn å dikte opp lenken til den.
+9. KONTROLLPUNKTER. Konkrete, SAKSSPESIFIKKE åpne spørsmål redaksjonen bør avklare før publisering (ikke generiske floskler) — inkluder relevante påminnelser der de er aktuelle (presis tittel, sitatpraksis, bildebruk/kreditering, om en kommentar fra en relevant part bør innhentes).
 
-9. KONTROLLPUNKTER. List konkrete, SAKSSPESIFIKKE åpne spørsmål redaksjonen bør avklare før publisering (ikke generiske floskler) — inkluder relevante påminnelser om god praksis der de faktisk er aktuelle for denne saken (presis tittel, riktig sitatpraksis/kildehenvisning, bekreftet bildebruk/kreditering, om en egen kommentar fra en relevant part bør innhentes).
-
-GRUNNREGEL, som i alt annet søkebasert arbeid her: skriv ALDRI noe som om det er bekreftet uten at du faktisk har funnet det. Er noe usikkert, si det — ikke fyll hull med antakelser.
+GRUNNREGEL: skriv ALDRI noe som om det er bekreftet uten at det står i kildeartikkelen eller i et research-utdrag. Er noe usikkert, si det — ikke fyll hull med antakelser.
 
 ${STYLE_PRINCIPLES}
 
-(Skrivestilen over gjelder selve språket og oppbyggingen. Reglene om kildenavngivning, sitatattribusjon og ærlighet om usikkerhet lenger opp går alltid foran.)`;
+(Skrivestilen gjelder språket og oppbyggingen. Reglene om kildenavngivning, sitatattribusjon, lenker til egne saker og ærlighet om usikkerhet går alltid foran.)`;
 
-const MANUSCRIPT_SCHEMA = {
-  name: "manus",
-  strict: true,
-  schema: {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      tittel: { type: "string" },
-      ingress: { type: "string" },
-      hovedtekst_avsnitt: { type: "array", items: { type: "string" }, minItems: 1 },
-      alt_tekst_bilde: { type: "string" },
-      usikkerhetsnotat: { type: ["string", "null"], description: "Kun hvis noe er usikkert/mangler i kilden. Ellers null. Skrives ALDRI inn i selve artikkelteksten." }
-    },
-    required: ["tittel", "ingress", "hovedtekst_avsnitt", "alt_tekst_bilde", "usikkerhetsnotat"]
-  }
-};
-
-const RESEARCH_SCHEMA = {
-  name: "manus_research",
+const WRITER_SCHEMA = {
+  name: "manus_skriving",
   strict: true,
   schema: {
     type: "object",
@@ -104,35 +80,44 @@ const RESEARCH_SCHEMA = {
       ingress: { type: "string" },
       hovedtekst_avsnitt: {
         type: "array", minItems: 1, items: { type: "string" },
-        description: "Ordnet avsnittsliste. Mellomtittel: '## Tittel'. Sitatblokk: '> «sitat» – navn, rolle, til Kilde'. Alt annet: vanlig brødtekstavsnitt."
+        description: "Ordnet avsnittsliste. Mellomtittel: '## Tittel'. Sitatblokk: '> «sitat» – navn, rolle, til Kilde'. Lenke til egen sak: [tekst](URL). Alt annet: vanlig brødtekstavsnitt."
       },
-      alt_tekst_bilde: { type: "string" },
-      bilde_er_illustrasjon: { type: "boolean", description: "true hvis bildet er et generisk produsent-/arkivbilde som IKKE er bekreftet å vise den faktiske situasjonen saken handler om." },
-      tidligere_dekning: {
-        type: ["object", "null"], additionalProperties: false,
-        properties: { tittel: { type: "string" }, url: { type: "string" } },
-        required: ["tittel", "url"],
-        description: "Tidligere sak fra dronemag.no/uasnorway.no om samme sak/selskap/teknologi, funnet ved faktisk arkivsøk. Null hvis ingen relevant sak finnes — aldri oppdiktet."
-      },
-      kilder_brukt: {
-        type: "array", minItems: 1,
-        items: {
-          type: "object", additionalProperties: false,
-          properties: { navn: { type: "string" }, tittel: { type: "string" }, url: { type: "string" } },
-          required: ["navn", "tittel", "url"]
-        },
-        description: "Alle kilder faktisk brukt, med ekte, funnet URL-er — aldri oppdiktet."
-      },
-      kontrollpunkter: {
-        type: "array", minItems: 1, items: { type: "string" },
-        description: "Konkrete, saksspesifikke åpne spørsmål/ting som bør avklares før publisering."
-      },
+      alt_tekst_bilde: { type: "string", description: "Bildetekst på norsk." },
+      bilde_er_illustrasjon: { type: "boolean", description: "true hvis bildet er et generisk produsent-/arkivbilde som IKKE er bekreftet å vise den faktiske situasjonen." },
+      brukte_eksterne: { type: "array", items: { type: "integer" }, description: "E-numrene til eksterne kilder faktisk brukt i teksten." },
+      kontrollpunkter: { type: "array", minItems: 1, items: { type: "string" }, description: "Konkrete, saksspesifikke åpne spørsmål/ting som bør avklares før publisering." },
       usikkerhetsnotat: { type: ["string", "null"] }
     },
     required: ["emnefelt", "tittel", "titler_alternativer", "ingress", "hovedtekst_avsnitt", "alt_tekst_bilde",
-      "bilde_er_illustrasjon", "tidligere_dekning", "kilder_brukt", "kontrollpunkter", "usikkerhetsnotat"]
+      "bilde_er_illustrasjon", "brukte_eksterne", "kontrollpunkter", "usikkerhetsnotat"]
   }
 };
+
+// Bygger researchgrunnlaget som tekstblokk til skriveprompten, og gjør det
+// om til ferdige felt (kilder_brukt, tidligere_dekning) fra de faktiske,
+// verifiserte URL-ene — modellen får aldri skrive URL-er selv (kun
+// E-numre), så en oppdiktet lenke kan ikke ende i kildelisten.
+function researchBlock(research) {
+  if (!research || !research.kilder.length) return "RESEARCH-GRUNNLAG: (søket fant ingen verifiserte eksterne kilder — hold deg til kildeartikkelen, og si det i kontrollpunkter.)";
+  return "RESEARCH-GRUNNLAG (verifiserte kilder funnet ved websøk; utdragene er kildenes egen tekst):\n\n" +
+    research.kilder.map(function (k) {
+      return "[E" + k.nr + (k.egen ? " — EGEN (Dronemagasinet/UAS Norway)" : "") + ": " + k.kilde_navn + " — " + k.tittel + " (" + k.type + ")" + (k.egen ? " URL: " + k.url : "") + "]\n" +
+        (k.tekst ? "UTDRAG: " + k.tekst : "(kunne ikke lese fulltekst — ikke bruk denne til fakta)");
+    }).join("\n\n");
+}
+
+function applyResearchToFields(fields, research) {
+  var used = (fields.brukte_eksterne || []).map(function (nr) {
+    return (research && research.kilder || []).filter(function (k) { return k.nr === nr; })[0];
+  }).filter(Boolean);
+  var typeNavn = { primaerkilde: "Primærkilde", nyhetsomtale: "Omtale", bakgrunn: "Bakgrunn", tidligere_dekning: "Dronemagasinet — tidligere dekning" };
+  fields.kilder_brukt = used.map(function (k) {
+    return { navn: typeNavn[k.type] ? typeNavn[k.type] + (k.egen ? "" : " — " + k.kilde_navn) : k.kilde_navn, tittel: k.tittel, url: k.url, url_virker: true };
+  });
+  var egen = used.filter(function (k) { return k.egen; })[0];
+  fields.tidligere_dekning = egen ? { tittel: egen.tittel, url: egen.url } : null;
+  return fields;
+}
 
 // Dekoder både navngitte HTML-entiteter (&amp; &#39; osv.) OG numeriske
 // (&#39; &#x27; osv., desimal og heksadesimal) — stripHtml dekket tidligere
@@ -264,23 +249,105 @@ async function callOpenAI(apiKey, model, systemPrompt, userPrompt, schema) {
 // grunngivning — dette er forskningsverktøy-støy, ikke ferdig redigert
 // journalistikk, og kan i tillegg feilaktig gi inntrykk av at Dronemagasinet
 // er kilden til noe som egentlig kommer fra kildeartikkelen (se punkt 1 i
-// RESEARCH_SYSTEM_PROMPT). Fjernes derfor alltid server-side, uansett om
+// WRITER_SYSTEM_PROMPT). Fjernes derfor alltid server-side, uansett om
 // promptet ble fulgt eller ikke — ekte kildehenvisning skal kun stå i
 // kilder_brukt-listen og i selve prosaen ("ifølge NRK"), aldri som en
 // klikkbar lenke inni en artikkel-setning.
+// Lenker til VÅRE egne saker (dronemag.no/uasnorway.no) er ønsket i teksten —
+// redaksjonelt krav: en henvisning til en tidligere sak skal ha direkte URL.
+// Alle andre markdown-lenker er søkemodell-støy og fjernes.
+var OWN_HOST_RE = /^(www\.)?(dronemag\.no|uasnorway\.no)$/i;
+function isOwnUrl(u) {
+  try { return OWN_HOST_RE.test(new URL(u).hostname); } catch (e) { return false; }
+}
 function stripInlineCitations(text) {
   return String(text || "")
     .replace(/\s*\(\[[^\]]*\]\(https?:\/\/[^\s)]+\)\)/g, "")
-    .replace(/\s*\[[^\]]*\]\(https?:\/\/[^\s)]+\)/g, "")
+    .replace(/(\s*)\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, function (m, sp, label, url) { return isOwnUrl(url) ? m : sp + label; })
     .replace(/[ \t]+/g, " ")
     .replace(/\s+([.,;:!?])/g, "$1")
     .trim();
+}
+
+// Hard sperre: en markdown-lenke i teksten må peke på en egen sak som faktisk
+// står i det verifiserte researchgrunnlaget — ellers fjernes selve lenken
+// (lenketeksten beholdes). Modellen skal aldri kunne skrive en oppdiktet URL
+// inn i en publisert tekst.
+function restrictLinksToKnown(fields, research) {
+  var allowed = {};
+  ((research && research.kilder) || []).forEach(function (k) { if (k.egen) allowed[k.url] = true; });
+  fields.hovedtekst_avsnitt = (fields.hovedtekst_avsnitt || []).map(function (p) {
+    if (/^!\[/.test(p)) return p;
+    return p.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, function (m, label, url) { return allowed[url] ? m : label; });
+  });
+  return fields;
+}
+
+// Redaksjonelt krav: HVER henvisning til en tidligere sak fra Dronemagasinet/
+// UAS Norway skal ha direkte lenke. Skribenten glemmer av og til lenken på
+// «i 2021 skrev Dronemagasinet …»-henvisninger. Denne kontrollen finner
+// avsnitt som henviser til egen tidligere dekning uten lenke og ber en liten
+// modell KUN legge til lenke på de aktuelle ordene — med URL-er fra det
+// verifiserte grunnlaget. Resultatet godkjennes bare hvis teksten er
+// tegn-for-tegn lik originalen bortsett fra de tilføyde lenkene.
+var EGEN_HENVISNING_RE = /(Dronemagasinet|UAS Norway)[^.]{0,60}(skrev|omtalte|omtaler|meldte|fortalte|rapporterte|har tidligere|tidligere omtalt|har skrevet|dekket)|(skrev|omtalte|meldte|rapporterte|fortalte)[^.]{0,40}(Dronemagasinet|UAS Norway)|tidligere dekning/i;
+async function ensureOwnLinks(openaiKey, fields, research) {
+  try {
+    var egne = ((research && research.kilder) || []).filter(function (k) { return k.egen; });
+    if (!egne.length) return fields;
+    var paras = fields.hovedtekst_avsnitt || [];
+    var needs = [];
+    paras.forEach(function (p, i) {
+      if (/^(## |> |!\[)/.test(p)) return;
+      if (EGEN_HENVISNING_RE.test(p) && !/\]\(https?:\/\//.test(p)) needs.push(i);
+    });
+    if (!needs.length) return fields;
+
+    var res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + openaiKey },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Du legger inn lenker i norsk nyhetstekst. Du får avsnitt (med indeks) som henviser til tidligere saker fra Dronemagasinet/UAS Norway, og en liste over våre egne tidligere saker (tittel, URL, utdrag). For hvert avsnitt: finn hvilken av sakene i listen avsnittet henviser til, og pakk INN de ordene som beskriver henvisningen i en markdown-lenke [ord](URL) med NØYAKTIG den URL-en fra listen. Endre ELLERS ikke en eneste bokstav i avsnittet. Henviser avsnittet til en tidligere sak som IKKE finnes i listen, eller er du usikker på hvilken det er, returner avsnittet helt uendret. Bruk aldri en URL som ikke står i listen." },
+          { role: "user", content: JSON.stringify({ egne_saker: egne.map(function (k) { return { tittel: k.tittel, url: k.url, publisert: k.publisert || null, utdrag: (k.tekst || "").slice(0, 300) }; }), avsnitt: needs.map(function (i) { return { indeks: i, tekst: paras[i] }; }) }) }
+        ],
+        response_format: { type: "json_schema", json_schema: { name: "lenker", strict: true, schema: { type: "object", additionalProperties: false, properties: { avsnitt: { type: "array", items: { type: "object", additionalProperties: false, properties: { indeks: { type: "integer" }, tekst: { type: "string" } }, required: ["indeks", "tekst"] } } }, required: ["avsnitt"] } } }
+      })
+    });
+    if (!res.ok) return fields;
+    var out = JSON.parse((await res.json()).choices[0].message.content).avsnitt || [];
+    var allowed = {};
+    egne.forEach(function (k) { allowed[k.url] = true; });
+    var copy = paras.slice();
+    out.forEach(function (o) {
+      if (needs.indexOf(o.indeks) === -1) return;
+      var orig = paras[o.indeks];
+      var stripped = String(o.tekst).replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1");
+      var urls = (String(o.tekst).match(/\]\((https?:\/\/[^\s)]+)\)/g) || []).map(function (u) { return u.slice(2, -1); });
+      if (stripped === orig && urls.every(function (u) { return allowed[u]; })) copy[o.indeks] = o.tekst;
+    });
+    fields.hovedtekst_avsnitt = copy;
+    return fields;
+  } catch (err) {
+    return fields;
+  }
+}
+
+// Fremdriftslinje i sakens historikk (vises live i verktøyet).
+async function logProgress(supabase, caseId, text) {
+  try {
+    var cur = await supabase.from("cases").select("historikk").eq("id", caseId).maybeSingle();
+    await supabase.from("cases").update({ historikk: [{ ts: new Date().toISOString(), text: text }].concat((cur.data && cur.data.historikk) || []) }).eq("id", caseId);
+  } catch (e) {}
 }
 
 function stripCitationsFromFields(fields) {
   fields.tittel = stripInlineCitations(fields.tittel);
   fields.ingress = stripInlineCitations(fields.ingress);
   fields.hovedtekst_avsnitt = (fields.hovedtekst_avsnitt || []).map(function (p) {
+    // Bildemarkører («![bildetekst](URL)») er bevisst lenker og skal aldri renses bort.
+    if (/^!\[[^\]]*\]\(https?:\/\/[^\s)]+\)$/.test(p)) return p;
     // "## "/"> "-prefiks må bevares, selve teksten etter dem renses.
     var prefix = p.indexOf("## ") === 0 ? "## " : p.indexOf("> ") === 0 ? "> " : "";
     var rest = prefix ? p.slice(prefix.length) : p;
@@ -333,12 +400,17 @@ function parseImageMarker(text) {
 // lib/wordpress.js (duplisert, ikke importert — de to lib-modulene er
 // ellers uavhengige av hverandre).
 function textRunsFromMarkdownBold(text) {
-  var parts = String(text).split(/\*\*(.+?)\*\*/g);
+  var s = String(text);
   var runs = [];
-  parts.forEach(function (seg, i) {
-    if (!seg) return;
-    runs.push(new TextRun({ text: seg, bold: i % 2 === 1 }));
-  });
+  var re = /\*\*(.+?)\*\*|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  var last = 0, m;
+  while ((m = re.exec(s))) {
+    if (m.index > last) runs.push(new TextRun({ text: s.slice(last, m.index) }));
+    if (m[1] !== undefined) runs.push(new TextRun({ text: m[1], bold: true }));
+    else runs.push(new ExternalHyperlink({ link: m[3], children: [new TextRun({ text: m[2], color: "0563C1", underline: {} })] }));
+    last = re.lastIndex;
+  }
+  if (last < s.length) runs.push(new TextRun({ text: s.slice(last) }));
   return runs.length ? runs : [new TextRun({ text: "" })];
 }
 
@@ -438,30 +510,6 @@ async function buildDocxParagraphs(fields, image) {
   return paras;
 }
 
-async function verifySourceLinks(fields) {
-  var urls = (fields.kilder_brukt || []).map(function (k) { return k.url; });
-  if (fields.tidligere_dekning) urls.push(fields.tidligere_dekning.url);
-  var results = await verifyUrls(urls);
-
-  fields.kilder_brukt = (fields.kilder_brukt || []).map(function (k) {
-    var r = results[k.url];
-    return Object.assign({}, k, { url_virker: !!(r && r.ok) });
-  });
-
-  if (fields.tidligere_dekning) {
-    var r = results[fields.tidligere_dekning.url];
-    // "Tidligere dekning" er en sterk, tillitsbærende påstand (at vi faktisk
-    // har dekket dette før) — presenteres ALDRI som en egen boks med mindre
-    // lenken faktisk er bekreftet. Feiler den, faller den heller inn i den
-    // vanlige (tydelig merkede) kildelisten i stedet for å forsvinne sporløst.
-    if (!r || !r.ok) {
-      fields.kilder_brukt.push(Object.assign({}, fields.tidligere_dekning, { navn: "Dronemagasinet (tidligere dekning, ikke bekreftet)", url_virker: false }));
-      fields.tidligere_dekning = null;
-    }
-  }
-  return fields;
-}
-
 // supabase: en klient autentisert SOM en innlogget bruker (RLS gjelder).
 async function generateManuscript(supabase, openaiKey, caseId) {
   const caseRes = await supabase.from("cases").select("*").eq("id", caseId).maybeSingle();
@@ -482,6 +530,28 @@ async function generateManuscript(supabase, openaiKey, caseId) {
 
   const styleExamples = await fetchDronemagExamples();
 
+  // DYP RESEARCH før skriving (lib/materialResearch.js): tre søkerunder, HTTP-
+  // verifiserte kilder og deres faktiske tekst. Lazy require — materialResearch
+  // importerer selv fetchSourceArticle herfra (sirkulær avhengighet ellers).
+  const { deepResearch } = require("./materialResearch.js");
+  await logProgress(supabase, c.id, "🔎 Søker dypt på nettet etter primærkilder, bakgrunn og tidligere dekning (2–3 minutter) …");
+  let research = { kilder: [], antallFunnet: 0, antallVerifisert: 0, feil: [] };
+  try {
+    research = await deepResearch(openaiKey, {
+      materialUtdrag: source.ok
+        ? "[" + (source.siteName || "") + " — " + (source.title || c.title) + "]\n" + source.text
+        : c.title + "\n" + (c.oppsummering || ""),
+      beskrivelse: "Saken «" + c.title + "»" + (source.ok ? " bygger på en artikkel fra " + source.siteName + "." : ".") +
+        " Redaksjonen skriver en fagjournalistisk sak for Dronemagasinet (norsk fagmedium om droner). " + (c.oppsummering || ""),
+      dokumentNavn: [], lenker: sourceUrl ? [sourceUrl] : [],
+      egenSok: c.title + " " + (source.ok && source.title ? source.title : "")
+    });
+  } catch (err) {
+    research.feil.push(err.message);
+  }
+  await logProgress(supabase, c.id, "🔎 Fant " + research.antallVerifisert + (research.antallVerifisert === 1 ? " verifisert ekstern kilde" : " verifiserte eksterne kilder") +
+    (research.feil.length ? " — ⚠️ " + research.feil.length + " søkerunde(r) feilet" : "") + " — skriver saken …");
+
   const userPrompt =
     todayLine() + "\n\n" +
     (styleExamples.length ? styleExamplesBlock(styleExamples) + "\n\n=====\n\n" : "") +
@@ -490,23 +560,27 @@ async function generateManuscript(supabase, openaiKey, caseId) {
     (eventContext ? eventContext + "\n" : "") +
     "Kildelenke: " + (sourceUrl || "(ingen)") + "\n" +
     (source.ok && source.siteName ? "KILDEMEDIET (navngi dette eksplisitt i teksten — se punkt 1): " + source.siteName + "\n" : "") +
-    "Destinasjonsnettsted for saken: " + (c.nettsted || "dronemag.no") + " — søk uansett primært i dronemag.no sitt arkiv etter tidligere dekning (det er der den redaksjonelle journalistikken skjer), også om saken skal publiseres på uasnorway.no.\n\n" +
+    "Destinasjonsnettsted for saken: " + (c.nettsted || "dronemag.no") + "\n\n" +
     (source.ok
-      ? "Hentet kildetekst (dette er UTGANGSPUNKTET for research, ikke noe som bare skal skrives om):\n" + source.text
-      : "Kildeteksten kunne ikke hentes automatisk (" + source.reason + "). Søk selv opp saken basert på tittelen og sammendraget over, og sett usikkerhetsnotat til at kilden må sjekkes manuelt før publisering om du ikke finner den.");
+      ? "Hentet kildetekst (dette er UTGANGSPUNKTET, ikke noe som bare skal skrives om):\n" + source.text
+      : "Kildeteksten kunne ikke hentes automatisk (" + source.reason + "). Bygg på tittelen, sammendraget og research-grunnlaget, og sett usikkerhetsnotat til at kilden må sjekkes manuelt før publisering.") +
+    "\n\n=====\n\n" + researchBlock(research);
 
-  const fields = await callOpenAI(openaiKey, RESEARCH_MODEL, RESEARCH_SYSTEM_PROMPT, userPrompt, RESEARCH_SCHEMA);
+  const fields = await callOpenAI(openaiKey, MODEL, WRITER_SYSTEM_PROMPT, userPrompt, WRITER_SCHEMA);
+  applyResearchToFields(fields, research);
   stripCitationsFromFields(fields);
+  restrictLinksToKnown(fields, research);
   if (source.ok) {
     ensureOriginalSourceListed(fields, sourceUrl, source.siteName, c.title);
     ensureQuoteAttribution(fields, source.siteName);
   }
-  await verifySourceLinks(fields);
 
   // Redaktørrunde: strammer tittel/ingress/rytme etter skriveprinsippene, uten å endre fakta.
   const polished = await polishManuscript(openaiKey, MODEL, fields, styleExamples,
-    source.ok && source.siteName ? "- Kildemediet «" + source.siteName + "» skal fortsatt navngis i prosa i første avsnitt." : "");
+    source.ok && source.siteName ? "- Kildemediet «" + source.siteName + "» skal fortsatt navngis i prosa i første eller andre avsnitt." : "");
   Object.assign(fields, polished.fields);
+  restrictLinksToKnown(fields, research);
+  await ensureOwnLinks(openaiKey, fields, research);
 
   // Hovedbilde: faktisk redaksjonelt bilde fra artikkelen (ikke logo/delingsgrafikk).
   let image = null;
@@ -514,7 +588,10 @@ async function generateManuscript(supabase, openaiKey, caseId) {
     const picked = await pickArticleImages(sourceUrl, source.html, 1);
     if (picked.length) image = picked[0];
   }
-  fields.fotoKreditering = image && source.siteName ? source.siteName + (fields.bilde_er_illustrasjon ? " (produsentbilde/illustrasjon)" : "") : "";
+  // Foto-kreditering = KUN hvor bildet er hentet fra (f.eks. «polisen.se»),
+  // aldri «produsentbilde/illustrasjon» — redaksjonelt krav.
+  fields.fotoKreditering = image ? cleanCredit(hostCredit(sourceUrl)) : "";
+  Object.assign(fields, await norwegianCaptions(openaiKey, fields));
 
   const doc = new Document({ sections: [{ children: await buildDocxParagraphs(fields, image) }] });
   const buffer = await Packer.toBuffer(doc);
@@ -527,7 +604,8 @@ async function generateManuscript(supabase, openaiKey, caseId) {
   if (uploadRes.error) throw new Error("Kunne ikke laste opp manus: " + uploadRes.error.message);
 
   const historikkNote = "Manus generert (AI-førsteutkast med research)" +
-    (fields.tidligere_dekning ? " — fant tidligere dekning: " + fields.tidligere_dekning.tittel : "") +
+    (fields.tidligere_dekning ? " — lenker til tidligere dekning: " + fields.tidligere_dekning.tittel : "") +
+    " — " + (fields.kilder_brukt || []).length + " kilde(r) brukt av " + research.antallVerifisert + " verifiserte" +
     (fields.usikkerhetsnotat ? " — ⚠️ " + fields.usikkerhetsnotat : "") +
     (image ? "" : " — ingen redaksjonelt bilde funnet i kildeartikkelen (logoer/delingsgrafikk er bevisst ikke brukt), bruk «Finn bilder»") +
     (polished.polished ? " — språkvasket av redaktørrunden" : (polished.forkastet ? " — redaktørrunden ble forkastet (" + polished.forkastet + ")" : "")) +
@@ -583,9 +661,9 @@ async function generateManuscript(supabase, openaiKey, caseId) {
 const MAX_TRANSCRIPT_CHARS = 80000;
 
 // Systemprompt for manus FRA ET LYDOPPTAK (intervju e.l.) — egen fra
-// RESEARCH_SYSTEM_PROMPT (som handler om å bearbeide en ekte, EKSTERN
+// WRITER_SYSTEM_PROMPT (som handler om å bearbeide en ekte, EKSTERN
 // artikkel) siden grunnlaget her er redaksjonens EGET opptak, ikke en
-// publisert kilde å kreditere. Gjenbruker likevel samme RESEARCH_SCHEMA —
+// publisert kilde å kreditere. Gjenbruker likevel samme WRITER_SCHEMA —
 // feltene (tittel/ingress/hovedtekst_avsnitt/kilder_brukt/kontrollpunkter
 // osv.) passer like godt her.
 const TRANSCRIPT_SYSTEM_PROMPT = `Du er journalist i Dronemagasinet (dronemag.no)/UAS Norway, medlem av Fagpressen og underlagt Redaktørplakaten. Du har fått en TRANSKRIBERT LYDOPPTAK-tekst (typisk et intervju redaksjonen selv har gjort) som grunnlag for en ny sak, samt en arbeidstittel og eventuelt et redaksjonelt notat om vinkling/lengde/hva saken skal handle om.
@@ -598,12 +676,12 @@ Gjør, i denne rekkefølgen:
 
 1. Skriv et redaksjonelt førsteutkast basert på intervjuet — ikke et rått referat, men en ferdig strukturert sak (ingress, mellomtitler, sitatblokker der de faktisk sier noe sitatverdig).
 2. Følg det redaksjonelle notatet (vinkling/lengde/hva saken skal handle om) hvis det er oppgitt — det styrer hvordan saken vinkles og hvor omfattende den blir, men overstyrer ALDRI grunnregelen om å aldri dikte opp innhold utover det som faktisk sies i opptaket.
-3. BRUK WEBSØK til å: verifisere/utdype faktapåstander som nevnes i intervjuet (selskapsnavn, produkter, tall, hendelser) mot åpne kilder der det er naturlig, og søke Dronemagasinets/UAS Norways EGET arkiv (site:dronemag.no / site:uasnorway.no) etter tidligere dekning av samme tema/selskap/person — akkurat som ved vanlig kildebasert manusgenerering. Finner du ingen relevant tidligere dekning, sett tidligere_dekning til null.
+3. BRUK RESEARCH-GRUNNLAGET (nummererte eksterne kilder E1, E2 … med utdrag av kildenes egen tekst, verifisert i forkant) til å verifisere/utdype faktapåstander fra intervjuet (selskapsnavn, produkter, tall, hendelser) og til å gi bakgrunn og kontekst. Bruk KUN det utdragene faktisk sier, og kun når kilden gjelder samme sak/selskap. Kilder merket EGEN er tidligere saker fra Dronemagasinet/UAS Norway: viser du til en, skriv en markdown-lenke [lenketekst](URL) med NØYAKTIG oppgitt URL og kildehenvis i prosa («som Dronemagasinet skrev …»). Alle andre kilder navngis kun i prosa, uten lenke.
 4. Sitatblokker (prefiks "> ") skal formateres '> «sitatet» – navn, rolle' (navn/rolle fra intervjuobjektet om det er kjent fra konteksten/arbeidstittelen/notatet — er navn/rolle ukjent, skriv "– intervjuobjektet" og noter i usikkerhetsnotat at navn/rolle bør bekreftes før publisering). IKKE skriv "til Dronemagasinet" e.l. etter sitatet — det er unødvendig når kilden er redaksjonens eget intervju.
 5. STRUKTUR: samme avsnittskonvensjon som ellers — mellomtittel "## Tittel", sitatblokk "> ...", vanlig avsnitt uten prefiks. Fet skrift ("**tekst**") kun unntaksvis for noe genuint viktig, aldri som standard.
-6. kilder_brukt: list eventuelle EKSTERNE kilder du faktisk fant/brukte til faktasjekk/kontekst (ekte, funnet URL-er, aldri oppdiktet). Selve intervjuet er ikke en URL og skal ikke stå i denne listen.
+6. brukte_eksterne: list E-numrene til de eksterne kildene du faktisk har brukt i teksten (ikke flere). Selve intervjuet er ikke en kilde i denne listen.
 7. KONTROLLPUNKTER: konkrete, saksspesifikke ting redaksjonen bør avklare før publisering — inkluder ALLTID et punkt om å dobbeltsjekke sitater/attribusjon mot selve lydopptaket, i tillegg til andre sakspesifikke punkter.
-8. alt_tekst_bilde: sett til en kort, generisk beskrivelse basert på temaet (redaksjonen laster selv opp egne bilder til saken, ingen bilde-URL er hentet automatisk her) — bilde_er_illustrasjon settes til false.
+8. alt_tekst_bilde: sett til en kort, generisk BILDETEKST PÅ NORSK basert på temaet (redaksjonen laster selv opp egne bilder til saken, ingen bilde-URL er hentet automatisk her) — bilde_er_illustrasjon settes til false.
 
 GRUNNREGEL, som ellers i redaksjonens verktøy: skriv ALDRI noe som om det er bekreftet uten at det faktisk sies i opptaket eller er funnet ved websøk. Er noe usikkert, si det i usikkerhetsnotat — ikke fyll hull med antakelser.
 
@@ -632,13 +710,31 @@ async function generateManuscriptFromTranscript(supabase, openaiKey, caseId, tra
     (truncated ? "(NB: transkripsjonen var svært lang og er kuttet til de første " + MAX_TRANSCRIPT_CHARS + " tegnene.)\n" : "") +
     "\nTRANSKRIBERT LYDOPPTAK:\n" + transcriptForPrompt;
 
-  const fields = await callOpenAI(openaiKey, RESEARCH_MODEL, TRANSCRIPT_SYSTEM_PROMPT, userPrompt, RESEARCH_SCHEMA);
+  const { deepResearch } = require("./materialResearch.js");
+  await logProgress(supabase, c.id, "🔎 Søker dypt på nettet for å verifisere og utdype det som sies i opptaket (2–3 minutter) …");
+  let research = { kilder: [], antallFunnet: 0, antallVerifisert: 0, feil: [] };
+  try {
+    research = await deepResearch(openaiKey, {
+      materialUtdrag: transcriptForPrompt.slice(0, 7000),
+      beskrivelse: "Intervju/opptak som skal bli en fagjournalistisk sak i Dronemagasinet. Arbeidstittel: " + c.title + (opts.aiNotat ? ". Redaksjonelt notat: " + opts.aiNotat : ""),
+      dokumentNavn: [], lenker: [], egenSok: c.title + " " + (opts.aiNotat || "")
+    });
+  } catch (err) {
+    research.feil.push(err.message);
+  }
+  await logProgress(supabase, c.id, "🔎 Fant " + research.antallVerifisert + (research.antallVerifisert === 1 ? " verifisert ekstern kilde" : " verifiserte eksterne kilder") + " — skriver saken …");
+
+  const fields = await callOpenAI(openaiKey, MODEL, TRANSCRIPT_SYSTEM_PROMPT, userPrompt + "\n\n=====\n\n" + researchBlock(research), WRITER_SCHEMA);
+  applyResearchToFields(fields, research);
   stripCitationsFromFields(fields);
-  await verifySourceLinks(fields);
+  restrictLinksToKnown(fields, research);
 
   const polishedT = await polishManuscript(openaiKey, MODEL, fields, styleExamples,
     "- Talerattribusjon i sitater må ikke endres eller «forbedres».");
   Object.assign(fields, polishedT.fields);
+  restrictLinksToKnown(fields, research);
+  await ensureOwnLinks(openaiKey, fields, research);
+  Object.assign(fields, await norwegianCaptions(openaiKey, fields));
 
   // Server-side garanti, samme prinsipp som ensureOriginalSourceListed/
   // ensureQuoteAttribution over — testing viste at "ALLTID"-instruksen i
@@ -721,5 +817,5 @@ async function generateManuscriptFromTranscript(supabase, openaiKey, caseId, tra
 // for å duplisere den samme, allerede testede logikken.
 module.exports = {
   generateManuscript, generateManuscriptFromTranscript, fetchSourceArticle, fetchImage, buildDocxParagraphs,
-  callOpenAI, scaleToMaxWidth, HOUSE_STYLE, MODEL, IMAGE_MARKER_RE, parseImageMarker
+  callOpenAI, scaleToMaxWidth, HOUSE_STYLE, MODEL, IMAGE_MARKER_RE, parseImageMarker, restrictLinksToKnown, stripCitationsFromFields, isOwnUrl, ensureOwnLinks
 };

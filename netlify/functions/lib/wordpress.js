@@ -187,10 +187,25 @@ function escapeHtmlText(s) {
 // feil i selve avsnitts-/overskriftsformateringen. Brukes med vilje sjelden —
 // se punkt om fet skrift i lib/manuscript.js sine systemprompter.
 function inlineMarkdownToHtml(text) {
-  var parts = String(text).split(/\*\*(.+?)\*\*/g);
-  return parts.map(function (seg, i) {
-    return i % 2 === 1 ? "<strong>" + escapeHtmlText(seg) + "</strong>" : escapeHtmlText(seg);
-  }).join("");
+  // **fet** og [tekst](URL) — lenker støttes KUN til våre egne nettsteder
+  // (dronemag.no/uasnorway.no): henvisning til en tidligere sak skal ha direkte
+  // URL. Alt annet vises som ren tekst.
+  var out = "", last = 0, m;
+  var re = /\*\*(.+?)\*\*|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  var s = String(text);
+  while ((m = re.exec(s))) {
+    out += escapeHtmlText(s.slice(last, m.index));
+    if (m[1] !== undefined) out += "<strong>" + escapeHtmlText(m[1]) + "</strong>";
+    else {
+      var host = "";
+      try { host = new URL(m[3]).hostname; } catch (e) {}
+      out += /^(www\.)?(dronemag\.no|uasnorway\.no)$/i.test(host)
+        ? '<a href="' + escapeHtmlText(m[3]).replace(/"/g, "&quot;") + '">' + escapeHtmlText(m[2]) + "</a>"
+        : escapeHtmlText(m[2]);
+    }
+    last = re.lastIndex;
+  }
+  return out + escapeHtmlText(s.slice(last));
 }
 
 // Samme bildemarkør-konvensjon som lib/manuscript.js (duplisert her bevisst,

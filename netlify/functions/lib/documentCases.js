@@ -23,9 +23,9 @@
 const { Document, Packer } = require("docx");
 const mammoth = require("mammoth");
 const pdfParse = require("pdf-parse/lib/pdf-parse.js");
-const { fetchSourceArticle, buildDocxParagraphs, MODEL } = require("./manuscript.js");
+const { fetchSourceArticle, buildDocxParagraphs, MODEL, restrictLinksToKnown, stripCitationsFromFields, ensureOwnLinks } = require("./manuscript.js");
 const { fetchInfoStyleExamples, recordFailureOn, MAX_ANTALL } = require("./contentBatch.js");
-const { STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, todayLine } = require("./styleGuide.js");
+const { STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, todayLine, cleanCredit, norwegianCaptions } = require("./styleGuide.js");
 const { extractPdfImages, extractDocxImages } = require("./docImages.js");
 const { pickArticleImages } = require("./articleImages.js");
 const { deepResearch } = require("./materialResearch.js");
@@ -101,10 +101,10 @@ REDAKSJONENS FORKLARING: brukeren forklarer hva materialet inneholder og hva sak
 
 FLERE SAKER: lager du flere saker, må hver ha en tydelig FORSKJELLIG vinkel og hoveddel. Ingen to saker skal ha samme tittel, ingress eller åpning. Hver sak må stå på egne bein.
 
-Ingen klikkbare lenker, URL-er eller fotnoter i selve teksten. Fet skrift ("**tekst**") kun unntaksvis.` +
+Ingen klikkbare lenker, URL-er eller fotnoter i selve teksten — med ÉN ufravikelig unntak: viser du til en tidligere sak fra Dronemagasinet/UAS Norway (kilder merket EGEN i den eksterne bakgrunnen), skriv en markdown-lenke [lenketekst](URL) med NØYAKTIG den oppgitte URL-en og kildehenvis i prosa («som Dronemagasinet skrev 18. september»). Fet skrift ("**tekst**") kun unntaksvis.` +
   (harBilder ? `
 
-BILDER: du får et nummerert bildebibliotek (Bilde 1, 2 …) hentet fra dokumentene/lenkene, med hvilket dokument/side de kommer fra. For HVER sak: velg hovedbilde (nr) — det bildet som best viser noe konkret om akkurat denne saken (kart, foto, figur, tegning) — eller null hvis ingen passer. Velg 0–2 støttebilder som faktisk tilfører noe, og som ikke er hovedbildet. Et bilde kan brukes i maks ÉN sak. Bruk ALDRI logoer, dekorative bilder, skjermbilder av tabeller du ikke kan lese eller bilder du ikke kan si hva viser. Bildetekst: 1–2 setninger i nyhetsstil. Beskriv hva bildet viser ut fra det du kan SE (lesbare etiketter, former, hva kartet/figuren/fotoet viser) og — for å si HVA figuren er — det som står i figurtekst/overskrift på samme side («Tekst på samme side»), f.eks. «Kart fra høringsnotatet over de omsøkte områdene». Overfør ALDRI detaljer fra brødteksten som ikke er synlige i bildet eller eksplisitt knyttet til akkurat denne figuren (f.eks. ikke nevn et sted eller en sone i bildeteksten med mindre navnet står i bildet). Aldri dikt opp hva noe viser, sted, tidspunkt eller fotograf. Er du usikker, bruk en enklere og mer nøytral beskrivelse. kreditering = hvem som har laget/eier bildet ut fra dokumentet: forfatter/søker og eventuelt utgiver (f.eks. «Nordic Unmanned / Luftfartstilsynet»); fremgår det ikke, skriv «Fra <dokumentnavn>» (uten tall-prefiks/filendelse). etter_avsnitt = 0-basert indeks i hovedtekst_avsnitt for avsnittet støttebildet skal stå ETTER (der teksten omtaler det bildet viser; ikke rett etter en mellomtittel).` : "");
+BILDER: du får et nummerert bildebibliotek (Bilde 1, 2 …) hentet fra dokumentene/lenkene, med hvilket dokument/side de kommer fra. For HVER sak: velg hovedbilde (nr) — det bildet som best viser noe konkret om akkurat denne saken (kart, foto, figur, tegning) — eller null hvis ingen passer. Velg 0–2 støttebilder som faktisk tilfører noe, og som ikke er hovedbildet. Et bilde kan brukes i maks ÉN sak. Bruk ALDRI logoer, dekorative bilder, skjermbilder av tabeller du ikke kan lese eller bilder du ikke kan si hva viser. Bildetekst: 1–2 setninger i nyhetsstil. Beskriv hva bildet viser ut fra det du kan SE (lesbare etiketter, former, hva kartet/figuren/fotoet viser) og — for å si HVA figuren er — det som står i figurtekst/overskrift på samme side («Tekst på samme side»), f.eks. «Kart fra høringsnotatet over de omsøkte områdene». Overfør ALDRI detaljer fra brødteksten som ikke er synlige i bildet eller eksplisitt knyttet til akkurat denne figuren (f.eks. ikke nevn et sted eller en sone i bildeteksten med mindre navnet står i bildet). Aldri dikt opp hva noe viser, sted, tidspunkt eller fotograf. Er du usikker, bruk en enklere og mer nøytral beskrivelse. ALLE bildetekster skal være på NORSK (bokmål), også når figuren eller dokumentet er på et annet språk — oversett. kreditering = KUN hvor bildet er hentet fra: avsenderen/nettstedet slik det fremgår (f.eks. «Luftfartstilsynet», «Nordic Unmanned / Luftfartstilsynet», «polisen.se») — aldri ord som «produsentbilde», «illustrasjon» eller «foto:»; fremgår det ikke, skriv dokumentets navn uten filendelse. etter_avsnitt = 0-basert indeks i hovedtekst_avsnitt for avsnittet støttebildet skal stå ETTER (der teksten omtaler det bildet viser; ikke rett etter en mellomtittel).` : "");
 
   if (sakstype === "content") {
     return `Du er innholdsprodusent for UAS Norway (uasnorway.no) og Dronemagasinet. Du skriver INFO-saker: korte, konkrete informasjons-/handlingsrettede tekster (ingress på 1–2 setninger som gir leseren en grunn til å bry seg, kort brødtekst i 3–6 korte avsnitt, direkte tiltale «du/vi/dere», aktiv form, tydelig handlingsoppfordring til slutt uten selve lenken). Følg de faktiske eksemplene på tidligere INFO-saker du får oppgitt tett i tone, lengde og oppbygging — bruk dem som stilmal, ikke som innhold.` + felles;
@@ -114,7 +114,7 @@ BILDER: du får et nummerert bildebibliotek (Bilde 1, 2 …) hentet fra dokument
 - Navngi avsender/dokument i PROSA allerede i første avsnitt (f.eks. «Luftfartstilsynet har sendt på høring …», «ifølge søknaden fra Nordic Unmanned …») og gjenta varierende der det er naturlig. Aldri fremstill innholdet som Dronemagasinets egne funn.
 - Forklar hva det betyr i praksis for de som leser Dronemagasinet (droneoperatører, bransjen) KUN ut fra det materialet og kildeutdragene faktisk sier — ikke spekuler.
 - Ta med frister, hvem som kan svare, og hvordan, når det står i materialet.
-${harEksterneKilder ? `- EKSTERN BAKGRUNN: bruk utdrag fra eksterne kilder (E1, E2 …) til å bygge saken videre: forklar regelverket bak, gi kontekst, ta med relevante reaksjoner eller tidligere vedtak — men KUN det utdraget faktisk sier, og KUN når kilden gjelder samme sak. Navngi kilden i prosa der den brukes («skriver Lovdata», «ifølge forskriften § 20», «sier X til NRK»). Motsier en ekstern kilde dokumentet, si det åpent. List numrene (brukte_eksterne) til de kildene du faktisk har brukt i teksten — ikke flere.` : "- Ingen eksterne kilder er tilgjengelige denne gangen: hold deg til materialet og sett brukte_eksterne til en tom liste."}
+${harEksterneKilder ? `- EKSTERN BAKGRUNN: bruk utdrag fra eksterne kilder (E1, E2 …) til å bygge saken videre: forklar regelverket bak, gi kontekst, ta med relevante reaksjoner eller tidligere vedtak — men KUN det utdraget faktisk sier, og KUN når kilden gjelder samme sak. Navngi kilden i prosa der den brukes («skriver Lovdata», «ifølge forskriften § 20», «sier X til NRK»). Kilder merket EGEN er funnet automatisk i Dronemagasinets/UAS Norways arkiv på nøkkelord og kan være uten relevans: handler en om samme sak/selskap/tema, bruk den som forhistorie og LENK til den (markdown-lenke, se over) — ellers ignorer den. Handler en om NØYAKTIG samme sak eller samme selskap/prosjekt, SKAL saken vise til den med lenke minst én gang. Motsier en ekstern kilde dokumentet, si det åpent. List numrene (brukte_eksterne) til de kildene du faktisk har brukt i teksten — ikke flere.` : "- Ingen eksterne kilder er tilgjengelige denne gangen: hold deg til materialet og sett brukte_eksterne til en tom liste."}
 - Struktur: mellomtittel som eget avsnitt med prefiks "## " (2–4 i en middels lang sak, ingen i en veldig kort), direkte sitat som eget avsnitt med prefiks "> " i formatet '> «sitatet» – navn, rolle, kilde' KUN når sitatet ordrett står i materialet eller et kildeutdrag.
 
 ` + STYLE_PRINCIPLES + felles;
@@ -251,7 +251,8 @@ async function generateCasesFromMaterial(supabase, openaiKey, opts) {
     try {
       research = await deepResearch(openaiKey, {
         materialUtdrag: utdrag || "(skannet dokument — se navn og forklaring)", beskrivelse: opts.beskrivelse,
-        dokumentNavn: lesteDocs.map(function (x) { return x.navn; }), lenker: linkKilder
+        dokumentNavn: lesteDocs.map(function (x) { return x.navn; }), lenker: linkKilder,
+        egenSok: opts.beskrivelse + " " + utdrag.slice(0, 500)
       });
     } catch (err) {
       research.feil.push(err.message);
@@ -294,7 +295,7 @@ async function generateCasesFromMaterial(supabase, openaiKey, opts) {
     (research.kilder.length
       ? "\n\nEKSTERN BAKGRUNN (verifiserte kilder funnet ved websøk; utdragene er kildenes egen tekst — bruk KUN det utdragene sier, og kun der kilden gjelder samme sak):\n\n" +
         research.kilder.map(function (k) {
-          return "[E" + k.nr + ": " + k.kilde_navn + " — " + k.tittel + " (" + k.type + ")]\n" + (k.tekst ? "UTDRAG: " + k.tekst : "(kunne ikke lese fulltekst — ikke bruk denne til fakta)");
+          return "[E" + k.nr + (k.egen ? " — EGEN (Dronemagasinet/UAS Norway)" : "") + ": " + k.kilde_navn + " — " + k.tittel + " (" + k.type + ")" + (k.egen ? " URL: " + k.url : "") + "]\n" + (k.tekst ? "UTDRAG: " + k.tekst : "(kunne ikke lese fulltekst — ikke bruk denne til fakta)");
         }).join("\n\n")
       : "") +
     "\n\n" + (examples.length
@@ -377,12 +378,19 @@ async function generateCasesFromMaterial(supabase, openaiKey, opts) {
         sakstype === "content" ? "- Behold INFO-tonen: kort, direkte, med handlingsoppfordring til slutt." :
         "- Avsender/dokument skal fortsatt navngis i prosa i første avsnitt, og eksterne kilder navngis der de brukes.");
       Object.assign(fields, polished.fields);
+      stripCitationsFromFields(fields);
+      restrictLinksToKnown(fields, research);
+      await ensureOwnLinks(openaiKey, fields, research);
+      fields.fotoKreditering = cleanCredit(fields.fotoKreditering) || (hero ? cleanCredit(String(hero.kilde || "").replace(/\.[a-z0-9]{2,4}$/i, "")) : "");
+      Object.assign(fields, await norwegianCaptions(openaiKey, fields));
 
       // Kilder brukt: dokument(er) + eksterne kilder som faktisk ble brukt
       var linkSet = {}; linkKilder.forEach(function (u) { linkSet[u.replace(/^https?:\/\/(www\.)?/i, "").replace(/\/+$/, "").toLowerCase()] = true; });
       var brukte = (s.brukte_eksterne || []).map(function (nr) { return research.kilder.filter(function (x) { return x.nr === nr; })[0]; }).filter(Boolean)
         .filter(function (x) { return !linkSet[x.url.replace(/^https?:\/\/(www\.)?/i, "").replace(/\/+$/, "").toLowerCase()]; });
       var typeNavn = { primaerkilde: "Primærkilde", nyhetsomtale: "Omtale", bakgrunn: "Bakgrunn", tidligere_dekning: "Tidligere dekning" };
+      var egenBrukt = brukte.filter(function (bk) { return bk.egen; })[0];
+      fields.tidligere_dekning = egenBrukt ? { tittel: egenBrukt.tittel, url: egenBrukt.url } : null;
       fields.kilder_brukt = docKilder.map(function (dk) { return { navn: "Opplastet dokument", tittel: dk.navn, url: dk.url, url_virker: true }; })
         .concat(linkTekster.map(function (lt) { return { navn: lt.navn, tittel: lt.tittel || lt.url, url: lt.url, url_virker: true }; }))
         .concat(brukte.map(function (bk) { return { navn: (typeNavn[bk.type] || "Ekstern") + " — " + bk.kilde_navn, tittel: bk.tittel, url: bk.url, url_virker: true }; }));
@@ -415,7 +423,7 @@ async function generateCasesFromMaterial(supabase, openaiKey, opts) {
         manus_tittel: fields.tittel, manus_ingress: fields.ingress, manus_hovedtekst: fields.hovedtekst_avsnitt,
         manus_alt_tekst: fields.alt_tekst_bilde || "", manus_bilde_url: hero ? hero.url : "", manus_foto: fields.fotoKreditering || "",
         manus_emnefelt: fields.emnefelt || [], manus_titler_alternativer: fields.titler_alternativer,
-        manus_tidligere_dekning: null, manus_kilder_brukt: fields.kilder_brukt, manus_kontrollpunkter: fields.kontrollpunkter,
+        manus_tidligere_dekning: fields.tidligere_dekning || null, manus_kilder_brukt: fields.kilder_brukt, manus_kontrollpunkter: fields.kontrollpunkter,
         manus_bilde_er_illustrasjon: false, historikk: historikk
       }).eq("id", caseId);
       if (upd.error) throw new Error(upd.error.message);

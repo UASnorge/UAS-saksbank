@@ -108,7 +108,8 @@ INGRESS (1–2 setninger, maks ca. 40 ord)
 LEDD OG UTVALG
 - Første avsnitt forklarer saken på vanlig norsk for en leser som IKKE har lest dokumentet eller kilden: hva skjer, hvem er berørt, hva er det nye. Ikke begynn med «I søknaden datert …», «Dokumentet sier …» eller «Ifølge høringsnotatet …» som første ord — kilden navngis i første eller andre avsnitt, men leder ikke setningen.
 - VELG UT, ikke gjengi. Et dokument på 10 sider gir ikke en sak på 10 sider. Ta med det som endrer leserens forståelse eller handlingsrom; utelat interne detaljer (delnummer, prosedyredetaljer, alle koordinater) med mindre de er selve nyheten.
-- LENGDE: en vanlig nyhetssak er 250–450 ord (ca. 1 800–3 200 tegn), en større sak med flere vinkler inntil ca. 650 ord. Lengre er nesten alltid dårligere. Praktiske opplysninger (frist, adresse, saksnummer) samles kort til slutt.
+- LENGDE OG DYBDE: en nyhetssak med substans er 350–600 ord (ca. 2 400–4 200 tegn); en sak med flere vinkler og rikt kildegrunnlag kan bli 600–800 ord. Skriv ALDRI en sak som bare gjengir kildeartikkelen i noen få avsnitt: bruk research-grunnlaget aktivt — bakgrunn (hva har skjedd før?), regelverket bak, tall og datoer, reaksjoner og motstridende syn, og hva det betyr for norske droneoperatører. Er grunnlaget tynt, skriv kortere og si det i kontrollpunktene — ikke fyll med luft. Praktiske opplysninger (frist, adresse, saksnummer) samles kort til slutt.
+- NORSK VINKEL: gjelder saken utlandet (f.eks. Sverige, Danmark, EU, USA), forklar hva den betyr eller hvordan det er i Norge — men KUN med støtte i verifiserte kilder du har fått (f.eks. gjeldende norsk regelverk eller Luftfartstilsynet/politiet). Ingen egne antakelser om norske forhold.
 
 BRØDTEKST
 - Bygg som en omvendt pyramide: viktigst først, deretter forklaring, bakgrunn og reaksjoner. Sett det viktigste for leseren (droneoperatører, bransjen) i andre eller tredje avsnitt: «Hva betyr dette i praksis?»
@@ -122,6 +123,13 @@ BRØDTEKST
 - Vis usikkerhet og motstridende opplysninger åpent («det er ikke opplyst hvor mange», «kildene sier ulikt»). Skill klart mellom hva som er bekreftet, foreslått og antatt.
 - Hver mellomtittel (2–4 i en middels lang sak) skal fortelle noe konkret om avsnittet under («Frist 15. november», «Gebyret settes til 4 500 kroner») — aldri generiske ord som «Bakgrunn» eller «Konklusjon».
 - Avslutt med det leseren kan gjøre eller hva som skjer videre (frist, neste milepæl, hvem som bestemmer) — ikke med en oppsummering, moralisering eller floskel.
+
+EGNE SAKER (Dronemagasinet/UAS Norway) SOM KILDE
+- Når du viser til en tidligere sak fra Dronemagasinet eller UAS Norway (uten unntak): skriv en markdown-lenke i selve teksten, [lenketekst](full URL), med NØYAKTIG den URL-en du har fått oppgitt — og kildehenvis i prosa («som Dronemagasinet skrev 18. september», «Dronemagasinet har tidligere omtalt saken»). Lenketeksten skal være de ordene som beskriver henvisningen, ikke selve URL-en. Bruk KUN URL-er du faktisk har fått oppgitt; aldri oppfunne. Andre kilder (NRK, myndigheter osv.) navngis i prosa uten lenke.
+
+BILDER OG BILDETEKSTER
+- Bildetekster skal ALLTID være på norsk (bokmål), også når kilden, figuren eller bildet er på svensk, engelsk eller annet språk. Oversett; behold egennavn.
+- Foto-kreditering angir KUN hvor bildet er hentet fra (nettstedet/avsenderen, f.eks. «polisen.se», «Luftfartstilsynet») — aldri ord som «produsentbilde», «illustrasjon» eller «foto:» i selve kredit-teksten.
 
 SPRÅK
 - Bokmål. Norske anførselstegn «slik». Datoer «15. november 2026», tall med mellomrom som tusenskille («4 500 kroner»), «prosent» i løpende tekst.
@@ -177,7 +185,8 @@ async function polishManuscript(openaiKey, model, fields, examples, extraRules) 
       "- Bildemarkører (avsnitt som starter med \"![\") beholdes uendret og på samme sted i rekkefølgen.\n" +
       "- Tittel og ingress må ikke overdrive sakens status: forslag/søknad/høring skal ikke fremstilles som vedtatt eller besluttet. Behold verbene fra utkastet med mindre de er upresise.\n" +
       "- Mellomtitler skrives som eget avsnitt med prefiks \"## \", sitater med \"> \". Ingen klikkbare lenker eller URL-er i teksten. Fet skrift kun unntaksvis.\n" +
-      "- Stram inn oppblåste eller gjentakende passasjer (utkastet skal helst bli kortere, aldri lengre enn originalen). Du kan utelate uviktige detaljer, men ALDRI tall/datoer/frister som står i tittel eller ingress, og ALDRI tilføy nye tall.\n" +
+      "- Stram inn KUN gjentakelser, floskler og oppblåste formuleringer — ikke fjern substans, bakgrunn, regelverk, sitater eller reaksjoner. Lengden skal omtrent bevares (±10 %); aldri lengre enn originalen. ALDRI fjern tall/datoer/frister som står i tittel eller ingress, og ALDRI tilføy nye tall.\n" +
+      "- Markdown-lenker til våre egne saker ([tekst](URL)) beholdes NØYAKTIG (samme URL) og med kildehenvisningen i prosa rundt.\n" +
       "- Sørg for at første avsnitt forklarer saken på vanlig norsk uten å begynne med «I søknaden…»/«Ifølge…», og at kilden navngis i første eller andre avsnitt.\n" +
       (extraRules ? extraRules + "\n" : "") +
       "\n" + STYLE_PRINCIPLES;
@@ -215,7 +224,12 @@ async function polishManuscript(openaiKey, model, fields, examples, extraRules) 
     if (mistet.length) return { fields: fields, polished: false, forkastet: "mistet nøkkeltall: " + mistet.slice(0, 5).join(", ") };
     // For mye kortere = sannsynligvis tapt innhold.
     var lenBefore = (fields.hovedtekst_avsnitt || []).join(" ").length, lenAfter = out.hovedtekst_avsnitt.join(" ").length;
-    if (lenAfter < lenBefore * 0.55) return { fields: fields, polished: false, forkastet: "for mye kuttet" };
+    if (lenAfter < lenBefore * 0.8) return { fields: fields, polished: false, forkastet: "for mye kuttet" };
+    // Lenker til egne saker må bevares (hver URL som stod i utkastet må stå i resultatet).
+    var linkUrls = (fields.hovedtekst_avsnitt || []).join(" ").match(/\]\((https?:\/\/[^\s)]+)\)/g) || [];
+    var outJoined = out.hovedtekst_avsnitt.join(" ");
+    var mistetLenke = linkUrls.filter(function (l) { return outJoined.indexOf(l) === -1 && !/^\]\(https?:\/\/[^)]*(supabase\.co)/.test(l); });
+    if (mistetLenke.length) return { fields: fields, polished: false, forkastet: "lenke til egen sak mistet" };
 
     // Bildemarkører og antall sitater må være bevart.
     function count(arr, re) { return (arr || []).filter(function (p) { return re.test(p); }).length; }
@@ -234,4 +248,56 @@ async function polishManuscript(openaiKey, model, fields, examples, extraRules) 
   }
 }
 
-module.exports = { todayLine, STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, parseDronemagArticle };
+// «polisen.se» ut av en side-URL — foto-kreditering skal KUN si hvor bildet er
+// hentet fra (redaksjonens krav), aldri «produsentbilde/illustrasjon».
+function hostCredit(url) {
+  try { return new URL(url).hostname.replace(/^www\./i, ""); } catch (e) { return ""; }
+}
+function cleanCredit(text) {
+  return String(text || "")
+    .replace(/^\s*(foto|fotograf|kilde|bilde)\s*:\s*/i, "")
+    .replace(/\s*[\(\[]?\s*(produsentbilde|produsent-?\/?illustrasjon|illustrasjonsfoto|illustrasjon|arkivbilde|pressebilde)[^\)\]]*[\)\]]?/gi, "")
+    .replace(/\s+/g, " ").replace(/[\s,\/–-]+$/, "").trim();
+}
+
+// Sikrer at ALLE bildetekster er på norsk (bokmål) — kilden er ofte svensk/
+// engelsk og modellen kopierer av og til bildeteksten uoversatt (observert:
+// svensk «Karta över områden …» på en dronemag-sak). Norsk tekst røres ikke.
+// Feiler stille og beholder originalen.
+async function norwegianCaptions(openaiKey, fields) {
+  try {
+    var items = [];
+    if (fields.alt_tekst_bilde) items.push({ kind: "hoved", text: fields.alt_tekst_bilde });
+    (fields.hovedtekst_avsnitt || []).forEach(function (p, i) {
+      var m = String(p).match(/^!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)$/);
+      if (m && m[1]) items.push({ kind: "inline", idx: i, url: m[2], text: m[1] });
+    });
+    if (!items.length) return fields;
+    var res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + openaiKey },
+      body: JSON.stringify({
+        model: "gpt-5.4-mini",
+        messages: [
+          { role: "system", content: "Du er språkvasker. For hver bildetekst: er den allerede på norsk bokmål, returner den UENDRET. Er den på svensk, dansk, engelsk eller annet språk, oversett den til naturlig norsk bokmål (behold egennavn og fakta uendret, ikke legg til eller fjern informasjon). Returner like mange tekster som du fikk, i samme rekkefølge." },
+          { role: "user", content: JSON.stringify(items.map(function (x) { return x.text; })) }
+        ],
+        response_format: { type: "json_schema", json_schema: { name: "bildetekster", strict: true, schema: { type: "object", additionalProperties: false, properties: { tekster: { type: "array", items: { type: "string" } } }, required: ["tekster"] } } }
+      })
+    });
+    if (!res.ok) return fields;
+    var out = JSON.parse((await res.json()).choices[0].message.content).tekster;
+    if (!Array.isArray(out) || out.length !== items.length) return fields;
+    var copy = Object.assign({}, fields, { hovedtekst_avsnitt: (fields.hovedtekst_avsnitt || []).slice() });
+    items.forEach(function (it, k) {
+      var t = String(out[k] || it.text).replace(/[\[\]\n\r]+/g, " ").trim() || it.text;
+      if (it.kind === "hoved") copy.alt_tekst_bilde = t;
+      else copy.hovedtekst_avsnitt[it.idx] = "![" + t + "](" + it.url + ")";
+    });
+    return copy;
+  } catch (err) {
+    return fields;
+  }
+}
+
+module.exports = { hostCredit, cleanCredit, norwegianCaptions, todayLine, STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, parseDronemagArticle };
