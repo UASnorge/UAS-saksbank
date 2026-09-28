@@ -28,6 +28,9 @@
 [functions."assistant-chat"]
   external_node_modules = ["pdf-parse"]
 
+[functions."case-assistant-background"]
+  external_node_modules = ["pdf-parse"]
+
 # Sikkerhetsheader — statisk side, ingen grunn til å tillate innramming el.l.
 [[headers]]
   for = "/*"

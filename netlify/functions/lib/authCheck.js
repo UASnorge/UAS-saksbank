@@ -20,4 +20,19 @@ async function isAuthorizedUser(event) {
   return !(userRes.error || !userRes.data || !userRes.data.user);
 }
 
-module.exports = { isAuthorizedUser };
+// Som isAuthorizedUser, men returnerer selve brukeren ({ email }) — brukt av
+// funksjoner som skal vise HVEM som gjorde noe (f.eks. saks-assistenten).
+async function getAuthorizedUser(event) {
+  var authHeader = event.headers.authorization || event.headers.Authorization || "";
+  var token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return null;
+  var url = process.env.SUPABASE_URL;
+  var anonKey = process.env.SUPABASE_ANON_KEY;
+  if (!url || !anonKey) return null;
+  var client = createClient(url, anonKey, { global: { headers: { Authorization: "Bearer " + token } } });
+  var userRes = await client.auth.getUser(token);
+  if (userRes.error || !userRes.data || !userRes.data.user) return null;
+  return { email: userRes.data.user.email || "" };
+}
+
+module.exports = { isAuthorizedUser, getAuthorizedUser };

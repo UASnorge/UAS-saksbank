@@ -291,6 +291,21 @@
   .chat-input-row { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); flex-shrink: 0; }
   .chat-input-row textarea { flex: 1; resize: none; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated); color: var(--text); font-size: 0.85rem; min-height: 38px; max-height: 100px; }
   .chat-input-row .btn { align-self: flex-end; }
+  /* AI-assistent inni saken */
+  .case-assistant { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elevated); overflow: hidden; }
+  .case-assistant-head { padding: 10px 12px; font-size: 0.8rem; font-weight: 700; display: flex; justify-content: space-between; gap: 8px; align-items: center; border-bottom: 1px solid var(--border); background: var(--bg-sunken); }
+  .case-assistant-head .sub { font-weight: 400; color: var(--text-muted); font-size: 0.72rem; }
+  .case-chat-log { max-height: 360px; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+  .case-chat-log .chat-msg { white-space: normal; max-width: 96%; }
+  .case-chat-log .chat-msg a { color: inherit; text-decoration: underline; }
+  .case-chat-by { font-size: 0.68rem; opacity: 0.75; margin-bottom: 2px; }
+  .chat-handlinger { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chat-handling { font-size: 0.66rem; padding: 2px 7px; border-radius: 999px; background: var(--green-bg); color: var(--green-fg); }
+  .chat-handling.feil { background: var(--red-bg); color: var(--red-fg); }
+  .case-chat-quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; }
+  .case-chat-quick button { font-size: 0.72rem; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
+  .case-chat-quick button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .case-chat-quick button:disabled { opacity: 0.5; cursor: not-allowed; }
   .chat-empty { font-size: 0.8rem; color: var(--text-muted); padding: 16px 8px; text-align: center; line-height: 1.5; }
 
   /* Skrivebord: panelet skal faktisk kunne lukkes med ✕, ikke bare på mobil */
@@ -555,6 +570,7 @@
       kildevurdering: row.kildevurdering || null, kildevurderingTs: row.kildevurdering_ts || "",
       bildeforslag: row.bildeforslag || null, bildeforslagTs: row.bildeforslag_ts || "",
       kildePublisertDato: row.kilde_publisert_dato || "", manusAiNotat: row.manus_ai_notat || "",
+      assistentChat: Array.isArray(row.assistent_chat) ? row.assistent_chat : [], assistentOpptatt: !!row.assistent_opptatt, assistentOpptattTs: row.assistent_opptatt_ts || "",
       createdAt: row.created_at || "",
       manusEmnefelt: row.manus_emnefelt || [], manusTitlerAlternativer: row.manus_titler_alternativer || [],
       manusTidligereDekning: row.manus_tidligere_dekning || null, manusKilderBrukt: row.manus_kilder_brukt || [],
@@ -594,7 +610,7 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, reviseBusy: {}, mobileMenuOpen: false, manusExpanded: false, newCaseTab: "lenke", newCaseBusy: false,
+    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, assistDraft: {}, assistBusy: {}, mobileMenuOpen: false, manusExpanded: false, newCaseTab: "lenke", newCaseBusy: false,
       filterPanelOpen: false, filterGroupsOpen: { tema: true, land: true, sakstype: true }, filters: { tema: null, land: null, sakstype: null }, expandedTitleGroups: {} },
     chat: { messages: [], busy: false },
     session: null,
@@ -739,6 +755,17 @@
 
   function render() {
     var alerts = buildAlerts();
+    // Hele appen tegnes på nytt ved hver endring (også live-oppdateringer fra
+    // andre brukere/bakgrunnsjobber) — bevar derfor scrollposisjonen i åpen sak
+    // og chat, og skrivefokus i assistentens tekstfelt, så ikke en
+    // live-oppdatering kaster deg til toppen midt i en samtale.
+    var prevBody = root.querySelector(".panel-body");
+    var bodyScroll = prevBody ? prevBody.scrollTop : null;
+    var prevLog = document.getElementById("case-chat-log");
+    var logState = prevLog ? { top: prevLog.scrollTop, atBottom: prevLog.scrollHeight - prevLog.scrollTop - prevLog.clientHeight < 40 } : null;
+    var prevInput = document.getElementById("case-chat-input");
+    var hadFocus = prevInput && document.activeElement === prevInput;
+    var selStart = hadFocus ? prevInput.selectionStart : 0;
     root.innerHTML =
       renderTopbar(alerts.length) +
       renderFilterDropdown() +
@@ -749,6 +776,12 @@
       "</div>" +
       renderModal();
     bindEvents();
+    var newBody = root.querySelector(".panel-body");
+    if (newBody && bodyScroll !== null) newBody.scrollTop = bodyScroll;
+    var newLog = document.getElementById("case-chat-log");
+    if (newLog) newLog.scrollTop = (!logState || logState.atBottom) ? newLog.scrollHeight : logState.top;
+    var newInput = document.getElementById("case-chat-input");
+    if (newInput && hadFocus && !newInput.disabled) { newInput.focus(); try { newInput.setSelectionRange(selStart, selStart); } catch (e) {} }
   }
 
   // Filter-nedtrekk (Tema/Sakstype) — to hovedgrupper som kan lukkes/åpnes
@@ -1638,12 +1671,6 @@
       illustrasjonHtml +
       (c.manusBildeUrl ? '<img src="' + escapeHtml(c.manusBildeUrl) + '" alt="" style="max-width:100%;max-height:240px;border-radius:8px;object-fit:cover;" loading="lazy" />' : "");
 
-    var aiNotat =
-      '<div class="field"><label for="c-manus-ai-notat">AI-notat — be AI-en om en spesifikk endring</label>' +
-        '<textarea id="c-manus-ai-notat" rows="2" placeholder="F.eks. «gjør saken lenger», «ta med mer fra kilden om X», «bytt bilde til: https://…»">' + escapeHtml(c.manusAiNotat) + "</textarea></div>" +
-      '<p class="helper">AI-en dikter aldri opp et nytt bilde selv — skal bildet byttes, lim inn den faktiske lenken i notatet. Ber du om et "annet"/"bedre" bilde uten en konkret lenke, beholdes gjeldende bilde, og du blir heller anbefalt å bruke Bildeforslag-knappen over.</p>' +
-      '<button class="btn btn-primary" data-action="revise-manus" data-id="' + c.id + '"' + (state.ui.reviseBusy[c.id] ? " disabled" : "") + ">" + (state.ui.reviseBusy[c.id] ? "Oppdaterer …" : "🤖 Oppdater med AI") + "</button>";
-
     // Kontrollseksjon — matcher redaksjonens eget malforslag: en tydelig
     // merket "INTERNT — FJERNES FØR PUBLISERING"-boks med konkrete,
     // saksspesifikke spørsmål, pluss den fulle kildelisten AI-en faktisk
@@ -1676,12 +1703,121 @@
           ? '<div class="manus-editor-bar"><span>✍️ Manus — forstørret visning</span><button class="btn" type="button" data-action="toggle-manus-expand">⤡ Vis normalt</button></div>'
           : '<div style="display:flex;justify-content:flex-end;"><button class="btn" type="button" data-action="toggle-manus-expand">⛶ Forstørre</button></div>') +
         fields +
-        aiNotat +
         kontrollHtml +
       "</div>" +
       genBtn + ' <button class="btn btn-primary" data-action="save-case">💾 Lagre manus</button>' +
       (c.manusUrl ? ' <button class="btn" data-action="download-manus" data-id="' + c.id + '" data-path="' + escapeHtml(c.manusUrl) + '">Last ned .docx</button><p class="helper">Sist generert: ' + fmtTime(c.manusGenerertTs) + "</p>" : "")
     );
+  }
+
+  // Enkel, trygg formatering av assistentens tekst: escape først, deretter
+  // **fet**, klikkbare lenker og linjeskift.
+  function chatTextHtml(text) {
+    var h = escapeHtml(text || "");
+    h = h.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    h = h.replace(/(https?:\/\/[^\s<)]+)/g, function (u) { return '<a href="' + u + '" target="_blank" rel="noopener noreferrer">' + u + "</a>"; });
+    return h.replace(/\n/g, "<br />");
+  }
+
+  var ASSIST_QUICK = [
+    ["✍️ Gjør saken lengre", "Gjør saken lengre og mer utfyllende — ta med relevant bakgrunn fra kilden og research."],
+    ["🔎 Finn mer bakgrunn", "Research mer bakgrunn, regelverk og reaksjoner rundt denne saken, og bygg det inn i manuset."],
+    ["🔗 Lenk til tidligere saker", "Finn tidligere saker fra Dronemagasinet om dette temaet og legg inn henvisninger med lenker i manuset der det passer."],
+    ["🧪 Faktasjekk mot kilden", "Faktasjekk manuset mot kilden. Si konkret hva som stemmer og hva som avviker eller mangler."],
+    ["📰 Foreslå tittler", "Foreslå 5 tittelalternativer i redaksjonens stil, og si hvilken du vil anbefale og hvorfor."],
+    ["🧐 Kritikk fra nyhetssjef", "Gi meg en kritisk gjennomgang av saken som en nyhetssjef: hva er svakt, hva mangler, hva bør kuttes?"],
+    ["🖼️ Foreslå bilder", "Finn bildealternativer til saken."]
+  ];
+
+  // «Venter»-tilstand rett etter at brukeren har sendt: meldingen vises med en
+  // gang (og assistenten regnes som opptatt) helt til serveren har bekreftet
+  // ved å skrive meldingen/opptatt-flagget på saken — ellers kunne en
+  // live-oppdatering midt imellom fått meldingen til å forsvinne et øyeblikk.
+  function assistPendingActive(c) {
+    var p = state.ui.assistBusy[c.id];
+    if (!p) return false;
+    if (Date.now() > p.until) return false;
+    if (c.assistentOpptatt) return false;
+    var ack = (c.assistentChat || []).some(function (m) { return m.role === "user" && m.text === p.text && m.ts >= p.ts; });
+    return !ack;
+  }
+  function assistBusyFor(c) {
+    if (assistPendingActive(c)) return true;
+    if (!c.assistentOpptatt) return false;
+    var t = c.assistentOpptattTs ? new Date(c.assistentOpptattTs).getTime() : 0;
+    return Date.now() - t < 15 * 60 * 1000;
+  }
+
+  function renderCaseAssistant(c) {
+    var chat = (c.assistentChat || []).slice();
+    if (assistPendingActive(c)) { var pend = state.ui.assistBusy[c.id]; chat.push({ role: "user", text: pend.text, ts: pend.ts, by: pend.by }); }
+    var busy = assistBusyFor(c);
+    var msgs = chat.map(function (m) {
+      if (m.role === "user") {
+        return '<div class="chat-msg user"><div class="case-chat-by">' + escapeHtml(m.by || "Du") + "</div>" + chatTextHtml(m.text) + "</div>";
+      }
+      var chips = (m.handlinger || []).length
+        ? '<div class="chat-handlinger">' + m.handlinger.map(function (h) { return '<span class="chat-handling' + (h.ok ? "" : " feil") + '">' + (h.ok ? "✓ " : "⚠ ") + escapeHtml(h.label) + "</span>"; }).join("") + "</div>"
+        : "";
+      return '<div class="chat-msg assistant">' + chatTextHtml(m.text) + chips + "</div>";
+    }).join("");
+    var emptyHtml = '<div class="chat-empty">Jeg kjenner denne saken — manus, kilder og kontrollpunkter. Be meg om å gjøre saken lengre, researche mer bakgrunn, lenke til tidligere saker, faktasjekke mot kilden, foreslå tittel, finne bilder eller gi kritikk. Jeg endrer manuset direkte i saken.</div>';
+    var quick = ASSIST_QUICK.map(function (q) {
+      return '<button type="button" data-action="assist-quick" data-id="' + c.id + '" data-prompt="' + escapeHtml(q[1]) + '"' + (busy ? " disabled" : "") + ">" + escapeHtml(q[0]) + "</button>";
+    }).join("");
+    return (
+      '<div class="section-label">AI-assistent for denne saken</div>' +
+      '<div class="case-assistant">' +
+        '<div class="case-assistant-head"><span>🤖 Assistent</span><span class="sub">Samtalen er delt med teamet · endrer manuset direkte</span></div>' +
+        '<div class="case-chat-log" id="case-chat-log">' + (msgs || emptyHtml) +
+          (busy ? '<div class="chat-typing">Assistenten jobber … (research og manusendringer kan ta noen minutter — du kan lukke saken og komme tilbake)</div>' : "") +
+        "</div>" +
+        '<div class="case-chat-quick">' + quick + "</div>" +
+        '<div class="chat-input-row">' +
+          '<textarea id="case-chat-input" rows="2" placeholder="Be assistenten om noe … (Enter sender, Shift+Enter gir linjeskift)"' + (busy ? " disabled" : "") + ">" + escapeHtml(state.ui.assistDraft[c.id] || "") + "</textarea>" +
+          '<button class="btn btn-primary" type="button" data-action="assist-send" data-id="' + c.id + '"' + (busy ? " disabled" : "") + ">Send</button>" +
+        "</div>" +
+      "</div>" +
+      (c.oppsummering ? '<p class="helper"><b>AI-sammendrag:</b> ' + escapeHtml(c.oppsummering) + "</p>" : "")
+    );
+  }
+
+  // Sender en melding til saks-assistenten (Background Function). Ulagrede
+  // endringer i skjemaet lagres først, slik at assistenten jobber på det
+  // journalisten faktisk ser — og manusendringer ikke overskriver dem.
+  async function sendAssistantMessage(id, text) {
+    text = String(text || "").trim();
+    if (!text) return;
+    var c = getCase(id);
+    if (!c) return;
+    if (!state.session) { showToast("Du må være innlogget"); return; }
+    if (assistBusyFor(c)) { showToast("Assistenten jobber fortsatt med forrige melding"); return; }
+
+    if (state.ui.activeCaseId === id && document.getElementById("c-title")) {
+      var prevStatus = c.status;
+      var form = readCaseForm();
+      if (form) { form.status = prevStatus; await updateCase(form.id, caseToDbUpdate(form)); }
+    }
+
+    var nowStr = nowIso();
+    state.ui.assistBusy[id] = { text: text, ts: nowStr, by: (state.session.user && state.session.user.email) || "", until: Date.now() + 30000 };
+    state.ui.assistDraft[id] = "";
+    render();
+    try {
+      var res = await fetch("/.netlify/functions/case-assistant-background", {
+        method: "POST", headers: authHeader(), body: JSON.stringify({ caseId: id, message: text })
+      });
+      if (!res.ok && res.status !== 202) {
+        showToast("Kunne ikke sende til assistenten (" + res.status + ")");
+        delete state.ui.assistBusy[id];
+      }
+    } catch (err) {
+      showToast("Kunne ikke sende til assistenten: " + err.message);
+      delete state.ui.assistBusy[id];
+    }
+    render();
+    // Utløper «venter»-tilstanden selv om ingen live-oppdatering kommer.
+    setTimeout(function () { if (state.ui.assistBusy[id] && Date.now() > state.ui.assistBusy[id].until) { delete state.ui.assistBusy[id]; render(); } }, 31000);
   }
 
   function renderCaseModal(c) {
@@ -1714,10 +1850,8 @@
             "</div>" +
             '<div class="field"><label for="c-neste">Neste handling</label><input id="c-neste" data-field="nesteHandling" value="' + escapeHtml(c.nesteHandling) + '" /></div>' +
 
-            '<div class="section-label">AI-vurdering</div>' +
-            '<div class="field"><label for="c-oppsummering">Sammendrag</label><textarea id="c-oppsummering" data-field="oppsummering" placeholder="Ikke vurdert av AI ennå">' + escapeHtml(c.oppsummering) + "</textarea></div>" +
+            renderCaseAssistant(c) +
             (c.eventId && state.eventsById[c.eventId] ? '<p class="helper">📅 Koblet til arrangement: <b>' + escapeHtml(state.eventsById[c.eventId].title) + "</b> (" + escapeHtml(state.eventsById[c.eventId].starts_on) + ")</p>" : "") +
-            '<button class="btn" data-action="run-ai-triage-one" data-id="' + c.id + '"' + (state.ui.aiBusy[c.id] ? " disabled" : "") + ">" + (state.ui.aiBusy[c.id] ? "Vurderer …" : "Kjør AI-vurdering") + "</button>" +
 
             (c.status === "ide" ? '<button class="btn btn-primary" data-action="approve-case-quick" data-id="' + c.id + '" style="width:100%;">✓ Godkjenn idé → flytt til «Godkjente idéer»</button>' : "") +
             (c.status !== "ide" && nextAdvanceableStatus(c.status) ? '<button class="btn btn-primary" data-action="advance-status-quick" data-id="' + c.id + '" data-next="' + nextAdvanceableStatus(c.status) + '" style="width:100%;">→ Flytt videre til «' + escapeHtml(statusLabel(nextAdvanceableStatus(c.status))) + '»</button>' : "") +
@@ -1827,6 +1961,13 @@
 
   function bindEvents() {
     root.querySelectorAll("[data-action]").forEach(function (el) { el.addEventListener("click", handleAction); });
+    var chatInput = document.getElementById("case-chat-input");
+    if (chatInput) {
+      chatInput.addEventListener("input", function () { state.ui.assistDraft[state.ui.activeCaseId] = chatInput.value; });
+      chatInput.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); sendAssistantMessage(state.ui.activeCaseId, chatInput.value); }
+      });
+    }
     root.querySelectorAll("[data-triage]").forEach(function (el) {
       el.addEventListener("input", function () { el.parentElement.querySelector(".val").textContent = el.value; });
     });
@@ -2012,10 +2153,8 @@
       case "import-keywords": importKeywords(); break;
       case "delete-keyword": deleteKeyword(e.currentTarget.getAttribute("data-id")); break;
       case "run-ai-triage-bulk": runAiTriageBulk(); break;
-      case "run-ai-triage-one": runAiTriage([e.currentTarget.getAttribute("data-id")]); break;
       case "run-ai-triage-selected": e.stopPropagation(); runAiTriageSelected(); break;
       case "generate-manus": e.stopPropagation(); generateManuscriptForCase(e.currentTarget.getAttribute("data-id")); break;
-      case "revise-manus": e.stopPropagation(); reviseManuscriptForCase(e.currentTarget.getAttribute("data-id")); break;
       case "toggle-manus-expand": {
         e.stopPropagation();
         // Ta vare på det som alt er skrevet i feltene FØR modalen tegnes på
@@ -2065,6 +2204,8 @@
       case "submit-new-case-link": submitNewCaseFromLink(); break;
       case "submit-new-case-upload": submitNewCaseFromUpload(); break;
       case "submit-new-case-audio": submitNewCaseFromAudio(); break;
+      case "assist-send": e.stopPropagation(); (function () { var id = e.currentTarget.getAttribute("data-id"); var el = document.getElementById("case-chat-input"); sendAssistantMessage(id, el ? el.value : ""); })(); break;
+      case "assist-quick": e.stopPropagation(); sendAssistantMessage(e.currentTarget.getAttribute("data-id"), e.currentTarget.getAttribute("data-prompt")); break;
       case "save-case": saveCaseFromForm(); break;
       case "publish-case": publishCaseFromForm(); break;
       case "delete-case": deleteActiveCase(); break;
@@ -2378,8 +2519,6 @@
     if (hovedtekstEl) {
       c.manusHovedtekst = hovedtekstEl.value.split(/\n\s*\n/).map(function (p) { return p.trim(); }).filter(Boolean);
     }
-    var aiNotatEl = document.getElementById("c-manus-ai-notat");
-    if (aiNotatEl) c.manusAiNotat = aiNotatEl.value;
     // Kategori: flere avkrysningsbokser, ikke ett data-field-element — samles
     // til en liste med de som faktisk er avkrysset.
     var kategoriChecks = root.querySelectorAll(".wp-kategori-check");
@@ -2859,30 +2998,6 @@
       showToast("Kunne ikke starte manusgenerering: " + err.message);
     } finally {
       delete state.ui.manusBusy[id];
-      render();
-    }
-  }
-
-  async function reviseManuscriptForCase(id) {
-    var notatEl = document.getElementById("c-manus-ai-notat");
-    var notat = notatEl ? notatEl.value.trim() : "";
-    if (!notat) { showToast("Skriv en instruks i AI-notatet først"); if (notatEl) notatEl.focus(); return; }
-    state.ui.reviseBusy[id] = true;
-    render();
-    try {
-      var res = await fetch("/.netlify/functions/revise-manuscript", {
-        method: "POST", headers: authHeader(), body: JSON.stringify({ caseId: id, aiNotat: notat })
-      });
-      var data = await parseFunctionResponse(res);
-      if (!res.ok) { showToast(data.error || "Kunne ikke oppdatere manus"); return; }
-      showToast("Manus oppdatert: " + data.hvaBleEndret);
-      if (data.bildeMerknad) showToast(data.bildeMerknad);
-      if (data.usikkerhetsnotat) showToast("⚠️ " + data.usikkerhetsnotat);
-      await refreshAndRender();
-    } catch (err) {
-      showToast("Kunne ikke oppdatere manus: " + err.message);
-    } finally {
-      delete state.ui.reviseBusy[id];
       render();
     }
   }

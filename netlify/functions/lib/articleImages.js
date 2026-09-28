@@ -127,13 +127,22 @@ async function downloadImage(url) {
 
 // Verifiserte redaksjonelle bilder fra siden, beste først. jpg/png først
 // (fungerer overalt, også i .docx), webp kun som reserve.
-async function pickArticleImages(pageUrl, html, max) {
+// opts.verify: async (img) => boolean — innholdssjekk av selve bildet (lib/imageCheck.js).
+// URL-filteret fanger ikke en logo på en anonym CDN-URL (Aftenposten sin
+// merkevare-logo var og:image og ble hovedbilde på en sak), så:
+//  - og:image/twitter:image (kilde «meta») brukes KUN når verify er oppgitt og godkjenner bildet
+//  - artikkelbilder godkjennes av verify hvis den er oppgitt
+async function pickArticleImages(pageUrl, html, max, opts) {
   max = max || 1;
+  opts = opts || {};
   var cands = findImageCandidates(html, pageUrl).slice(0, 8);
   var verified = [];
   for (var i = 0; i < cands.length && verified.length < max + 2; i++) {
+    if (cands[i].kilde === "meta" && !opts.verify) continue;
     var img = await downloadImage(cands[i].url);
-    if (img) verified.push(Object.assign({}, cands[i], img));
+    if (!img) continue;
+    if (opts.verify && !(await opts.verify(img))) continue;
+    verified.push(Object.assign({}, cands[i], img));
   }
   var preferred = verified.filter(function (v) { return v.type === "jpg" || v.type === "png"; });
   var rest = verified.filter(function (v) { return v.type === "webp"; });

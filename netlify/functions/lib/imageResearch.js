@@ -26,7 +26,7 @@
 
 const { verifyUrl } = require("./linkCheck.js");
 const { pickArticleImages } = require("./articleImages.js");
-const { looksGenericUrl } = require("./imageUtils.js");
+const { classifyImage } = require("./imageCheck.js");
 
 const MODEL = "gpt-5-search-api";
 const IMAGE_GEN_MODEL = "gpt-image-1";
@@ -96,25 +96,19 @@ const SCHEMA = {
   }
 };
 
-function extractMetaTag(html, prop) {
-  var re = new RegExp('<meta[^>]+(?:property|name)=["\']' + prop + '["\'][^>]+content=["\']([^"\']+)["\']', "i");
-  var m = html.match(re) || html.match(new RegExp('<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\']' + prop + '["\']', "i"));
-  return m ? m[1] : null;
-}
-
 // Finner et redaksjonelt bilde på kildesiden: bilder i selve artikkelen
 // først (lib/articleImages.js), og:image kun som siste utvei — og aldri en
 // logo/standard delingsgrafikk (samme tilbakemelding som førte til
 // er_logo-sperren under).
-async function tryExtractOgImage(pageUrl) {
+async function tryExtractOgImage(pageUrl, verify) {
   try {
     var res = await fetch(pageUrl, { headers: { "User-Agent": "Mozilla/5.0 (compatible; UASNorwaySaksbank/1.0)" } });
     if (!res.ok) return null;
     var html = await res.text();
-    var picked = await pickArticleImages(pageUrl, html, 1);
-    if (picked.length) return picked[0].url;
-    var og = extractMetaTag(html, "og:image");
-    return og && !looksGenericUrl(og) ? og : null;
+    // og:image brukes KUN via verify (innholdssjekk av selve bildet, lib/imageCheck.js) —
+    // en logo på en anonym CDN-URL (Aftenposten) slipper gjennom URL-filteret alene.
+    var picked = await pickArticleImages(pageUrl, html, 1, { verify: verify });
+    return picked.length ? picked[0].url : null;
   } catch (err) {
     return null;
   }
@@ -134,7 +128,28 @@ async function isVerifiedImage(url) {
 // og:image fra kildeside_url, og marker tydelig hvis ingenting kunne
 // bekreftes — ALDRI stille dropp, og ALDRI presenter en uverifisert lenke
 // som om den var bekreftet.
-async function verifyAlternative(alt) {
+// Kode-nivå håndheving av spesifikasjonens «absolutte regel» (aldri hevd bruksrett
+// uten dokumentasjon) — modellen ga kategori A til et VG-foto uten noen
+// dokumentasjon. (1) A/B uten dokumentasjon_url nedgraderes til C (uklart, må
+// avklares). (2) Bilder som ligger hos andre nyhetsmedier er aldri A/B: medier
+// er ikke bildebibliotek — nedgraderes til D (kun referanse).
+var NYHETSMEDIER = /(^|\.)(vg|nrk|aftenposten|dn|tv2|e24|nettavisen|dagbladet|adressa|bt|ba|stavanger-aftenblad|sol|nordlys|fvn|ta|op|vl|gd|dagsavisen|klassekampen|vart-land|khrono|tu|digi|kommunal-rapport|reuters|apnews|bbc|cnn|theguardian|nytimes|gettyimages|shutterstock|alamy)\.(no|com|co\.uk|org)$/i;
+function hostOfUrl(u) { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return ""; } }
+function enforceRightsDiscipline(alt) {
+  var out = Object.assign({}, alt);
+  var hosts = [hostOfUrl(out.kildeside_url), hostOfUrl(out.bilde_url)];
+  var erNyhetsmedium = hosts.some(function (h) { return h && NYHETSMEDIER.test(h); });
+  if ((out.bruksrett === "A" || out.bruksrett === "B") && erNyhetsmedium) {
+    out.bruksrett = "D";
+    out.kommentar = "⚠️ Bildet ligger hos et annet nyhetsmedium/bildebyrå — ikke et bildebibliotek, bruksrett må avklares med fotograf/rettighetshaver. " + (out.kommentar || "");
+  } else if ((out.bruksrett === "A" || out.bruksrett === "B") && !(out.dokumentasjon_url && String(out.dokumentasjon_url).trim())) {
+    out.bruksrett = "C";
+    out.kommentar = "⚠️ Ingen dokumentasjon på bruksrett funnet — må avklares før bruk. " + (out.kommentar || "");
+  }
+  return out;
+}
+
+async function verifyAlternative(alt, verify) {
   var candidate = alt.bilde_url || null;
   var result = { lenke_virker: false, verifisert_bilde_url: null, verifiseringsmetode: null, detalj: "" };
 
@@ -150,7 +165,7 @@ async function verifyAlternative(alt) {
   }
 
   if (alt.kildeside_url && alt.kildeside_url !== candidate) {
-    var extracted = await tryExtractOgImage(alt.kildeside_url);
+    var extracted = await tryExtractOgImage(alt.kildeside_url, verify);
     if (extracted) {
       var v2 = await isVerifiedImage(extracted);
       if (v2.ok) {
@@ -280,9 +295,20 @@ async function researchImages(supabase, openaiKey, caseId) {
 
   var raw = await callOpenAI(openaiKey, userPrompt);
 
+  var verifyEditorial = async function (img) { return (await classifyImage(openaiKey, img, { tittel: c.title })).ok; };
   var alternativer = await Promise.all((raw.alternativer || []).map(async function (alt) {
-    var verifisering = await verifyAlternative(alt);
+    var verifisering = await verifyAlternative(alt, verifyEditorial);
     var merged = Object.assign({}, alt, { verifisering: verifisering });
+    merged = enforceRightsDiscipline(merged);
+    // Innholdssjekk av selve bildet (syn): fanger logoer/merkevaregrafikk på
+    // anonyme URL-er som modellen og URL-filteret ikke gjenkjenner.
+    if (verifisering.lenke_virker && verifisering.verifisert_bilde_url) {
+      var cls = await classifyImage(openaiKey, { url: verifisering.verifisert_bilde_url }, { tittel: c.title });
+      if (cls.vurdert) {
+        merged.klassifisering = { kategori: cls.kategori, viser: cls.viser };
+        if (cls.kategori === "logo_eller_merkevare" || cls.kategori === "generisk_grafikk_eller_ikon") merged.er_logo = true;
+      }
+    }
     // Kode-nivå overstyring, ikke bare stole på modellens egen er_logo-flagg
     // (se looksGeneric-begrunnelsen) — slår igjennom i både backend-logikk
     // og UI-visning siden begge leser samme er_logo-felt.

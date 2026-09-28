@@ -515,8 +515,11 @@ alter table cases add column if not exists land text;
 do $$
 begin
   alter table cases drop constraint if exists cases_land_check;
+  -- Full verdiliste (samme som v14 under): denne blokken kjøres på nytt ved
+  -- hver migrering, og den opprinnelige 5-verdi-listen ville da feilet så
+  -- snart noen rad hadde fått USA/EUROPA/ASIA (funnet ved migrering v15).
   alter table cases add constraint cases_land_check check (land is null or land in (
-    'NORGE', 'DANMARK', 'SVERIGE', 'FINLAND', 'INTERNASJONALT'
+    'NORGE', 'DANMARK', 'SVERIGE', 'FINLAND', 'EUROPA', 'USA', 'ASIA', 'INTERNASJONALT'
   ));
 end $$;
 
@@ -532,3 +535,13 @@ alter table cases drop constraint if exists cases_land_check;
 alter table cases add constraint cases_land_check check (land is null or land in (
   'NORGE', 'DANMARK', 'SVERIGE', 'FINLAND', 'EUROPA', 'USA', 'ASIA', 'INTERNASJONALT'
 ));
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v15 — AI-assistent inni hver sak (erstatter AI-vurdering/AI-notat i saken)
+-- ═══════════════════════════════════════════════════════════════════
+-- Samtalen med saks-assistenten lagres PÅ saken (delt for hele teamet, og
+-- oppdateres live via Realtime som alt annet på saken). assistent_opptatt
+-- viser at en bakgrunnsjobb jobber (research kan ta flere minutter).
+alter table cases add column if not exists assistent_chat jsonb default '[]'::jsonb;
+alter table cases add column if not exists assistent_opptatt boolean default false;
+alter table cases add column if not exists assistent_opptatt_ts timestamptz;

@@ -15,7 +15,9 @@
 // brukeren blir tydelig anbefalt å bruke "🖼️ Finn bilder"-funksjonen i
 // stedet (som gjør ekte, verifisert bilderesearch) — ikke gjettet på her.
 
-const { fetchSourceArticle, fetchImage, buildDocxParagraphs, callOpenAI, scaleToMaxWidth, HOUSE_STYLE, MODEL } = require("./manuscript.js");
+const { fetchSourceArticle, fetchImage, buildDocxParagraphs, callOpenAI, scaleToMaxWidth, HOUSE_STYLE, MODEL,
+  researchBlock, stripCitationsFromFields, restrictLinksToKnown, isOwnUrl } = require("./manuscript.js");
+const { todayLine, norwegianCaptions } = require("./styleGuide.js");
 const { verifyUrl } = require("./linkCheck.js");
 const { Document, Packer } = require("docx");
 
@@ -25,6 +27,10 @@ Du reviderer nå et EKSISTERENDE manus basert på en konkret instruks fra redaks
 UTELUKKENDE til fakta som allerede står i manuset eller i den oppgitte kildeteksten under — finn ALDRI på nye
 detaljer, tall, sitater eller navn bare fordi notatet ber om f.eks. en lengre sak. Er kildeteksten for tynn til
 å dekke det notatet ber om, skriv det tydelig i usikkerhetsnotat i stedet for å gjette.
+
+NYE OPPLYSNINGER FRA RESEARCH: får du et RESEARCH-GRUNNLAG (nummererte kilder E1, E2 … med utdrag av kildenes egen tekst), kan du bruke det utdragene faktisk sier til å utvide eller utdype saken — KUN det, og kun når kilden gjelder samme sak. Navngi kilden i prosa der den brukes («skriver Lovdata», «ifølge forskriften»). List E-numrene du faktisk har brukt i brukte_eksterne. Kilder merket EGEN er våre egne tidligere saker.
+
+LENKER I TEKSTEN: ingen klikkbare lenker — med ÉN unntak: henvisninger til egne tidligere saker fra Dronemagasinet/UAS Norway skal være markdown-lenker [tekst](URL) med nøyaktig URL fra research-grunnlaget eller fra lenkene som allerede står i manuset (behold eksisterende slike lenker uendret). Bildemarkører («![tekst](URL)») og sitatblokker («> …») beholdes uendret på sin plass med mindre notatet ber om noe annet. Bildetekster er alltid på norsk.
 
 Om bilder: du kan ALDRI dikte opp en bilde-URL selv. Sett bilde_handling til "bruk_ny_url" KUN dersom notatet
 selv inneholder en konkret URL redaksjonen ber om å bruke — kopier den nøyaktig, ikke konstruer en variant av
@@ -43,17 +49,20 @@ const REVISE_SCHEMA = {
       ingress: { type: "string" },
       hovedtekst_avsnitt: { type: "array", items: { type: "string" }, minItems: 1 },
       alt_tekst_bilde: { type: "string" },
+      brukte_eksterne: { type: "array", items: { type: "integer" }, description: "E-numre fra research-grunnlaget som faktisk er brukt i teksten. Tom liste om ingen." },
       bilde_handling: { type: "string", enum: ["behold", "bruk_ny_url"] },
       ny_bilde_url: { type: ["string", "null"], description: "KUN en URL redaksjonen selv oppga i notatet — aldri oppfunnet. Null om bilde_handling er 'behold'." },
       usikkerhetsnotat: { type: ["string", "null"] },
       hva_ble_endret: { type: "string", description: "1-2 setninger, til historikklogg — hva ble faktisk endret basert på notatet." }
     },
-    required: ["tittel", "ingress", "hovedtekst_avsnitt", "alt_tekst_bilde", "bilde_handling", "ny_bilde_url", "usikkerhetsnotat", "hva_ble_endret"]
+    required: ["tittel", "ingress", "hovedtekst_avsnitt", "alt_tekst_bilde", "brukte_eksterne", "bilde_handling", "ny_bilde_url", "usikkerhetsnotat", "hva_ble_endret"]
   }
 };
 
 // supabase: klient autentisert SOM den innloggede brukeren (RLS gjelder).
-async function reviseManuscript(supabase, openaiKey, caseId, aiNotat) {
+// opts.research: resultat fra deepResearch (lib/materialResearch.js) som revisjonen kan bygge på.
+async function reviseManuscript(supabase, openaiKey, caseId, aiNotat, opts) {
+  opts = opts || {};
   var note = (aiNotat || "").trim();
   if (!note) throw new Error("Mangler AI-notat — skriv hva som skal endres først.");
 
@@ -64,10 +73,13 @@ async function reviseManuscript(supabase, openaiKey, caseId, aiNotat) {
     throw new Error("Saken har ikke noe manus å revidere ennå — generer et førsteutkast først.");
   }
 
-  var sourceUrl = c.kilder && c.kilder.length ? c.kilder[0] : null;
-  var source = sourceUrl ? await fetchSourceArticle(sourceUrl) : { ok: false, reason: "ingen kildelenke registrert" };
+  // Kildelenken er ikke alltid en nettside (kan være et opplastet dokument/lydopptak i lagring).
+  var sourceUrl = (c.kilder || []).filter(function (k) { return /^https?:\/\//i.test(k) && !/supabase\.co\/storage/.test(k); })[0] || null;
+  var source = sourceUrl ? await fetchSourceArticle(sourceUrl) : { ok: false, reason: "ingen nettside-kilde registrert" };
+  var research = opts.research && opts.research.kilder && opts.research.kilder.length ? opts.research : null;
 
   var userPrompt =
+    todayLine() + "\n\n" +
     "Gjeldende manus:\n" +
     "TITTEL: " + (c.manus_tittel || "") + "\n" +
     "INGRESS: " + (c.manus_ingress || "") + "\n" +
@@ -77,9 +89,16 @@ async function reviseManuscript(supabase, openaiKey, caseId, aiNotat) {
     "AI-NOTAT FRA REDAKSJONEN (instruks for hva som skal endres nå):\n" + note + "\n\n" +
     (source.ok
       ? "Kildeteksten (bruk denne om notatet ber om mer stoff/detaljer):\n" + source.text
-      : "Kildeteksten kunne ikke hentes på nytt (" + source.reason + ") — hold deg til det som allerede står i manuset.");
+      : "Kildeteksten kunne ikke hentes på nytt (" + source.reason + ") — hold deg til det som allerede står i manuset.") +
+    (research ? "\n\n=====\n\n" + researchBlock(research) : "");
 
   var fields = await callOpenAI(openaiKey, MODEL, REVISE_SYSTEM_PROMPT, userPrompt, REVISE_SCHEMA);
+  stripCitationsFromFields(fields);
+  // Lenker til egne saker er kun tillatt når URL-en enten står i research-grunnlaget eller allerede stod i manuset.
+  var eksisterendeEgne = ((c.manus_hovedtekst || []).join(" ").match(/\]\((https?:\/\/[^\s)]+)\)/g) || [])
+    .map(function (u) { return u.slice(2, -1); }).filter(isOwnUrl)
+    .map(function (u) { return { egen: true, url: u }; });
+  restrictLinksToKnown(fields, { kilder: ((research && research.kilder) || []).concat(eksisterendeEgne) });
 
   var newImageUrl = c.manus_bilde_url || "";
   var image = null;
@@ -95,9 +114,28 @@ async function reviseManuscript(supabase, openaiKey, caseId, aiNotat) {
   }
   if (newImageUrl) image = await fetchImage(newImageUrl);
 
+  // Kilder: behold eksisterende, legg til eksterne kilder som faktisk ble brukt nå.
+  var kilderBrukt = (c.manus_kilder_brukt || []).slice();
+  var tidligereDekning = c.manus_tidligere_dekning || null;
+  var nyeKilder = 0;
+  (fields.brukte_eksterne || []).forEach(function (nr) {
+    var k = research && research.kilder.filter(function (x) { return x.nr === nr; })[0];
+    if (!k || kilderBrukt.some(function (x) { return x.url === k.url; })) return;
+    var typeNavn = { primaerkilde: "Primærkilde", nyhetsomtale: "Omtale", bakgrunn: "Bakgrunn", tidligere_dekning: "Dronemagasinet — tidligere dekning" };
+    kilderBrukt.push({ navn: typeNavn[k.type] ? typeNavn[k.type] + (k.egen ? "" : " — " + k.kilde_navn) : k.kilde_navn, tittel: k.tittel, url: k.url, url_virker: true });
+    if (k.egen && !tidligereDekning) tidligereDekning = { tittel: k.tittel, url: k.url };
+    nyeKilder++;
+  });
+
+  var capFields = await norwegianCaptions(openaiKey, { alt_tekst_bilde: fields.alt_tekst_bilde, hovedtekst_avsnitt: fields.hovedtekst_avsnitt });
+  fields.alt_tekst_bilde = capFields.alt_tekst_bilde;
+  fields.hovedtekst_avsnitt = capFields.hovedtekst_avsnitt;
+
   var doc = new Document({ sections: [{ children: await buildDocxParagraphs({
-    tittel: fields.tittel, ingress: fields.ingress, hovedtekst_avsnitt: fields.hovedtekst_avsnitt,
-    alt_tekst_bilde: fields.alt_tekst_bilde, fotoKreditering: c.manus_foto || ""
+    emnefelt: c.manus_emnefelt || [], tittel: fields.tittel, ingress: fields.ingress, hovedtekst_avsnitt: fields.hovedtekst_avsnitt,
+    alt_tekst_bilde: fields.alt_tekst_bilde, fotoKreditering: c.manus_foto || "",
+    titler_alternativer: c.manus_titler_alternativer || [], kilder_brukt: kilderBrukt, tidligere_dekning: tidligereDekning,
+    kontrollpunkter: c.manus_kontrollpunkter || []
   }, image) }] });
   var buffer = await Packer.toBuffer(doc);
   var path = c.id + "/" + Date.now() + ".docx";
@@ -106,7 +144,7 @@ async function reviseManuscript(supabase, openaiKey, caseId, aiNotat) {
   });
   if (uploadRes.error) throw new Error("Kunne ikke laste opp revidert manus: " + uploadRes.error.message);
 
-  var historikkNote = "Manus revidert via AI-notat: «" + note.slice(0, 120) + (note.length > 120 ? "…" : "") + "» — " + fields.hva_ble_endret + bildeMerknad +
+  var historikkNote = "Manus revidert via AI-notat: «" + note.slice(0, 120) + (note.length > 120 ? "…" : "") + "» — " + fields.hva_ble_endret + bildeMerknad + (nyeKilder ? " — " + nyeKilder + " ny(e) kilde(r) lagt til i kildelisten" : "") +
     (fields.usikkerhetsnotat ? " — ⚠️ " + fields.usikkerhetsnotat : "");
   var historikk = [{ ts: new Date().toISOString(), text: historikkNote }].concat(c.historikk || []);
 
@@ -119,6 +157,8 @@ async function reviseManuscript(supabase, openaiKey, caseId, aiNotat) {
     manus_alt_tekst: fields.alt_tekst_bilde || "",
     manus_bilde_url: newImageUrl,
     manus_ai_notat: note,
+    manus_kilder_brukt: kilderBrukt,
+    manus_tidligere_dekning: tidligereDekning,
     historikk: historikk
   }).eq("id", c.id);
   if (updateRes.error) throw new Error(updateRes.error.message);

@@ -28,6 +28,7 @@ const { fetchInfoStyleExamples, recordFailureOn, MAX_ANTALL } = require("./conte
 const { STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, todayLine, cleanCredit, norwegianCaptions } = require("./styleGuide.js");
 const { extractPdfImages, extractDocxImages } = require("./docImages.js");
 const { pickArticleImages } = require("./articleImages.js");
+const { classifyImage } = require("./imageCheck.js");
 const { deepResearch } = require("./materialResearch.js");
 
 const TOTAL_TEXT_BUDGET = 250000; // tegn på tvers av alle dokumenter (~65k tokens)
@@ -210,7 +211,7 @@ async function generateCasesFromMaterial(supabase, openaiKey, opts) {
       linkTekster.push({ url: opts.links[l], navn: art.siteName || opts.links[l], tittel: art.title || "", tekst: art.text });
       linkKilder.push(opts.links[l]);
       try {
-        var lb = await pickArticleImages(opts.links[l], art.html, 1);
+        var lb = await pickArticleImages(opts.links[l], art.html, 1, { verify: async function (img) { return (await classifyImage(openaiKey, img, { tittel: String(opts.beskrivelse || "").slice(0, 140) })).ok; } });
         lb.forEach(function (img) { bibliotek.push({ buffer: img.buffer, type: img.type, width: img.width, height: img.height, kilde: art.siteName || opts.links[l], side: null, originalUrl: img.url, bildeAlt: img.caption || img.alt || "" }); });
       } catch (e) {}
     } else {

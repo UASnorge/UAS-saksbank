@@ -18,6 +18,7 @@
 const { Document, Packer, Paragraph, TextRun, ImageRun, ExternalHyperlink } = require("docx");
 const { STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, todayLine, hostCredit, cleanCredit, norwegianCaptions } = require("./styleGuide.js");
 const { pickArticleImages } = require("./articleImages.js");
+const { classifyImage } = require("./imageCheck.js");
 
 const MODEL = "gpt-5.5"; // brukt av lib/reviseManuscript.js (rask tekstrevidering, ikke ny research)
 const MAX_SOURCE_CHARS = 6000;
@@ -585,7 +586,9 @@ async function generateManuscript(supabase, openaiKey, caseId) {
   // Hovedbilde: faktisk redaksjonelt bilde fra artikkelen (ikke logo/delingsgrafikk).
   let image = null;
   if (source.ok && source.html) {
-    const picked = await pickArticleImages(sourceUrl, source.html, 1);
+    const picked = await pickArticleImages(sourceUrl, source.html, 1, {
+      verify: async function (img) { return (await classifyImage(openaiKey, img, { tittel: c.title })).ok; }
+    });
     if (picked.length) image = picked[0];
   }
   // Foto-kreditering = KUN hvor bildet er hentet fra (f.eks. «polisen.se»),
@@ -817,5 +820,5 @@ async function generateManuscriptFromTranscript(supabase, openaiKey, caseId, tra
 // for å duplisere den samme, allerede testede logikken.
 module.exports = {
   generateManuscript, generateManuscriptFromTranscript, fetchSourceArticle, fetchImage, buildDocxParagraphs,
-  callOpenAI, scaleToMaxWidth, HOUSE_STYLE, MODEL, IMAGE_MARKER_RE, parseImageMarker, restrictLinksToKnown, stripCitationsFromFields, isOwnUrl, ensureOwnLinks
+  callOpenAI, scaleToMaxWidth, HOUSE_STYLE, MODEL, IMAGE_MARKER_RE, parseImageMarker, restrictLinksToKnown, stripCitationsFromFields, isOwnUrl, ensureOwnLinks, researchBlock, applyResearchToFields, logProgress
 };
