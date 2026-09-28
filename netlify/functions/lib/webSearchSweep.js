@@ -55,7 +55,24 @@ function sleep(ms) {
 // nettsted-kilder i praksis (oppdaget live under feilsøking 2026-09-23).
 var SEARCH_CALL_DELAY_MS = 3000;
 
+// Fjerner sporingsparametere og fragment, slik at samme artikkel med og uten
+// «?utm_source=…»/«?trk» ikke blir to saker (observert: samme Forsvaret-
+// artikkel dukket opp med og uten ?trk i samme sveip).
+function normalizeHitUrl(u) {
+  try {
+    var url = new URL(u);
+    url.hash = "";
+    Array.from(url.searchParams.keys()).forEach(function (k) {
+      if (/^(utm_|trk$|fbclid$|gclid$|mc_|ref$|source$)/i.test(k)) url.searchParams.delete(k);
+    });
+    return url.toString().replace(/\/$/, "");
+  } catch (e) {
+    return u;
+  }
+}
+
 async function createCaseFromHit(supabase, openaiKey, hit, extraContext, kildeLabel, report) {
+  if (hit && hit.url) hit.url = normalizeHitUrl(hit.url);
   if (!hit.url || !/^https?:\/\//i.test(hit.url)) return;
   if (isOwnDomain(hit.url)) return; // egen, allerede publisert sak — ikke en ny "idé"
 
@@ -67,7 +84,12 @@ async function createCaseFromHit(supabase, openaiKey, hit, extraContext, kildeLa
   // begrunnelse beskriver for bilde-URL-er). En sak bygget på en lenke som
   // ikke faktisk finnes, er verre enn ingen sak.
   var urlCheck = await verifyUrl(hit.url);
-  if (!urlCheck.ok) {
+  // 401/403/429 betyr at siden FINNES men blokkerer roboter (f.eks. ericsson.com
+  // gir 403 til alle ikke-nettlesere) — en oppdiktet URL gir 404, ikke 403.
+  // Å forkaste disse ville kastet ekte artikler bare fordi nettstedet er
+  // strengt mot automatiske kall.
+  var blockedButExists = urlCheck.status === 401 || urlCheck.status === 403 || urlCheck.status === 429;
+  if (!urlCheck.ok && !blockedButExists) {
     var seenBad = await supabase.from("seen_urls").insert({ url: hit.url });
     if (!seenBad.error) report.hoppetOverUrlFeilet++;
     return;
