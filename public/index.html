@@ -1370,6 +1370,7 @@
       newCaseTabBtn("opplasting", "📄 Last opp manus") +
       newCaseTabBtn("lydopptak", "🎙️ Lydopptak") +
       newCaseTabBtn("skriv", "✍️ Skriv selv") +
+      newCaseTabBtn("materiale", "📎 Fra dokument/lenker") +
       newCaseTabBtn("bestill", "🎯 Bestill innhold") +
     "</div>";
 
@@ -1393,6 +1394,18 @@
         '<div class="field"><label for="nc-audio-notat">AI-notat (valgfritt)</label><textarea id="nc-audio-notat" rows="3" placeholder="Vinkling, hva saken skal handle om, ønsket lengde, e.l."></textarea></div>' +
         '<p class="helper">AI transkriberer opptaket og skriver et redaksjonelt førsteutkast basert på det som faktisk sies — du havner rett i «I arbeid» og ser fremdriften i historikken mens det jobbes.</p>' +
         '<button class="btn btn-primary" type="button" data-action="submit-new-case-audio"' + (busy ? " disabled" : "") + ">" + (busy ? "Laster opp …" : "Last opp og opprett sak") + "</button>";
+    } else if (tab === "materiale") {
+      bodyHtml =
+        '<div class="field"><label for="nc-mat-files">Dokumenter (PDF, Word .docx eller tekst — kan velge flere samtidig)</label><input id="nc-mat-files" type="file" accept=".pdf,.docx,.txt,.md,application/pdf" multiple /></div>' +
+        '<div class="field"><label for="nc-mat-links">Lenker (én per linje, kan brukes sammen med — eller i stedet for — dokumenter)</label><textarea id="nc-mat-links" rows="3" placeholder="https://…&#10;https://…"></textarea></div>' +
+        '<div class="field"><label for="nc-mat-beskrivelse">Forklar hva materialet inneholder og hva sakene skal inneholde *</label><textarea id="nc-mat-beskrivelse" rows="5" placeholder="F.eks. Dokument 1 er høringsnotatet fra Luftfartstilsynet om … Lag én sak om hva som foreslås og hva det betyr for droneoperatører, og én kort sak om fristen og hvordan man svarer. Lenken er bare bakgrunn."></textarea></div>' +
+        '<div class="field-row">' +
+          '<div class="field"><label for="nc-mat-antall">Antall saker (1–8)</label><input id="nc-mat-antall" type="number" min="1" max="8" value="1" /></div>' +
+          '<div class="field"><label for="nc-mat-type">Type</label><select id="nc-mat-type"><option value="redaksjonell">Dronemagasin (nyhetssak)</option><option value="content">INFO (uasnorway.no-stil)</option></select></div>' +
+        "</div>" +
+        '<div class="field"><label for="nc-mat-site">Nettsted</label><select id="nc-mat-site">' + optionsFor(SITE_LABELS, "dronemag.no") + "</select></div>" +
+        '<p class="helper">AI leser alt materialet samtidig (også skannede PDF-er) og skriver et førsteutkast per sak i «I arbeid» (ca. 30–90 sekunder). Bruker KUN det som faktisk står i materialet — hull, uklarheter og ting som må sjekkes mot originalen listes som kontrollpunkter. Maks 10 filer, 25 MB per fil, 45 MB totalt.</p>' +
+        '<button class="btn btn-primary" type="button" data-action="submit-new-case-material"' + (busy ? " disabled" : "") + ">" + (busy ? "Laster opp og bestiller …" : "Lag saker fra materialet") + "</button>";
     } else if (tab === "bestill") {
       var idagStr = new Date().toISOString().slice(0, 10);
       var eventOptions = '<option value="">(ingen bestemt arrangement)</option>' + state.events.slice().sort(function (a, b) {
@@ -2035,6 +2048,7 @@
       case "close-modal": case "close-modal-bg": state.ui.modal = null; state.ui.activeCaseId = null; render(); break;
       case "submit-new-tip": submitNewTip(); break;
       case "submit-new-content-batch": submitNewContentBatch(); break;
+      case "submit-new-case-material": submitNewCaseFromMaterial(); break;
       case "submit-new-case-link": submitNewCaseFromLink(); break;
       case "submit-new-case-upload": submitNewCaseFromUpload(); break;
       case "submit-new-case-audio": submitNewCaseFromAudio(); break;
@@ -2151,6 +2165,83 @@
   // og brukeren havner rett inne i den — transkribering/manusgenerering
   // skjer i en Background Function og dukker opp live via historikken
   // (Supabase Realtime, allerede koblet opp) når den er ferdig.
+  // Lagringsnøkler tåler ikke alle tegn — gjør filnavnet trygt, men fortsatt
+  // lesbart (æøå → ae/o/aa). Serveren viser navnet tilbake i historikken.
+  function safeStorageName(name) {
+    return String(name || "fil").replace(/[æÆ]/g, "ae").replace(/[øØ]/g, "o").replace(/[åÅ]/g, "aa")
+      .replace(/[^A-Za-z0-9._-]+/g, "_").slice(-80) || "fil";
+  }
+
+  // "Fra dokument/lenker": laster dokumentene rett til lagring, oppretter N
+  // plassholder-saker og ber en Background Function skrive dem
+  // (lib/documentCases.js) ut fra dokumentene, lenkene og fritekst-forklaringen.
+  async function submitNewCaseFromMaterial() {
+    var filesInput = document.getElementById("nc-mat-files");
+    var files = filesInput && filesInput.files ? Array.prototype.slice.call(filesInput.files) : [];
+    var links = (document.getElementById("nc-mat-links").value || "").split(/\s+/).map(function (x) { return x.trim(); }).filter(Boolean);
+    var beskrivelse = (document.getElementById("nc-mat-beskrivelse").value || "").trim();
+    var antall = parseInt(document.getElementById("nc-mat-antall").value, 10);
+    if (isNaN(antall) || antall < 1) antall = 1;
+    if (antall > 8) antall = 8;
+    var sakstype = document.getElementById("nc-mat-type").value === "content" ? "content" : "redaksjonell";
+    var nettsted = document.getElementById("nc-mat-site").value || "dronemag.no";
+
+    if (!files.length && !links.length) { showToast("Last opp minst ett dokument eller legg inn minst én lenke"); return; }
+    if (!beskrivelse) { document.getElementById("nc-mat-beskrivelse").focus(); showToast("Forklar hva materialet inneholder og hva sakene skal inneholde"); return; }
+    var badLink = links.find(function (u) { return !/^https?:\/\//i.test(u); });
+    if (badLink) { showToast('Lenken "' + badLink + '" må starte med http:// eller https://'); return; }
+    if (files.length > 10) { showToast("Maks 10 filer om gangen"); return; }
+    var tooBig = files.find(function (f) { return f.size > 25 * 1024 * 1024; });
+    if (tooBig) { showToast('Filen "' + tooBig.name + '" er for stor (maks 25 MB per fil)'); return; }
+    if (files.reduce(function (n, f) { return n + f.size; }, 0) > 45 * 1024 * 1024) { showToast("Filene er til sammen for store (maks 45 MB totalt)"); return; }
+    var badType = files.find(function (f) { return !/\.(pdf|docx|txt|md)$/i.test(f.name); });
+    if (badType) { showToast('«' + badType.name + '» støttes ikke — bruk PDF, Word (.docx) eller tekst'); return; }
+    if (!state.session) { showToast("Du må være innlogget"); return; }
+
+    state.ui.newCaseBusy = true;
+    render();
+    try {
+      var stamp = Date.now();
+      var docPaths = [];
+      for (var f = 0; f < files.length; f++) {
+        var path = "dokumenter/" + stamp + "-" + (f + 1) + "-" + safeStorageName(files[f].name);
+        var up = await supabase.storage.from("manus").upload(path, files[f], { contentType: files[f].type || "application/octet-stream" });
+        if (up.error) { showToast('Kunne ikke laste opp "' + files[f].name + '": ' + up.error.message); return; }
+        docPaths.push(path);
+      }
+
+      var kildeTekst = files.length + " dokument(er)" + (links.length ? " og " + links.length + " lenke(r)" : "");
+      var caseIds = [];
+      for (var i = 1; i <= antall; i++) {
+        var created = await createCase({
+          title: "⏳ Sak " + i + " av " + antall + " fra " + kildeTekst + " — produseres …",
+          sakstype: sakstype, status: "i-arbeid", nettsted: nettsted,
+          wp_kategori: sakstype === "content" ? ["INFO"] : [],
+          neste_handling: "Kontroller mot originalmaterialet og gå gjennom kontrollpunktene før publisering",
+          kilder: links,
+          historikk: [{ ts: nowIso(), text: "📎 Bestilt fra " + kildeTekst + " (" + i + " av " + antall + "): " + beskrivelse.slice(0, 300) }]
+        });
+        if (!created) { showToast("Avbrøt bestillingen — kunne ikke opprette sak " + i); break; }
+        caseIds.push(created.id);
+      }
+      if (!caseIds.length) return;
+
+      fetch("/.netlify/functions/generate-cases-from-material-background", {
+        method: "POST", headers: authHeader(),
+        body: JSON.stringify({ caseIds: caseIds, docPaths: docPaths, links: links, beskrivelse: beskrivelse, sakstype: sakstype })
+      }).catch(function () {});
+
+      state.ui.modal = null;
+      await refreshAndRender();
+      showToast(caseIds.length + " sak(er) bestilt — de fylles ut i «I arbeid» om ca. 30–90 sekunder");
+    } catch (err) {
+      showToast("Kunne ikke lage saker fra materialet: " + err.message);
+    } finally {
+      state.ui.newCaseBusy = false;
+      render();
+    }
+  }
+
   // "Bestill innhold": oppretter N plassholder-saker (så fremdriften synes
   // med en gang i «I arbeid») og ber en Background Function fylle dem med
   // AI-skrevne INFO-saker i uasnorway.no sin stil (lib/contentBatch.js).
