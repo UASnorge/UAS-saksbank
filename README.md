@@ -211,14 +211,18 @@ Rammer kun *nye* brukere (en e-post som ikke finnes i `auth.users` fra før) —
 
 ## Steg 17 — Generelt websøk: bredere enn den faste RSS-listen
 
-RSS-kildelisten (Steg 6) fanger kun opp det de faste kildene faktisk publiserer selv. For å dekke resten — generelle norske nettsteder uten (eller med ukjent) RSS, navngitte selskaper dere vil følge med på, og et bevisst mer sivilt fokus i tillegg til forsvar — kjører appen nå et eget websøk-sveip én gang i døgnet (`web-search-trigger.js` kl. 05:00 UTC → `web-search-background.js`, samme to-funksjons-mønster som kildekontrollen i Steg 14, siden ekte websøk-kall er for trege for en vanlig 30-sekunders scheduled function).
+RSS-kildelisten (Steg 6) fanger kun opp det de faste kildene faktisk publiserer selv. For å dekke resten — generelle norske nettsteder uten (eller med ukjent) RSS, navngitte selskaper dere vil følge med på, og et bevisst mer sivilt fokus i tillegg til forsvar — kjører appen nå et eget websøk-sveip **to ganger i døgnet** (`web-search-trigger.js` kl. 05:00 og 11:00 UTC, dvs. ca. 06/07 og 12/13 norsk tid → `web-search-background.js`, samme to-funksjons-mønster som kildekontrollen i Steg 14, siden ekte websøk-kall er for trege for en vanlig 30-sekunders scheduled function).
 
-Bruker `gpt-5-search-api` (samme søkekapable AI-verktøy som kildevurdering/bilderesearch) til flere ting, alle med samme "grunnregel" som resten av appen — modellen skal ALDRI dikte opp en URL, bare rapportere ekte treff funnet ved faktisk søk. **Oppdatert etter en gjennomgang av de 100 sist faktisk publiserte dronemag.no-sakene** (viste at ~90 % er norske/nordiske, og at politi/sikkerhet er den største kategorien — se v12/Steg 19) — fire separate, smale søk i stedet for ett bredt:
+Bruker `gpt-5-search-api` (samme søkekapable AI-verktøy som kildevurdering/bilderesearch) til flere ting, alle med samme "grunnregel" som resten av appen — modellen skal ALDRI dikte opp en URL, bare rapportere ekte treff funnet ved faktisk søk. **Oppdatert etter en gjennomgang av de 100 sist faktisk publiserte dronemag.no-sakene** (viste at ~90 % er norske/nordiske, og at politi/sikkerhet er den største kategorien — se v12/Steg 19) — fem separate, smale søk i stedet for ett bredt (pluss «bransje/industri» som nr. 5 under):
 
 1. **Sivilt/kommersielt** (`searchCivilianDroneNews`) — landbruksdroner, dronelevering, film/foto, kartlegging/inspeksjon, norske droneselskaper. KUN norsk/nordisk, med sjeldne unntak for store internasjonale produktnyheter.
 2. **Politi/sikkerhet** (`searchPolicySecurityDroneNews`) — droneforbud ved arrangementer, politiets egen dronebruk, PST, ulovlig flyging, luftromskrenkelser. Norsk/nordisk. Den STØRSTE kategorien i praksis.
 3. **Regelverk/infrastruktur** (`searchNordicRegulatoryNews`) — Luftfartstilsynet, EASA, Avinor, registreringsplikt, høringer. Norsk/nordisk.
 4. **Forsvar/militært** (`searchDefenseDroneNews`) — holdes MEGET smalt (maks 2 treff/dag) og KUN genuint vesentlige norske/nordiske saker, aldri generell internasjonal krigsdekning — se v12/Steg 19: "Dronemagasinet er ikke et forsvarsmagasin".
+
+5. **Bransje/industri** (`searchIndustryDroneNews`) — norsk fagpresse (elektro/energi, landbruk, geodata, bygg/anlegg, maritim, forsikring) med profesjonell dronebruk; 7-dagers vindu siden nisjepresse publiserer sjeldnere.
+
+**Kvalitetssikring av hvert treff før det blir en sak:** URL-en HTTP-verifiseres (`lib/linkCheck.js`), treff som peker på dronemag.no/uasnorway.no forkastes, publiseringsdato leses fra selve siden (`lib/pageDate.js` — mer pålitelig enn modellens dato), og treff publisert før **startdatoen 01.01.2026** (`CASE_START_DATE` i `lib/ageGate.js`, gjelder også RSS) blir aldri en ny sak — eldre kilder kan fortsatt brukes som research i et manus. Søkekall gjentas med backoff ved rate limit (429) eller tomt svar.
 
 I tillegg, uavhengig av kildeliste:
 - **Nettsted-kilder uten RSS** — i «Kilder»-panelet limer dere inn en helt vanlig nettside-URL (f.eks. `https://www.aftenposten.no/`) akkurat som en RSS-lenke. Har den ingen RSS-feed, avvises den IKKE (den lagres som en `type='website'`-kilde og overvåkes med et nettstedbegrenset søk i stedet for RSS-parsing). Valgfritt, ikke en forutsetning for at websøket skal fungere.
@@ -249,6 +253,24 @@ Etter en gjennomgang av de 100 sist faktisk publiserte dronemag.no-sakene (se hi
 **2. Land-merking.** AI-vurderingen (samme kall som tema/sakstype, ingen ekstra kostnad) setter nå også et land-merke — Norge/Danmark/Sverige/Finland/Internasjonalt — vist som en egen chip på hvert kort, og filtrerbart i filter-panelet (`supabase/schema.sql` v13).
 
 **3. Arkivet er synlig.** «Slett» på en idé under «Idé» har lenge arkivert i stedet for å slette permanent (se `archiveCase` i frontend) — men det fantes ingen god måte å faktisk se arkivet igjen (kun nederst i listevisningen). Ny **🗄️ Arkiv**-knapp i toppmenyen åpner en dedikert oversikt over arkiverte/avviste saker, med mulighet til å åpne, gjenopprette til «Idé», eller slette permanent (ingen vei tilbake etter det).
+
+## Steg 20 — Skrivestil, dyp research, bilder og nye «+ Ny sak»-faner
+
+**Felles skrivestil for alle AI-skrevne saker** (`lib/styleGuide.js`): nyhetsjournalistiske håndverksregler i Aftenposten-tradisjonen (tittel med aktivt verb og riktig status, ingress etter nyhetstrekanten, første avsnitt uten «I søknaden…», utvalg fremfor gjengivelse, 250–450 ord, informative mellomtitler, ingen spekulasjon/meta-kommentarer, dagens dato slik at frister omtales i riktig tid) + **Dronemagasinets egen stemme** hentet live fra nyere saker av de faste journalistene på dronemag.no (ikke AI-genererte). Etter skrivingen leser en **redaktørrunde** utkastet på nytt og språkvasker det — med sikkerhetsnett som forkaster redigeringen hvis den endrer/tilfører tall, mister nøkkeltall i tittel/ingress, kutter for mye, eller endrer sitater/bildemarkører (grunnen står i sakens historikk). Brukes av lenke-, lydopptak-, dokument- og bestillingsflytene.
+
+**Bilder:** hovedbildet hentes nå fra *selve artikkelen* (`lib/articleImages.js`: bilder i `<article>`/`<figure>` med bildetekst prioriteres, ekte nedlasting og kontroll av mål/format) — aldri en logo, annonse, delingsikon eller standard delingsbilde (`lib/imageUtils.js` har mønster-sperren, samme som i bilderesearch). Finnes ingen egnet, sier saken det (bruk «Finn bilder», som ved behov genererer AI-illustrasjoner).
+
+**«📎 Fra dokument/lenker»** (ny fane under «+ Ny sak"): last opp flere PDF/Word/tekst samtidig og/eller lim inn flere lenker, forklar hva materialet inneholder og hva sakene skal inneholde, velg antall saker (1–8). Flyten (`lib/documentCases.js`, fremdrift logges i sakenes historikk):
+1. Leser materialet (PDF-tekst med `pdf-parse`, skannede PDF-er leses visuelt av modellen) og **henter ut bilder** fra PDF/Word (`lib/docImages.js`, ren JS via `pdf-lib`: JPEG direkte, Flate/PNG pakkes ut; logoer/gjentatte/små bilder filtreres bort).
+2. **Dyp research på nettet** (`lib/materialResearch.js`, tre søkerunder): avsenderens egen saksside (frist, saksnummer, status), primærkilder/regelverk/bakgrunn, og omtale + tidligere dekning i Dronemagasinet/UAS Norway. Hver lenke HTTP-verifiseres, og kildens faktiske tekst (relevante utdrag) hentes og gis til skribenten — som kun får bruke det utdragene sier.
+3. Ett samlet AI-kall skriver alle sakene (egen vinkel per sak), ser bildene og velger **hovedbilde + inntil 2 støttebilder med bildetekst** (kun det som faktisk vises/står i figurteksten, med kreditering) og hvilke eksterne kilder som er brukt.
+4. Redaktørrunde, lagring. **Kildelisten på saken** viser opplastet dokument, lenker og de eksterne kildene som faktisk ble brukt; bilder/eksterne kilder får egne kontrollpunkter (bruksrett, kontroll mot original).
+
+**«🎯 Bestill innhold»**: AI produserer flere INFO-saker (f.eks. 4 saker som selger et arrangement) i uasnorway.no sin stil, lært live fra de nyeste INFO-sakene (`lib/contentBatch.js`); ingen oppdiktede priser/frister — manglende opplysninger blir `[PLASSHOLDER]` + kontrollpunkt.
+
+**På forsiden:** nye saker (siste 48 t) ligger alltid øverst i «Idé» med grønn «Ny»-merking, uavhengig av score, og hvert idékort viser når saken ble publisert hos kilden (eller «Dato ukjent»).
+
+Ny avhengighet: `pdf-parse`, `pdf-lib`. `pdf-parse` lastes med `external_node_modules` i `netlify.toml` (den laster PDF-motoren med et dynamisk require som esbuild ellers ikke tar med — ville feilet i produksjon, ikke lokalt). Ingen nye miljøvariabler eller databasemigreringer.
 
 ## Prosjektstruktur
 

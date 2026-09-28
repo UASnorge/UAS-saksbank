@@ -17,6 +17,7 @@
 
 const { Document, Packer } = require("docx");
 const { callOpenAI, fetchSourceArticle, buildDocxParagraphs, MODEL } = require("./manuscript.js");
+const { todayLine } = require("./styleGuide.js");
 
 const MAX_EXAMPLES = 8;
 const MAX_EXAMPLE_CHARS = 1400;
@@ -132,6 +133,7 @@ async function generateContentBatch(supabase, openaiKey, opts) {
 
   var ev = opts.event;
   var userPrompt =
+    todayLine() + "\n\n" +
     "OPPDRAG FRA REDAKSJONEN:\n" + opts.oppdrag + "\n\n" +
     "ANTALL SAKER SOM SKAL PRODUSERES: " + antall + "\n\n" +
     (ev ? "ARRANGEMENT:\n- Navn: " + ev.title + "\n- Type: " + ev.event_type + "\n- Sted: " + ev.location + "\n- Startdato: " + ev.starts_on + "\n- Antall dager: " + ev.duration_days + (ev.url ? "\n- Nettside: " + ev.url : "") + "\n\n" : "") +

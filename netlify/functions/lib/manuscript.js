@@ -17,6 +17,8 @@
 
 const { Document, Packer, Paragraph, TextRun, ImageRun } = require("docx");
 const { verifyUrls } = require("./linkCheck.js");
+const { STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, todayLine } = require("./styleGuide.js");
+const { pickArticleImages } = require("./articleImages.js");
 
 const MODEL = "gpt-5.5"; // brukt av lib/reviseManuscript.js (rask tekstrevidering, ikke ny research)
 const RESEARCH_MODEL = "gpt-5-search-api"; // brukt her, til selve førsteutkastet — ekte websøk
@@ -28,7 +30,9 @@ konkrete avsnitt. Bruk aktiv form, unngå synsing. Oppgi alltid hvor informasjon
 (f.eks. "ifølge X" eller "skriver Y"). Basér deg UTELUKKENDE på fakta som faktisk står i kildeteksten du får
 oppgitt under — finn ALDRI på detaljer, tall, sitater eller navn som ikke står der. Er noe uklart eller mangler
 i kildeteksten, skriv det tydelig i feltet "usikkerhetsnotat" i stedet for å gjette i selve teksten.
-Fet skrift ("**tekst**") kun unntaksvis for noe genuint viktig — aldri som standard virkemiddel i vanlige avsnitt.`;
+Fet skrift ("**tekst**") kun unntaksvis for noe genuint viktig — aldri som standard virkemiddel i vanlige avsnitt.
+
+${STYLE_PRINCIPLES}`;
 
 // Systemprompt for selve FØRSTEUTKASTET — vesentlig mer krevende enn
 // HOUSE_STYLE over, fordi dette er der research faktisk skal skje.
@@ -64,7 +68,11 @@ VIKTIG OM KILDEHENVISNING I TEKSTEN: sett ALDRI inn klikkbare lenker, parenteser
 
 9. KONTROLLPUNKTER. List konkrete, SAKSSPESIFIKKE åpne spørsmål redaksjonen bør avklare før publisering (ikke generiske floskler) — inkluder relevante påminnelser om god praksis der de faktisk er aktuelle for denne saken (presis tittel, riktig sitatpraksis/kildehenvisning, bekreftet bildebruk/kreditering, om en egen kommentar fra en relevant part bør innhentes).
 
-GRUNNREGEL, som i alt annet søkebasert arbeid her: skriv ALDRI noe som om det er bekreftet uten at du faktisk har funnet det. Er noe usikkert, si det — ikke fyll hull med antakelser.`;
+GRUNNREGEL, som i alt annet søkebasert arbeid her: skriv ALDRI noe som om det er bekreftet uten at du faktisk har funnet det. Er noe usikkert, si det — ikke fyll hull med antakelser.
+
+${STYLE_PRINCIPLES}
+
+(Skrivestilen over gjelder selve språket og oppbyggingen. Reglene om kildenavngivning, sitatattribusjon og ærlighet om usikkerhet lenger opp går alltid foran.)`;
 
 const MANUSCRIPT_SCHEMA = {
   name: "manus",
@@ -162,6 +170,19 @@ function extractTitle(html) {
   return m ? decodeHtmlEntities(m[1]).trim() : null;
 }
 
+// Domenenavn → mediets vanlige navn i løpende tekst («www.elektro247.no» →
+// «Elektro247», «nrk.no» → «NRK»). Brukes kun når siden ikke oppgir
+// og:site_name selv.
+var KJENTE_MEDIER = { nrk: "NRK", e24: "E24", vg: "VG", dn: "DN", tu: "Teknisk Ukeblad", tv2: "TV 2", dronemag: "Dronemagasinet",
+  aftenposten: "Aftenposten", kommunal: "Kommunal Rapport", ntb: "NTB", bt: "BT", adressa: "Adresseavisen", nettavisen: "Nettavisen", dronelife: "DroneLife" };
+function humanizeSiteName(host) {
+  var base = String(host || "").replace(/^www\./i, "").split(".")[0].toLowerCase();
+  if (!base) return host;
+  if (KJENTE_MEDIER[base]) return KJENTE_MEDIER[base];
+  if (base.length <= 3) return base.toUpperCase();
+  return base.charAt(0).toUpperCase() + base.slice(1);
+}
+
 async function fetchSourceArticle(url) {
   try {
     var res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; UASNorwaySaksbank/1.0)" } });
@@ -172,7 +193,7 @@ async function fetchSourceArticle(url) {
     if (siteName) siteName = decodeHtmlEntities(siteName).trim();
     var title = extractTitle(html);
     var text = stripHtml(html).slice(0, MAX_SOURCE_CHARS);
-    return { ok: true, text: text, imageUrl: ogImage, siteName: siteName || new URL(url).hostname, title: title };
+    return { ok: true, text: text, imageUrl: ogImage, siteName: siteName || humanizeSiteName(new URL(url).hostname), title: title, html: html };
   } catch (err) {
     return { ok: false, reason: err.message };
   }
@@ -459,7 +480,11 @@ async function generateManuscript(supabase, openaiKey, caseId) {
   const sourceUrl = c.kilder && c.kilder.length ? c.kilder[0] : null;
   const source = sourceUrl ? await fetchSourceArticle(sourceUrl) : { ok: false, reason: "ingen kildelenke registrert" };
 
+  const styleExamples = await fetchDronemagExamples();
+
   const userPrompt =
+    todayLine() + "\n\n" +
+    (styleExamples.length ? styleExamplesBlock(styleExamples) + "\n\n=====\n\n" : "") +
     "Sakstittel (arbeidstittel, du kan forbedre den): " + c.title + "\n" +
     "Tidligere AI-sammendrag: " + (c.oppsummering || "(ingen)") + "\n" +
     (eventContext ? eventContext + "\n" : "") +
@@ -478,9 +503,16 @@ async function generateManuscript(supabase, openaiKey, caseId) {
   }
   await verifySourceLinks(fields);
 
+  // Redaktørrunde: strammer tittel/ingress/rytme etter skriveprinsippene, uten å endre fakta.
+  const polished = await polishManuscript(openaiKey, MODEL, fields, styleExamples,
+    source.ok && source.siteName ? "- Kildemediet «" + source.siteName + "» skal fortsatt navngis i prosa i første avsnitt." : "");
+  Object.assign(fields, polished.fields);
+
+  // Hovedbilde: faktisk redaksjonelt bilde fra artikkelen (ikke logo/delingsgrafikk).
   let image = null;
-  if (source.ok && source.imageUrl) {
-    image = await fetchImage(source.imageUrl);
+  if (source.ok && source.html) {
+    const picked = await pickArticleImages(sourceUrl, source.html, 1);
+    if (picked.length) image = picked[0];
   }
   fields.fotoKreditering = image && source.siteName ? source.siteName + (fields.bilde_er_illustrasjon ? " (produsentbilde/illustrasjon)" : "") : "";
 
@@ -497,7 +529,8 @@ async function generateManuscript(supabase, openaiKey, caseId) {
   const historikkNote = "Manus generert (AI-førsteutkast med research)" +
     (fields.tidligere_dekning ? " — fant tidligere dekning: " + fields.tidligere_dekning.tittel : "") +
     (fields.usikkerhetsnotat ? " — ⚠️ " + fields.usikkerhetsnotat : "") +
-    (image ? "" : " — ingen bilde funnet automatisk, må settes inn manuelt") +
+    (image ? "" : " — ingen redaksjonelt bilde funnet i kildeartikkelen (logoer/delingsgrafikk er bevisst ikke brukt), bruk «Finn bilder»") +
+    (polished.polished ? " — språkvasket av redaktørrunden" : (polished.forkastet ? " — redaktørrunden ble forkastet (" + polished.forkastet + ")" : "")) +
     " — " + fields.kontrollpunkter.length + " kontrollpunkt(er) å avklare før publisering";
   const historikkEntries = [{ ts: new Date().toISOString(), text: historikkNote }];
 
@@ -524,7 +557,7 @@ async function generateManuscript(supabase, openaiKey, caseId) {
     manus_ingress: fields.ingress || "",
     manus_hovedtekst: fields.hovedtekst_avsnitt || [],
     manus_alt_tekst: fields.alt_tekst_bilde || "",
-    manus_bilde_url: (source.ok && source.imageUrl) ? source.imageUrl : "",
+    manus_bilde_url: image ? image.url : "",
     manus_foto: fields.fotoKreditering || "",
     manus_emnefelt: fields.emnefelt || [],
     manus_titler_alternativer: fields.titler_alternativer || [],
@@ -572,7 +605,11 @@ Gjør, i denne rekkefølgen:
 7. KONTROLLPUNKTER: konkrete, saksspesifikke ting redaksjonen bør avklare før publisering — inkluder ALLTID et punkt om å dobbeltsjekke sitater/attribusjon mot selve lydopptaket, i tillegg til andre sakspesifikke punkter.
 8. alt_tekst_bilde: sett til en kort, generisk beskrivelse basert på temaet (redaksjonen laster selv opp egne bilder til saken, ingen bilde-URL er hentet automatisk her) — bilde_er_illustrasjon settes til false.
 
-GRUNNREGEL, som ellers i redaksjonens verktøy: skriv ALDRI noe som om det er bekreftet uten at det faktisk sies i opptaket eller er funnet ved websøk. Er noe usikkert, si det i usikkerhetsnotat — ikke fyll hull med antakelser.`;
+GRUNNREGEL, som ellers i redaksjonens verktøy: skriv ALDRI noe som om det er bekreftet uten at det faktisk sies i opptaket eller er funnet ved websøk. Er noe usikkert, si det i usikkerhetsnotat — ikke fyll hull med antakelser.
+
+${STYLE_PRINCIPLES}
+
+(Skrivestilen over gjelder språket og oppbyggingen. Reglene om at alt må ha dekning i opptaket, og om sitatattribusjon, går alltid foran.)`;
 
 async function generateManuscriptFromTranscript(supabase, openaiKey, caseId, transcript, opts) {
   opts = opts || {};
@@ -583,7 +620,11 @@ async function generateManuscriptFromTranscript(supabase, openaiKey, caseId, tra
   var truncated = transcript.length > MAX_TRANSCRIPT_CHARS;
   var transcriptForPrompt = truncated ? transcript.slice(0, MAX_TRANSCRIPT_CHARS) : transcript;
 
+  const styleExamples = await fetchDronemagExamples();
+
   const userPrompt =
+    todayLine() + "\n\n" +
+    (styleExamples.length ? styleExamplesBlock(styleExamples) + "\n\n=====\n\n" : "") +
     "Arbeidstittel: " + c.title + "\n" +
     (opts.aiNotat ? "Redaksjonelt notat (vinkling/lengde/hva saken skal handle om): " + opts.aiNotat + "\n" : "") +
     "Destinasjonsnettsted: " + (c.nettsted || "dronemag.no") + " — søk primært i dronemag.no sitt arkiv etter tidligere dekning, også om saken skal publiseres på uasnorway.no.\n" +
@@ -594,6 +635,10 @@ async function generateManuscriptFromTranscript(supabase, openaiKey, caseId, tra
   const fields = await callOpenAI(openaiKey, RESEARCH_MODEL, TRANSCRIPT_SYSTEM_PROMPT, userPrompt, RESEARCH_SCHEMA);
   stripCitationsFromFields(fields);
   await verifySourceLinks(fields);
+
+  const polishedT = await polishManuscript(openaiKey, MODEL, fields, styleExamples,
+    "- Talerattribusjon i sitater må ikke endres eller «forbedres».");
+  Object.assign(fields, polishedT.fields);
 
   // Server-side garanti, samme prinsipp som ensureOriginalSourceListed/
   // ensureQuoteAttribution over — testing viste at "ALLTID"-instruksen i

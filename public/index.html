@@ -245,6 +245,8 @@
   .chip-urg-planlagt { background: var(--yellow-bg); color: var(--yellow-fg); }
   .chip-urg-tidlos { background: var(--green-bg); color: var(--green-fg); }
   .chip-rss { background: transparent; color: var(--text-muted); border: 1px dotted var(--border); }
+  .card-source-date { font-size: 0.72rem; color: var(--text-muted); display: flex; align-items: center; gap: 4px; margin-top: -2px; }
+  .card-source-date.unknown { font-style: italic; }
   .chip-new { background: var(--green-bg); color: var(--green-fg); border: 1px solid var(--green-fg); }
   .chip-tema { background: var(--bg-sunken); color: var(--text-muted); border: 1px solid var(--border); text-transform: none; }
 
@@ -960,6 +962,12 @@
   // "Idé"-kolonnen grupperes på måneden saken opprinnelig ble publisert hos
   // KILDEN (kildePublisertDato) — created_at (når den kom inn i saksbanken)
   // brukes kun som fallback for eldre saker/manuelle tips uten kjent kildedato.
+  function fmtSourceDate(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "ukjent";
+    var m = NB_MONTHS[d.getMonth()];
+    return d.getDate() + ". " + (m ? m.slice(0, 3) : "") + (m && m.length > 3 ? "." : "") + " " + d.getFullYear();
+  }
   function monthGroupKey(c) {
     var raw = c.kildePublisertDato || c.createdAt;
     if (!raw) return null;
@@ -1147,6 +1155,11 @@
           (ev ? '<span class="chip chip-event">📅 ' + escapeHtml(ev.title) + "</span>" : "") +
         "</div>" +
         '<div class="card-title">' + escapeHtml(c.title || "(uten tittel)") + "</div>" +
+        (c.status === "ide" || c.status === "godkjent"
+          ? (c.kildePublisertDato
+              ? '<div class="card-source-date" title="Når saken ble publisert hos kilden">📅 Publisert ' + escapeHtml(fmtSourceDate(c.kildePublisertDato)) + "</div>"
+              : '<div class="card-source-date unknown" title="Kilden oppgir ingen publiseringsdato — dette er datoen saken kom inn i saksbanken">📅 Dato ukjent (lagt inn ' + escapeHtml(fmtSourceDate(c.createdAt)) + ")</div>")
+          : "") +
         summaryToggleHtml +
         (sourceLinkHtml ? '<div>' + sourceLinkHtml + "</div>" : "") +
         '<div class="card-meta"><span class="avatar">' + initials(c.eier) + "</span><span>" + escapeHtml(c.eier || "Ingen eier") + '</span><span class="meta-due' + (overdue ? " overdue" : "") + '">· ' + due + "</span></div>" +
@@ -1404,7 +1417,7 @@
           '<div class="field"><label for="nc-mat-type">Type</label><select id="nc-mat-type"><option value="redaksjonell">Dronemagasin (nyhetssak)</option><option value="content">INFO (uasnorway.no-stil)</option></select></div>' +
         "</div>" +
         '<div class="field"><label for="nc-mat-site">Nettsted</label><select id="nc-mat-site">' + optionsFor(SITE_LABELS, "dronemag.no") + "</select></div>" +
-        '<p class="helper">AI leser alt materialet samtidig (også skannede PDF-er) og skriver et førsteutkast per sak i «I arbeid» (ca. 30–90 sekunder). Bruker KUN det som faktisk står i materialet — hull, uklarheter og ting som må sjekkes mot originalen listes som kontrollpunkter. Maks 10 filer, 25 MB per fil, 45 MB totalt.</p>' +
+        '<p class="helper">AI leser alt materialet (også skannede PDF-er), søker dypt på nettet etter eksterne kilder om akkurat dette materialet (regelverk, omtale, tidligere dekning — hver lenke kontrolleres), henter ut bilder fra dokumentene som hovedbilde og støttebilder med bildetekst, og skriver ett førsteutkast per sak i «I arbeid». Tar ca. 3–5 minutter — du ser fremdriften i sakenes historikk. Kildene AI faktisk brukte står i kildelisten på saken. Ting som må sjekkes mot originalen listes som kontrollpunkter. Maks 10 filer, 25 MB per fil, 45 MB totalt.</p>' +
         '<button class="btn btn-primary" type="button" data-action="submit-new-case-material"' + (busy ? " disabled" : "") + ">" + (busy ? "Laster opp og bestiller …" : "Lag saker fra materialet") + "</button>";
     } else if (tab === "bestill") {
       var idagStr = new Date().toISOString().slice(0, 10);
@@ -2233,7 +2246,7 @@
 
       state.ui.modal = null;
       await refreshAndRender();
-      showToast(caseIds.length + " sak(er) bestilt — de fylles ut i «I arbeid» om ca. 30–90 sekunder");
+      showToast(caseIds.length + " sak(er) bestilt — de fylles ut i «I arbeid» om ca. 3–5 minutter (følg fremdriften i historikken)");
     } catch (err) {
       showToast("Kunne ikke lage saker fra materialet: " + err.message);
     } finally {

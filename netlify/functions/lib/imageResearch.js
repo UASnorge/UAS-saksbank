@@ -25,6 +25,8 @@
 //      bruksrett vises aldri som grønn/klarert for et slikt alternativ.
 
 const { verifyUrl } = require("./linkCheck.js");
+const { pickArticleImages } = require("./articleImages.js");
+const { looksGenericUrl } = require("./imageUtils.js");
 
 const MODEL = "gpt-5-search-api";
 const IMAGE_GEN_MODEL = "gpt-image-1";
@@ -100,12 +102,19 @@ function extractMetaTag(html, prop) {
   return m ? m[1] : null;
 }
 
+// Finner et redaksjonelt bilde på kildesiden: bilder i selve artikkelen
+// først (lib/articleImages.js), og:image kun som siste utvei — og aldri en
+// logo/standard delingsgrafikk (samme tilbakemelding som førte til
+// er_logo-sperren under).
 async function tryExtractOgImage(pageUrl) {
   try {
     var res = await fetch(pageUrl, { headers: { "User-Agent": "Mozilla/5.0 (compatible; UASNorwaySaksbank/1.0)" } });
     if (!res.ok) return null;
     var html = await res.text();
-    return extractMetaTag(html, "og:image");
+    var picked = await pickArticleImages(pageUrl, html, 1);
+    if (picked.length) return picked[0].url;
+    var og = extractMetaTag(html, "og:image");
+    return og && !looksGenericUrl(og) ? og : null;
   } catch (err) {
     return null;
   }

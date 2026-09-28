@@ -9,6 +9,8 @@ const { checkRelevance } = require("./relevance.js");
 const { runTriage } = require("./triage.js");
 const { verifyUrl } = require("./linkCheck.js");
 const { isBeforeCaseStartDate } = require("./ageGate.js");
+const { extractPublishedDate, parseFlexibleDate } = require("./pageDate.js");
+const { fetchSourceArticle } = require("./manuscript.js");
 const {
   searchCivilianDroneNews, searchIndustryDroneNews, searchPolicySecurityDroneNews, searchNordicRegulatoryNews, searchDefenseDroneNews,
   searchWebsiteSource, searchKeywordMentions
@@ -33,9 +35,7 @@ var DAYS_BACK = 3; // sveipet kjører daglig — 3 dager gir litt overlapp/buffe
 var KEYWORD_BATCH_SIZE = 15; // hold hvert søkekall til en håndterlig liste
 
 function parseDate(s) {
-  if (!s) return null;
-  var d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
+  return parseFlexibleDate(s);
 }
 
 function chunk(arr, size) {
@@ -76,7 +76,14 @@ async function createCaseFromHit(supabase, openaiKey, hit, extraContext, kildeLa
   // Fast startdato (CASE_START_DATE, lib/ageGate.js) — kilder eldre enn dette
   // skal aldri bli en ny sak (innført etter tilbakemelding om at søket
   // plukket opp kildeartikler over 4 år gamle). Ukjent dato blokkeres ikke.
-  var publishedAt = parseDate(hit.publisert_dato);
+  // Selve siden er sannheten om publiseringsdato — søkemodellens dato mangler
+  // ofte eller er i et format Date() ikke tolker. Faller tilbake til modellens.
+  var pageDate = null;
+  try {
+    var page = await fetchSourceArticle(hit.url);
+    if (page.ok && page.html) pageDate = extractPublishedDate(page.html);
+  } catch (e) {}
+  var publishedAt = pageDate || parseDate(hit.publisert_dato);
   if (isBeforeCaseStartDate(publishedAt)) {
     var seenOld = await supabase.from("seen_urls").insert({ url: hit.url });
     if (!seenOld.error) report.hoppetOverForGammel++;

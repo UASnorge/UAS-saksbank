@@ -90,7 +90,9 @@ function sleep(ms) {
 var RATE_LIMIT_RETRIES = 3;
 var RATE_LIMIT_FALLBACK_MS = 10000;
 
-async function callSearch(openaiKey, systemPrompt, userPrompt) {
+// Felles kall mot søkemodellen (med retry/backoff på 429). Returnerer rå
+// respons-data. schema styrer strukturert output.
+async function searchRequest(openaiKey, systemPrompt, userPrompt, schema) {
   var lastErrText = "";
   for (var attempt = 0; attempt <= RATE_LIMIT_RETRIES; attempt++) {
     var res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -99,10 +101,10 @@ async function callSearch(openaiKey, systemPrompt, userPrompt) {
       body: JSON.stringify({
         model: SEARCH_MODEL,
         messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-        response_format: { type: "json_schema", json_schema: DISCOVERY_SCHEMA }
+        response_format: { type: "json_schema", json_schema: schema }
       })
     });
-    if (res.ok) return parseSearchResponse(await res.json());
+    if (res.ok) return await res.json();
 
     var errText = await res.text();
     lastErrText = errText.slice(0, 300);
@@ -118,6 +120,30 @@ async function callSearch(openaiKey, systemPrompt, userPrompt) {
     await sleep(Math.max(waitMs, RATE_LIMIT_FALLBACK_MS * (attempt + 1)));
   }
   throw new Error("OpenAI-feil (429): " + lastErrText);
+}
+
+async function callSearch(openaiKey, systemPrompt, userPrompt) {
+  return parseSearchResponse(await searchRequest(openaiKey, systemPrompt, userPrompt, DISCOVERY_SCHEMA));
+}
+
+// Generelt søkekall med eget skjema — brukt av dokument-/manusflytene til
+// dyp research. Returnerer det parsede JSON-objektet.
+async function callSearchJson(openaiKey, systemPrompt, userPrompt, schema) {
+  // Søkemodellen leverer av og til et tomt/avkuttet svar (observert: «Unexpected
+  // end of JSON input» midt i en dyp research-runde) — prøv igjen i stedet for
+  // å miste hele runden.
+  var lastErr;
+  for (var attempt = 0; attempt < 3; attempt++) {
+    var data = await searchRequest(openaiKey, systemPrompt, userPrompt, schema);
+    var choice = data && data.choices && data.choices[0];
+    var content = choice && choice.message && choice.message.content;
+    if (content) {
+      try { return JSON.parse(content); } catch (e) { lastErr = new Error("Ugyldig JSON fra søkemodellen (" + (choice.finish_reason || "?") + "): " + e.message); }
+    } else {
+      lastErr = new Error("Tomt svar fra søkemodellen (finish_reason: " + ((choice && choice.finish_reason) || "?") + ")");
+    }
+  }
+  throw lastErr;
 }
 
 function parseSearchResponse(data) {
@@ -262,5 +288,5 @@ async function searchKeywordMentions(openaiKey, keywords, daysBack) {
 
 module.exports = {
   searchCivilianDroneNews, searchIndustryDroneNews, searchPolicySecurityDroneNews, searchNordicRegulatoryNews, searchDefenseDroneNews,
-  searchWebsiteSource, searchKeywordMentions, stripInlineCitations, SEARCH_MODEL
+  searchWebsiteSource, searchKeywordMentions, stripInlineCitations, SEARCH_MODEL, callSearchJson
 };

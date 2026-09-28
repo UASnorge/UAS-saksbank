@@ -247,8 +247,10 @@ function paragraphsToHtml(paragraphs, imageUrlMap) {
       const imgMatch = p.match(WP_IMAGE_MARKER_RE);
       if (imgMatch) {
         const resolvedUrl = imageUrlMap[imgMatch[2]] || imgMatch[2];
-        return '<img src="' + escapeHtmlText(resolvedUrl) + '" alt="' + escapeHtmlText(imgMatch[1] || "") + '" />' +
-          (imgMatch[1] ? '<em>' + escapeHtmlText(imgMatch[1]) + '</em>' : "");
+        // Ekte <figure>/<figcaption> (WordPress' eget bildeblokk-format), så
+        // bildeteksten vises som bildetekst — ikke som løs kursiv tekst.
+        return '<figure class="wp-block-image"><img src="' + escapeHtmlText(resolvedUrl) + '" alt="' + escapeHtmlText(imgMatch[1] || "") + '" />' +
+          (imgMatch[1] ? '<figcaption class="wp-element-caption">' + escapeHtmlText(imgMatch[1]) + '</figcaption>' : "") + "</figure>";
       }
       return "<p>" + inlineMarkdownToHtml(p) + "</p>";
     })
