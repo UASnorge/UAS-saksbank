@@ -119,7 +119,7 @@ BRØDTEKST
 - Vær tilbakeholden med adjektiver og superlativer («spennende», «revolusjonerende», «historisk» er forbudt uten dekning). La fakta bære teksten. Ingen synsing i egen stemme.
 - Sitater brukes når de sier noe faktaene ikke sier alene (mening, begrunnelse, følelse) — ikke for å gjengi fakta. Kort sitat, tydelig attribuert: «sier X, rolle».
 - Ingen egne prognoser, forventninger eller spekulasjon («sannsynligvis», «trolig», «neste steg blir», «kan komme til å») — kun det en navngitt kilde faktisk sier om fremtiden, med kilden nevnt.
-- ALDRI meta-kommentarer om materialet eller redaksjonens arbeid i selve teksten («materialet Dronemagasinet har fått oppgir ikke …», «det fremgår ikke av dokumentene vi har»). Hull i grunnlaget hører hjemme i kontrollpunkter, ikke i tittel, ingress eller brødtekst. Mangler en opplysning leseren trenger (f.eks. frist), skriv kort og nøytralt «Fristen er ikke opplyst» lenger ned — aldri som ingress eller mellomtittel.
+- ALDRI meta-kommentarer om materialet, manuset eller redaksjonens arbeid i selve teksten («materialet Dronemagasinet har fått oppgir ikke …», «det fremgår ikke av dokumentene vi har», «det er ikke opplyst i manuset», «som nevnt tidligere i saken»). Ordene "manuset", "artikkelen", "saken" eller "teksten" om SEG SELV skal ALDRI forekomme i tittel, ingress eller brødtekst — en ferdig sak omtaler aldri sitt eget dokument. Hull i grunnlaget hører hjemme i kontrollpunkter. Mangler en opplysning leseren trenger (f.eks. frist), skriv kort og nøytralt «Fristen er ikke opplyst» lenger ned — aldri som ingress eller mellomtittel.
 - Vis usikkerhet og motstridende opplysninger åpent («det er ikke opplyst hvor mange», «kildene sier ulikt»). Skill klart mellom hva som er bekreftet, foreslått og antatt.
 - Hver mellomtittel (2–4 i en middels lang sak) skal fortelle noe konkret om avsnittet under («Frist 15. november», «Gebyret settes til 4 500 kroner») — aldri generiske ord som «Bakgrunn» eller «Konklusjon».
 - Avslutt med det leseren kan gjøre eller hva som skjer videre (frist, neste milepæl, hvem som bestemmer) — ikke med en oppsummering, moralisering eller floskel.
@@ -188,6 +188,7 @@ async function polishManuscript(openaiKey, model, fields, examples, extraRules) 
       "- Stram inn KUN gjentakelser, floskler og oppblåste formuleringer — ikke fjern substans, bakgrunn, regelverk, sitater eller reaksjoner. Lengden skal omtrent bevares (±10 %); aldri lengre enn originalen. ALDRI fjern tall/datoer/frister som står i tittel eller ingress, og ALDRI tilføy nye tall.\n" +
       "- Markdown-lenker til våre egne saker ([tekst](URL)) beholdes NØYAKTIG (samme URL) og med kildehenvisningen i prosa rundt.\n" +
       "- Sørg for at første avsnitt forklarer saken på vanlig norsk uten å begynne med «I søknaden…»/«Ifølge…», og at kilden navngis i første eller andre avsnitt.\n" +
+      "- Finner du en selvreferanse til dokumentet selv («i manuset», «denne artikkelen», «denne saken», «i denne teksten» osv.) i utkastet: FJERN eller omskriv den aktivt som en del av redigeringen — dette skal ALDRI stå igjen i en ferdig sak.\n" +
       (extraRules ? extraRules + "\n" : "") +
       "\n" + STYLE_PRINCIPLES;
 
@@ -225,6 +226,11 @@ async function polishManuscript(openaiKey, model, fields, examples, extraRules) 
     // For mye kortere = sannsynligvis tapt innhold.
     var lenBefore = (fields.hovedtekst_avsnitt || []).join(" ").length, lenAfter = out.hovedtekst_avsnitt.join(" ").length;
     if (lenAfter < lenBefore * 0.8) return { fields: fields, polished: false, forkastet: "for mye kuttet" };
+    // Selv-referanse («i manuset», «denne artikkelen» osv.) skal ALDRI stå i
+    // en ferdig sak — konkret tilbakemelding, ikke bare et generelt prompt-punkt.
+    var SELVREF_RE = /\b(i|inni)\s+(manuset|denne\s+(artikkelen|saken|teksten)|denne\s+manus\w*)\b/i;
+    var selvrefTekst = [out.tittel, out.ingress].concat(out.hovedtekst_avsnitt).join(" ");
+    if (SELVREF_RE.test(selvrefTekst)) return { fields: fields, polished: false, forkastet: "selvreferanse til manuset/saken i teksten" };
     // Lenker til egne saker må bevares (hver URL som stod i utkastet må stå i resultatet).
     var linkUrls = (fields.hovedtekst_avsnitt || []).join(" ").match(/\]\((https?:\/\/[^\s)]+)\)/g) || [];
     var outJoined = out.hovedtekst_avsnitt.join(" ");

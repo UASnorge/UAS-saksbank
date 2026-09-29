@@ -23,14 +23,14 @@ const { Document, Packer } = require("docx");
 
 const REVISE_SYSTEM_PROMPT = HOUSE_STYLE + `
 
-Du reviderer nå et EKSISTERENDE manus basert på en konkret instruks fra redaksjonen ("AI-notatet"). Hold deg
-UTELUKKENDE til fakta som allerede står i manuset eller i den oppgitte kildeteksten under — finn ALDRI på nye
+Du reviderer nå en sak som ALLEREDE ER SKREVET, basert på en konkret instruks fra redaksjonen ("AI-notatet"). Hold deg
+UTELUKKENDE til fakta som allerede står i den eksisterende saksteksten eller i den oppgitte kildeteksten under — finn ALDRI på nye
 detaljer, tall, sitater eller navn bare fordi notatet ber om f.eks. en lengre sak. Er kildeteksten for tynn til
-å dekke det notatet ber om, skriv det tydelig i usikkerhetsnotat i stedet for å gjette.
+å dekke det notatet ber om, skriv det tydelig i usikkerhetsnotat i stedet for å gjette. Viktig: den reviderte teksten skal ALDRI omtale seg selv eller referere til at noe "står i manuset"/"i saken"/"i teksten" — skriv som en ferdig, selvstendig nyhetssak, ikke som en kommentar til et dokument.
 
 NYE OPPLYSNINGER FRA RESEARCH: får du et RESEARCH-GRUNNLAG (nummererte kilder E1, E2 … med utdrag av kildenes egen tekst), kan du bruke det utdragene faktisk sier til å utvide eller utdype saken — KUN det, og kun når kilden gjelder samme sak. Navngi kilden i prosa der den brukes («skriver Lovdata», «ifølge forskriften»). List E-numrene du faktisk har brukt i brukte_eksterne. Kilder merket EGEN er våre egne tidligere saker.
 
-LENKER I TEKSTEN: ingen klikkbare lenker — med ÉN unntak: henvisninger til egne tidligere saker fra Dronemagasinet/UAS Norway skal være markdown-lenker [tekst](URL) med nøyaktig URL fra research-grunnlaget eller fra lenkene som allerede står i manuset (behold eksisterende slike lenker uendret). Bildemarkører («![tekst](URL)») og sitatblokker («> …») beholdes uendret på sin plass med mindre notatet ber om noe annet. Bildetekster er alltid på norsk.
+LENKER I TEKSTEN: ingen klikkbare lenker — med ÉN unntak: henvisninger til egne tidligere saker fra Dronemagasinet/UAS Norway skal være markdown-lenker [tekst](URL) med nøyaktig URL fra research-grunnlaget eller fra lenker som allerede finnes i den eksisterende teksten (behold eksisterende slike lenker uendret). Bildemarkører («![tekst](URL)») og sitatblokker («> …») beholdes uendret på sin plass med mindre notatet ber om noe annet. Bildetekster er alltid på norsk.
 
 Om bilder: du kan ALDRI dikte opp en bilde-URL selv. Sett bilde_handling til "bruk_ny_url" KUN dersom notatet
 selv inneholder en konkret URL redaksjonen ber om å bruke — kopier den nøyaktig, ikke konstruer en variant av
@@ -89,7 +89,7 @@ async function reviseManuscript(supabase, openaiKey, caseId, aiNotat, opts) {
     "AI-NOTAT FRA REDAKSJONEN (instruks for hva som skal endres nå):\n" + note + "\n\n" +
     (source.ok
       ? "Kildeteksten (bruk denne om notatet ber om mer stoff/detaljer):\n" + source.text
-      : "Kildeteksten kunne ikke hentes på nytt (" + source.reason + ") — hold deg til det som allerede står i manuset.") +
+      : "Kildeteksten kunne ikke hentes på nytt (" + source.reason + ") — hold deg til det som allerede står i den eksisterende saksteksten.") +
     (research ? "\n\n=====\n\n" + researchBlock(research) : "");
 
   var fields = await callOpenAI(openaiKey, MODEL, REVISE_SYSTEM_PROMPT, userPrompt, REVISE_SCHEMA);
