@@ -306,4 +306,20 @@ async function norwegianCaptions(openaiKey, fields) {
   }
 }
 
-module.exports = { hostCredit, cleanCredit, norwegianCaptions, todayLine, STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, parseDronemagArticle };
+// Fast KI-merknad som skal stå nederst i ALLE AI-produserte/-bearbeidede
+// saker, i publisert innhold (ikke bare internt) — redaksjonelt krav. Holdes
+// UTENFOR selve manus_hovedtekst (AI-generert/redigerbart innhold) og legges
+// på deterministisk ved selve utskriften (docx: lib/manuscript.js sin
+// buildDocxParagraphs, WordPress: lib/wordpress.js sin createDraftPost) —
+// aldri noe AI-en selv skriver eller kan omskrive under generering/revisjon.
+var AI_DISCLOSURE_LEAD = "Slik bruker vi KI:";
+var AI_DISCLOSURE_P1 = "Dronemagasinet bruker kunstig intelligens som hjelp til å gjennomgå dokumenter, bearbeide kildemateriale og forberede saker.";
+var AI_DISCLOSURE_P2 = "En redaksjonell medarbeider kontrollerer opplysninger mot kildene, leser gjennom og godkjenner alltid innholdet før publisering. Redaksjonen har ansvaret for det vi publiserer.";
+// Som markdown-avsnitt (samme "**fet** " / "## " / "> "-konvensjon som resten
+// av manusavsnittene) — én bold-leder-setning, så selve teksten i et eget avsnitt.
+var AI_DISCLOSURE_PARAGRAPHS = [
+  "**" + AI_DISCLOSURE_LEAD + "** " + AI_DISCLOSURE_P1,
+  AI_DISCLOSURE_P2
+];
+
+module.exports = { hostCredit, cleanCredit, norwegianCaptions, todayLine, STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, parseDronemagArticle, AI_DISCLOSURE_PARAGRAPHS };

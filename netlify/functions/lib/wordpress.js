@@ -7,6 +7,8 @@
 // Støtter TO nettsteder (uasnorway.no og dronemag.no), hvert med egne
 // WordPress-innlogging og egen (valgfri) ACF-feltoppsett — se SITES under.
 
+const { AI_DISCLOSURE_PARAGRAPHS } = require("./styleGuide.js");
+
 // ACF-feltnøkler for "Innlegg"-feltgruppen på uasnorway.no (bekreftet
 // 18.08.2026 i wordpress-infosak-verktøyet). Disse styrer den faktiske
 // visningen på nettsiden — IKKE WordPress sine native content/excerpt/
@@ -281,7 +283,10 @@ async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, by
   // WordPress sitt eget mediebibliotek FØR innholdet bygges, slik at de
   // aldri hot-lenker til en midlertidig/ekstern URL i det publiserte innlegget.
   const imageUrlMap = await uploadInlineImages(site, hovedtekstAvsnitt);
-  const contentHtml = paragraphsToHtml(hovedtekstAvsnitt, imageUrlMap);
+  // KI-merknad — redaksjonelt krav, skal stå nederst i ALT publisert innhold.
+  // Lagt til her (ikke i selve manus_hovedtekst) slik at den aldri kan bli
+  // omskrevet av AI-en under generering/revisjon, og alltid er ordrett lik.
+  const contentHtml = paragraphsToHtml(hovedtekstAvsnitt.concat(AI_DISCLOSURE_PARAGRAPHS), imageUrlMap);
   const tagIds = await resolveTagIds(site, tagNames);
   const categoryIds = await resolveCategoryIds(site, categoryNames);
 

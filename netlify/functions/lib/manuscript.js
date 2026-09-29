@@ -16,7 +16,7 @@
 // til egne saker kommer alltid fra det verifiserte researchgrunnlaget.
 
 const { Document, Packer, Paragraph, TextRun, ImageRun, ExternalHyperlink } = require("docx");
-const { STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, todayLine, hostCredit, cleanCredit, norwegianCaptions } = require("./styleGuide.js");
+const { STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, todayLine, hostCredit, cleanCredit, norwegianCaptions, AI_DISCLOSURE_PARAGRAPHS } = require("./styleGuide.js");
 const { pickArticleImages } = require("./articleImages.js");
 const { classifyImage } = require("./imageCheck.js");
 
@@ -467,10 +467,15 @@ async function buildDocxParagraphs(fields, image) {
   field("INGRESS", fields.ingress);
 
   paras.push(new Paragraph({ children: [new TextRun({ text: "HOVEDTEKST:", bold: true })] }));
-  for (var i = 0; i < fields.hovedtekst_avsnitt.length; i++) {
-    var resolved = await paragraphsFromMarkedText(fields.hovedtekst_avsnitt[i]);
+  // KI-merknad legges alltid til sist i selve brødteksten (ikke i det
+  // interne kontrollavsnittet under) — redaksjonelt krav, skal med i det
+  // som faktisk publiseres. Se lib/styleGuide.js for hvorfor den holdes
+  // utenfor fields.hovedtekst_avsnitt (aldri noe AI-en selv kan omskrive).
+  var hovedtekstMedKiMerknad = fields.hovedtekst_avsnitt.concat(AI_DISCLOSURE_PARAGRAPHS);
+  for (var i = 0; i < hovedtekstMedKiMerknad.length; i++) {
+    var resolved = await paragraphsFromMarkedText(hovedtekstMedKiMerknad[i]);
     resolved.forEach(function (p) { paras.push(p); });
-    if (i < fields.hovedtekst_avsnitt.length - 1) paras.push(new Paragraph({ children: [] }));
+    if (i < hovedtekstMedKiMerknad.length - 1) paras.push(new Paragraph({ children: [] }));
   }
 
   if (fields.tidligere_dekning) {
