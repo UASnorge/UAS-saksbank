@@ -610,7 +610,7 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, assistDraft: {}, assistBusy: {}, mobileMenuOpen: false, manusExpanded: false, newCaseTab: "lenke", newCaseBusy: false,
+    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, assistDraft: {}, assistBusy: {}, mobileMenuOpen: false, manusExpanded: false, manusSaving: false, newCaseTab: "lenke", newCaseBusy: false,
       filterPanelOpen: false, filterGroupsOpen: { tema: true, land: true, sakstype: true }, filters: { tema: null, land: null, sakstype: null }, expandedTitleGroups: {} },
     chat: { messages: [], busy: false },
     session: null,
@@ -1724,8 +1724,8 @@
       '<div class="section-label">Manus</div>' +
       '<div class="manus-editor' + (expanded ? " expanded" : "") + '">' +
         (expanded
-          ? '<div class="manus-editor-bar"><span>✍️ Manus — forstørret visning</span><button class="btn" type="button" data-action="toggle-manus-expand">⤡ Vis normalt</button></div>'
-          : '<div style="display:flex;justify-content:flex-end;"><button class="btn" type="button" data-action="toggle-manus-expand">⛶ Forstørre</button></div>') +
+          ? '<div class="manus-editor-bar"><span>✍️ Manus — forstørret visning</span><span><button class="btn btn-primary" type="button" data-action="save-manus-inline" data-id="' + c.id + '"' + (state.ui.manusSaving ? " disabled" : "") + ">" + (state.ui.manusSaving ? "Lagrer …" : "💾 Lagre") + '</button> <button class="btn" type="button" data-action="toggle-manus-expand">⤡ Vis normalt</button></span></div>'
+          : '<div style="display:flex;justify-content:flex-end;gap:8px;"><button class="btn btn-primary" type="button" data-action="save-manus-inline" data-id="' + c.id + '"' + (state.ui.manusSaving ? " disabled" : "") + ">" + (state.ui.manusSaving ? "Lagrer …" : "💾 Lagre") + '</button><button class="btn" type="button" data-action="toggle-manus-expand">⛶ Forstørre</button></div>') +
         fields +
         kontrollHtml +
       "</div>" +
@@ -2231,6 +2231,7 @@
       case "assist-send": e.stopPropagation(); (function () { var id = e.currentTarget.getAttribute("data-id"); var el = document.getElementById("case-chat-input"); sendAssistantMessage(id, el ? el.value : ""); })(); break;
       case "assist-quick": e.stopPropagation(); sendAssistantMessage(e.currentTarget.getAttribute("data-id"), e.currentTarget.getAttribute("data-prompt")); break;
       case "save-case": saveCaseFromForm(); break;
+      case "save-manus-inline": e.stopPropagation(); saveManusInline(); break;
       case "publish-case": publishCaseFromForm(); break;
       case "delete-case": deleteActiveCase(); break;
       case "add-kilde": addKildeRow(); break;
@@ -2571,6 +2572,24 @@
     state.ui.modal = null; state.ui.activeCaseId = null;
     await refreshAndRender();
     showToast("Sak lagret");
+  }
+
+  // Lagrer manus (og resten av skjemaet) UTEN å lukke saken eller forlate
+  // forstørret visning — for at man kan fortsette å redigere/forhåndsvise
+  // rett etterpå i stedet for å bli sendt tilbake til tavla for hver lagring.
+  async function saveManusInline() {
+    var c = readCaseForm();
+    if (!c) return;
+    state.ui.manusSaving = true;
+    render();
+    try {
+      var ok = await updateCase(c.id, caseToDbUpdate(c));
+      if (!ok) return;
+      showToast("Manus lagret");
+    } finally {
+      state.ui.manusSaving = false;
+      render();
+    }
   }
 
   async function publishCaseFromForm() {
