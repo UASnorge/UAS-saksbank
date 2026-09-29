@@ -756,16 +756,30 @@
   function render() {
     var alerts = buildAlerts();
     // Hele appen tegnes på nytt ved hver endring (også live-oppdateringer fra
-    // andre brukere/bakgrunnsjobber) — bevar derfor scrollposisjonen i åpen sak
-    // og chat, og skrivefokus i assistentens tekstfelt, så ikke en
-    // live-oppdatering kaster deg til toppen midt i en samtale.
-    var prevBody = root.querySelector(".panel-body");
-    var bodyScroll = prevBody ? prevBody.scrollTop : null;
+    // andre brukere/bakgrunnsjobber, f.eks. rett etter at noen selv godkjenner
+    // en sak) — root.innerHTML nullstiller scroll på ALLE scrollbare områder
+    // med mindre vi eksplisitt bevarer dem. Fanger derfor opp scrollposisjon
+    // på vinduet, tavle-kolonnene (nøkkel: status), listevisningen, sidepanelet
+    // og selve saks-modalen FØR re-tegning, og gjenoppretter dem etterpå.
+    var scrollState = {
+      window: [window.scrollX, window.scrollY],
+      columns: {}, listWrap: null, asideList: null, panel: null
+    };
+    root.querySelectorAll(".column-body[data-status]").forEach(function (el) {
+      scrollState.columns[el.getAttribute("data-status")] = el.scrollTop;
+    });
+    var prevListWrap = root.querySelector(".list-wrap");
+    if (prevListWrap) scrollState.listWrap = prevListWrap.scrollTop;
+    var prevAsideList = root.querySelector(".aside-list, .chat-messages");
+    if (prevAsideList) scrollState.asideList = prevAsideList.scrollTop;
+    var prevPanel = root.querySelector(".panel");
+    if (prevPanel) scrollState.panel = prevPanel.scrollTop;
     var prevLog = document.getElementById("case-chat-log");
     var logState = prevLog ? { top: prevLog.scrollTop, atBottom: prevLog.scrollHeight - prevLog.scrollTop - prevLog.clientHeight < 40 } : null;
     var prevInput = document.getElementById("case-chat-input");
     var hadFocus = prevInput && document.activeElement === prevInput;
     var selStart = hadFocus ? prevInput.selectionStart : 0;
+
     root.innerHTML =
       renderTopbar(alerts.length) +
       renderFilterDropdown() +
@@ -776,8 +790,18 @@
       "</div>" +
       renderModal();
     bindEvents();
-    var newBody = root.querySelector(".panel-body");
-    if (newBody && bodyScroll !== null) newBody.scrollTop = bodyScroll;
+
+    root.querySelectorAll(".column-body[data-status]").forEach(function (el) {
+      var saved = scrollState.columns[el.getAttribute("data-status")];
+      if (saved) el.scrollTop = saved;
+    });
+    var newListWrap = root.querySelector(".list-wrap");
+    if (newListWrap && scrollState.listWrap) newListWrap.scrollTop = scrollState.listWrap;
+    var newAsideList = root.querySelector(".aside-list, .chat-messages");
+    if (newAsideList && scrollState.asideList) newAsideList.scrollTop = scrollState.asideList;
+    var newPanel = root.querySelector(".panel");
+    if (newPanel && scrollState.panel) newPanel.scrollTop = scrollState.panel;
+    if (scrollState.window[0] || scrollState.window[1]) window.scrollTo(scrollState.window[0], scrollState.window[1]);
     var newLog = document.getElementById("case-chat-log");
     if (newLog) newLog.scrollTop = (!logState || logState.atBottom) ? newLog.scrollHeight : logState.top;
     var newInput = document.getElementById("case-chat-input");
