@@ -189,24 +189,21 @@
   .column-count { font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: 0.72rem; }
   .column-body { flex: 1; overflow-y: auto; padding: 4px 10px 12px; display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
   .column-empty { font-size: 0.78rem; color: var(--text-muted); padding: 12px 4px; text-align: center; }
-  .month-group-header {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-    color: var(--text-muted); padding: 10px 4px 4px; position: sticky; top: 0; background: var(--bg-sunken); z-index: 1;
-  }
-  .month-group-count { font-variant-numeric: tabular-nums; font-weight: 600; }
 
   .list-wrap { flex: 1; overflow: auto; padding: 16px 20px; }
-  .list-select-all { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 14px; }
-  .list-section { margin-bottom: 20px; }
-  .list-section .month-group-header { background: var(--bg); }
-  /* Egen, avgrenset scroll per statusseksjon — akkurat som kolonnene i
-     tavlevisningen (.column-body) — slik at f.eks. en lang Idé-kø (mange
-     titalls saker) aldri skyver «I arbeid»/«WP-utkast»/«Publisert» langt
-     nedover siden. Listevisningen skal vise alle statuser samtidig, akkurat
-     som tavlevisningen gjør side ved side. */
-  .list-section-body { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; padding: 2px 2px 10px; }
-  .list-wrap .card { max-width: 760px; }
+  .list-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .list-table th {
+    text-align: left; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--bg); z-index: 1;
+  }
+  .list-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+  .list-title { cursor: pointer; font-weight: 650; white-space: normal; }
+  .list-title:hover { color: var(--accent); }
+  .list-table td.overdue { color: var(--red-fg); font-weight: 700; }
+  .list-table select { padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elevated); color: var(--text); }
+  .list-actions { white-space: normal; min-width: 220px; }
+  .list-actions .btn { padding: 4px 8px; font-size: 0.72rem; margin: 2px 4px 2px 0; }
 
   .card {
     background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; padding: 10px 11px;
@@ -910,8 +907,8 @@
         sortSelectorMarkup() +
         '<button class="btn menu-toggle" data-action="toggle-mobile-menu" aria-label="Meny" aria-expanded="' + (state.ui.mobileMenuOpen ? "true" : "false") + '">☰ Meny</button>' +
         '<div class="topbar-actions' + (state.ui.mobileMenuOpen ? " open" : "") + '">' +
-          '<button class="btn btn-ghost" data-action="collapse-all-cards" title="Kollaps alle saker som har kommet videre fra Idé">▸ Kollaps alle</button>' +
-          '<button class="btn btn-ghost" data-action="expand-all-cards" title="Åpne alle saker">▾ Åpne alle</button>' +
+          (state.ui.view === "board" ? '<button class="btn btn-ghost" data-action="collapse-all-cards" title="Kollaps alle saker som har kommet videre fra Idé">▸ Kollaps alle</button>' : "") +
+          (state.ui.view === "board" ? '<button class="btn btn-ghost" data-action="expand-all-cards" title="Åpne alle saker">▾ Åpne alle</button>' : "") +
           '<button class="btn" data-action="open-sources">Kilder</button>' +
           '<button class="btn" data-action="toggle-filter-panel">🔎 Filter' + (activeFilterCount() ? ' <span class="badge-count">' + activeFilterCount() + "</span>" : "") + "</button>" +
           '<button class="btn" data-action="open-archive">🗄️ Arkiv</button>' +
@@ -1169,6 +1166,41 @@
     return '<div class="board-wrap"><div class="board">' + cols + "</div></div>";
   }
 
+  // Handlingsknappene for en sak — DELT mellom kortet (tavle-/listevisning)
+  // og den nye, kompakte tabellraden (list-table), slik at begge visningene
+  // alltid har nøyaktig de samme handlingene uten å vedlikeholdes to steder.
+  function caseActionButtonsHtml(c) {
+    var rejectBtn = (c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist")
+      ? '<button class="btn btn-danger" data-action="reject-case-quick" data-id="' + c.id + '" title="Avvis sak">✕ Avvis</button>'
+      : "";
+
+    if (c.status === "ide") {
+      return '<button class="btn btn-primary" data-action="approve-case-quick" data-id="' + c.id + '">✓ Godkjenn</button>' + rejectBtn;
+    }
+    if (statusAtOrAfter(c.status, "i-arbeid") && c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist") {
+      var manusBtn = c.manusUrl
+        ? '<button class="btn" data-action="download-manus" data-id="' + c.id + '" data-path="' + escapeHtml(c.manusUrl) + '">⬇ Manus</button>'
+        : '<button class="btn" data-action="generate-manus" data-id="' + c.id + '"' + (state.ui.manusBusy[c.id] ? " disabled" : "") + ">" + (state.ui.manusBusy[c.id] ? "Genererer …" : "📄 Manus") + "</button>";
+      var nextStatus = nextAdvanceableStatus(c.status);
+      var nextBtn = nextStatus ? '<button class="btn" data-action="advance-status-quick" data-id="' + c.id + '" data-next="' + nextStatus + '">→ ' + escapeHtml(statusLabel(nextStatus)) + "</button>" : "";
+      // Direkte snarvei, kun mens saken faktisk er "I arbeid" — hopper rett
+      // til den forstørrede, distraksjonsfrie manus-editoren (samme visning
+      // som "⛶ Forstørre"-knappen inne på saken), i stedet for å måtte åpne
+      // saken og trykke forstørre selv i to steg.
+      var previewBtn = c.status === "i-arbeid"
+        ? '<button class="btn" data-action="preview-manus" data-id="' + c.id + '">👁️ Forhåndsvis manus</button>'
+        : "";
+      // Direkte snarvei til å publisere til WordPress uten å måtte åpne
+      // saken først — kun mens saken er "I arbeid" OG manus faktisk er
+      // generert (ellers er det ingenting å publisere ennå).
+      var publishBtn = (c.status === "i-arbeid" && c.manusUrl)
+        ? '<button class="btn" data-action="quick-publish" data-id="' + c.id + '">🌐 Publiser</button>'
+        : "";
+      return previewBtn + publishBtn + manusBtn + nextBtn + rejectBtn;
+    }
+    return "";
+  }
+
   function renderCard(c) {
     var score = computeScore(c.triage, state.weights);
     var due = fmtDue(c.frist);
@@ -1186,34 +1218,8 @@
       ? '<button class="card-source-link" data-action="open-source" data-url="' + escapeHtml(c.kilder[0]) + '">🔗 Åpne kilde' + (sourceHost ? ' <span class="card-source-host">(' + escapeHtml(sourceHost) + ")</span>" : "") + "</button>"
       : "";
 
-    var rejectBtn = (c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist")
-      ? '<button class="btn btn-danger" data-action="reject-case-quick" data-id="' + c.id + '" title="Avvis sak">✕ Avvis</button>'
-      : "";
-
-    var actionsHtml = "";
-    if (c.status === "ide") {
-      actionsHtml = '<div class="card-actions"><button class="btn btn-primary" data-action="approve-case-quick" data-id="' + c.id + '">✓ Godkjenn</button>' + rejectBtn + "</div>";
-    } else if (statusAtOrAfter(c.status, "i-arbeid") && c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist") {
-      var manusBtn = c.manusUrl
-        ? '<button class="btn" data-action="download-manus" data-id="' + c.id + '" data-path="' + escapeHtml(c.manusUrl) + '">⬇ Manus</button>'
-        : '<button class="btn" data-action="generate-manus" data-id="' + c.id + '"' + (state.ui.manusBusy[c.id] ? " disabled" : "") + ">" + (state.ui.manusBusy[c.id] ? "Genererer …" : "📄 Manus") + "</button>";
-      var nextStatus = nextAdvanceableStatus(c.status);
-      var nextBtn = nextStatus ? '<button class="btn" data-action="advance-status-quick" data-id="' + c.id + '" data-next="' + nextStatus + '">→ ' + escapeHtml(statusLabel(nextStatus)) + "</button>" : "";
-      // Direkte snarvei fra kortet, kun mens saken faktisk er "I arbeid" —
-      // hopper rett til den forstørrede, distraksjonsfrie manus-editoren
-      // (samme visning som "⛶ Forstørre"-knappen inne på saken), i stedet
-      // for å måtte åpne saken og trykke forstørre selv i to steg.
-      var previewBtn = c.status === "i-arbeid"
-        ? '<button class="btn" data-action="preview-manus" data-id="' + c.id + '">👁️ Forhåndsvis manus</button>'
-        : "";
-      // Direkte snarvei til å publisere til WordPress uten å måtte åpne
-      // saken først — kun mens saken er "I arbeid" OG manus faktisk er
-      // generert (ellers er det ingenting å publisere ennå).
-      var publishBtn = (c.status === "i-arbeid" && c.manusUrl)
-        ? '<button class="btn" data-action="quick-publish" data-id="' + c.id + '">🌐 Publiser</button>'
-        : "";
-      actionsHtml = '<div class="card-actions">' + previewBtn + publishBtn + manusBtn + nextBtn + rejectBtn + "</div>";
-    }
+    var actionButtons = caseActionButtonsHtml(c);
+    var actionsHtml = actionButtons ? '<div class="card-actions">' + actionButtons + "</div>" : "";
 
     // Saker som har kommet videre fra Idé kollapses som default (kun tittel +
     // knapper synlig) — sammendrag/kilder/meta/score skjules til man åpner
@@ -1271,29 +1277,51 @@
     }).join("");
   }
 
-  // Listevisningen gjenbruker renderCard() (samme kortmarkup/-knapper som
-  // kolonnevisningen), gruppert med en statusoverskrift per seksjon — sikrer
-  // at liste og tavle alltid har nøyaktig samme funksjoner/handlinger uten å
-  // vedlikeholde dem to steder. Ingen dra-og-slipp her, kun de vanlige
-  // knappene/statusvelgeren som allerede finnes på kortet.
+  // Listevisningen — kompakt tabell, én rad per sak, samme felt/rekkefølge
+  // som den opprinnelige listevisningen (alt side ved side i én rad i stedet
+  // for høye, stablede kort) — men med Handling-kolonnen lagt til slik at
+  // listevisningen har de samme knappene som tavlevisningen (godkjenn/avvis/
+  // manus/publiser), i tillegg til statusvelgeren. Sortert på status (samme
+  // rekkefølge som tavlevisningen), og innad i hver status etter det valgte
+  // sorteringsalternativet — slik at f.eks. alle "I arbeid"-rader alltid
+  // ligger sammen, rett under "Idé"-radene, uten at én lang statusgruppe
+  // skyver de andre langt nedover.
   function renderListView() {
+    var order = STATUSES.map(function (s) { return s.id; });
     var cases = sortCases(visibleCases());
-    var allSelected = cases.length > 0 && cases.every(function (c) { return state.ui.selectedIds[c.id]; });
-    var sections = STATUSES.map(function (s) {
-      var items = cases.filter(function (c) { return c.status === s.id; });
-      if (!items.length) return "";
-      return (
-        '<div class="list-section">' +
-          '<div class="month-group-header">' + escapeHtml(s.label) + '<span class="month-group-count">' + items.length + "</span></div>" +
-          '<div class="list-section-body column-body" data-status="' + s.id + '">' + groupByTitleWithinList(items).map(renderCardGroup).join("") + "</div>" +
-        "</div>"
-      );
-    }).join("");
+    var rows = [];
+    order.forEach(function (statusId) {
+      cases.forEach(function (c) { if (c.status === statusId) rows.push(c); });
+    });
+    var allSelected = rows.length > 0 && rows.every(function (c) { return state.ui.selectedIds[c.id]; });
     return (
-      '<div class="list-wrap">' +
-        '<label class="list-select-all"><input type="checkbox" data-select-all' + (allSelected ? " checked" : "") + ' aria-label="Velg alle" /> Velg alle</label>' +
-        (cases.length ? sections : '<div class="column-empty">Ingen saker</div>') +
-      "</div>"
+      '<div class="list-wrap"><table class="list-table">' +
+        "<thead><tr><th><input type=\"checkbox\" data-select-all" + (allSelected ? " checked" : "") + " aria-label=\"Velg alle\" /></th><th>Tittel</th><th>Type</th><th>Hastegrad</th><th>Nettsted</th><th>Journalist</th><th>Status</th><th>Frist</th><th>Score</th><th>Handling</th><th></th></tr></thead><tbody>" +
+        (rows.length ? rows.map(function (c) {
+          var score = computeScore(c.triage, state.weights);
+          var due = fmtDue(c.frist);
+          var overdue = c.frist && daysUntil(c.frist) < 0 && ["publisert", "arkivert", "avvist"].indexOf(c.status) === -1;
+          var checked = !!state.ui.selectedIds[c.id];
+          return (
+            "<tr>" +
+              '<td><input type="checkbox" data-select-id="' + c.id + '"' + (checked ? " checked" : "") + ' aria-label="Velg" /></td>' +
+              '<td class="list-title" data-action="open-case" data-id="' + c.id + '">' + (isNewCase(c) ? '<span class="chip chip-new" style="margin-right:6px;">Ny</span>' : "") + escapeHtml(c.title || "(uten tittel)") + "</td>" +
+              '<td><span class="chip chip-type-' + c.sakstype + '">' + TYPE_LABELS[c.sakstype] + "</span></td>" +
+              '<td><span class="chip chip-urg-' + c.hastegrad + '">' + URGENCY_LABELS[c.hastegrad] + "</span></td>" +
+              '<td><span class="chip chip-site">' + (SITE_LABELS[c.nettsted] || c.nettsted) + "</span></td>" +
+              "<td>" + escapeHtml(c.eier) + "</td>" +
+              '<td><select data-list-status="' + c.id + '">' + statusOptionsMarkup(c.status) + "</select></td>" +
+              '<td class="' + (overdue ? "overdue" : "") + '">' + due + "</td>" +
+              '<td class="score-num">' + score + "</td>" +
+              '<td class="list-actions">' + caseActionButtonsHtml(c) + "</td>" +
+              '<td>' +
+                (c.kilder && c.kilder.length ? '<button class="icon-btn" data-action="open-source" data-url="' + escapeHtml(c.kilder[0]) + '" title="Åpne kilde">🔗</button><span class="list-source-host">' + escapeHtml(sourceHostname(c.kilder[0])) + "</span>" : "") +
+                '<button class="icon-btn" data-action="delete-case-quick" data-id="' + c.id + '" title="Slett sak" aria-label="Slett sak">✕</button>' +
+              "</td>" +
+            "</tr>"
+          );
+        }).join("") : '<tr><td colspan="11" class="column-empty">Ingen saker</td></tr>') +
+        "</tbody></table></div>"
     );
   }
 
@@ -2039,6 +2067,12 @@
         render();
       });
     }
+    root.querySelectorAll("[data-list-status]").forEach(function (el) {
+      el.addEventListener("change", function () {
+        var c = getCase(el.getAttribute("data-list-status"));
+        if (c) trySetStatus(c, el.value, "listevisning");
+      });
+    });
     root.querySelectorAll("[data-toggle-source]").forEach(function (el) {
       el.addEventListener("change", function () {
         toggleSource(el.getAttribute("data-toggle-source"), el.checked);
