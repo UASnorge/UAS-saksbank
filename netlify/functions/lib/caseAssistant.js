@@ -24,7 +24,7 @@ const { STYLE_PRINCIPLES, todayLine } = require("./styleGuide.js");
 
 const MAX_ROUNDS = 8;
 const MAX_MANUS_CHARS_IN_CONTEXT = 12000;
-const STATUSES = ["ide", "godkjent", "i-arbeid", "wp-utkast", "arkivert", "avvist"];
+const STATUSES = ["ide", "i-arbeid", "wp-utkast", "arkivert", "avvist"];
 
 const SYSTEM_PROMPT = `Du er AI-assistenten INNI én bestemt sak i saksbanken til UAS Norway og Dronemagasinet — en erfaren nyhetsredaktør og researcher som jobber sammen med journalisten om akkurat denne saken. Du snakker norsk (bokmål), kort og konkret, som en kollega — ikke som en chatbot. Du ser sakens status, manus, kilder og kontrollpunkter i SAKSKONTEKST under.
 

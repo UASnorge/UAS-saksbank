@@ -123,7 +123,7 @@ async function createCaseFromLink(supabase, url) {
     title: title,
     sakstype: "redaksjonell",
     hastegrad: "planlagt",
-    status: "godkjent", // menneske har allerede bestemt at dette skal bli en sak — hopper over Idé-vurderingen
+    status: "i-arbeid", // menneske har allerede bestemt at dette skal bli en sak — hopper over Idé-vurderingen
     eier: "Ikke tildelt",
     kilder: [url],
     neste_handling: "AI genererer manus …",

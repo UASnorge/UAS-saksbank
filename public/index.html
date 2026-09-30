@@ -54,6 +54,7 @@
     --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
     --radius: 10px;
     --tap: 44px; /* minste anbefalte trykkflate — viktig på mobil og for brukere med mindre presis pekekontroll */
+    --hover-overlay: rgba(2, 42, 68, 0.07);
   }
 
   @media (prefers-color-scheme: dark) {
@@ -69,6 +70,7 @@
       --yellow-bg: rgba(224, 196, 84, 0.2); --yellow-fg: #e0c454;
       --slate-bg: rgba(234, 242, 248, 0.08); --slate-fg: #9db2c6;
       --violet-bg: rgba(167, 139, 250, 0.18); --violet-fg: #c4b5fd;
+      --hover-overlay: rgba(234, 242, 248, 0.09);
     }
   }
   :root[data-theme="dark"] {
@@ -83,6 +85,7 @@
     --yellow-bg: rgba(224, 196, 84, 0.2); --yellow-fg: #e0c454;
     --slate-bg: rgba(234, 242, 248, 0.08); --slate-fg: #9db2c6;
     --violet-bg: rgba(167, 139, 250, 0.18); --violet-fg: #c4b5fd;
+    --hover-overlay: rgba(234, 242, 248, 0.09);
   }
 
   * { box-sizing: border-box; }
@@ -130,14 +133,18 @@
     border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);
     font-weight: 600; font-size: 0.9rem; white-space: nowrap;
   }
-  .btn:hover { background: var(--bg-sunken); }
+  /* Overlegg i stedet for en fast bakgrunnsfarge — knapper står ofte oppå en
+     flate som allerede ER --bg-sunken (kolonner, manus-boks, aktivitetskort),
+     så en hover som BYTTER til --bg-sunken gjorde knappen usynlig der. Et
+     halvgjennomsiktig overlegg skifter alltid synlig, uansett bakgrunn. */
+  .btn:hover:not(:disabled) { box-shadow: inset 0 0 0 999px var(--hover-overlay); }
   .btn-primary { background: var(--accent); color: var(--accent-contrast); border-color: transparent; }
   .btn-primary:hover { filter: brightness(1.08); }
   .btn-ghost { background: transparent; border-color: transparent; }
   .topbar .btn-ghost, .topbar .btn:not(.btn-primary) { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.22); color: #fff; }
   .topbar .btn-ghost:hover, .topbar .btn:not(.btn-primary):hover { background: rgba(255,255,255,0.2); }
   .topbar .btn-primary { background: var(--brand-sky); }
-  .btn-ghost:hover { background: var(--bg-sunken); }
+  .btn-ghost:hover:not(:disabled) { box-shadow: inset 0 0 0 999px var(--hover-overlay); }
   .btn-danger { color: var(--red-fg); }
   .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
@@ -157,6 +164,11 @@
   .view-switch { display: flex; gap: 2px; background: rgba(255,255,255,0.12); padding: 2px; border-radius: 9px; }
   .btn-view { border: none; background: transparent; padding: 8px 14px; border-radius: 7px; font-weight: 600; font-size: 0.85rem; color: rgba(255,255,255,0.78); min-height: 36px; }
   .btn-view.active { background: #fff; color: var(--brand-navy); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); }
+  .sort-select {
+    padding: 7px 9px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.1);
+    color: #fff; font-weight: 600; font-size: 0.8rem; min-height: 36px;
+  }
+  .sort-select option { color: var(--text); background: var(--bg-elevated); }
 
   .bar-spacer { flex: 1; }
 
@@ -185,17 +197,11 @@
   .month-group-count { font-variant-numeric: tabular-nums; font-weight: 600; }
 
   .list-wrap { flex: 1; overflow: auto; padding: 16px 20px; }
-  .list-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  .list-table th {
-    text-align: left; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-    color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--border);
-    position: sticky; top: 0; background: var(--bg); z-index: 1;
-  }
-  .list-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
-  .list-title { cursor: pointer; font-weight: 650; white-space: normal; }
-  .list-title:hover { color: var(--accent); }
-  .list-table td.overdue { color: var(--red-fg); font-weight: 700; }
-  .list-table select { padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elevated); color: var(--text); }
+  .list-select-all { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 14px; }
+  .list-section { margin-bottom: 20px; }
+  .list-section .month-group-header { background: var(--bg); }
+  .list-section-body { display: flex; flex-direction: column; gap: 8px; }
+  .list-wrap .card { max-width: 760px; }
 
   .card {
     background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; padding: 10px 11px;
@@ -207,6 +213,8 @@
   .card.dragging { opacity: 0.45; }
   .card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .card-top-row { display: flex; align-items: center; justify-content: space-between; }
+  .card-collapse-toggle { padding: 3px; opacity: 0.55; }
+  .card-collapse-toggle:hover { opacity: 1; color: var(--accent); }
   .card-delete { padding: 3px; opacity: 0.55; }
   .card-delete:hover { opacity: 1; color: var(--red-fg); }
   .card-summary { font-size: 0.76rem; color: var(--text-muted); line-height: 1.4; }
@@ -222,11 +230,11 @@
     display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); background: transparent;
     padding: 3px 8px; border-radius: 999px; color: var(--accent); font-size: 0.7rem; font-weight: 600; align-self: flex-start;
   }
-  .card-source-link:hover { background: var(--bg-sunken); }
+  .card-source-link:hover { box-shadow: inset 0 0 0 999px var(--hover-overlay); }
   .card-source-host { color: var(--text-muted); font-weight: 500; }
   .list-source-host { font-size: 0.72rem; color: var(--text-muted); margin-left: 4px; }
-  .card-actions { display: flex; gap: 6px; margin-top: 2px; }
-  .card-actions .btn { padding: 5px 9px; font-size: 0.76rem; flex: 1; justify-content: center; }
+  .card-actions { display: flex; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
+  .card-actions .btn { padding: 5px 9px; font-size: 0.76rem; flex: 1 1 80px; justify-content: center; }
   .chip-event { background: transparent; color: var(--accent); border: 1px dashed var(--accent); }
 
   .selection-bar {
@@ -405,7 +413,7 @@
   .kilde-row { display: flex; gap: 6px; }
   .kilde-row input { flex: 1; }
   .icon-btn { border: none; background: transparent; color: var(--text-muted); padding: 6px; border-radius: 6px; }
-  .icon-btn:hover { background: var(--bg-sunken); color: var(--red-fg); }
+  .icon-btn:hover { box-shadow: inset 0 0 0 999px var(--hover-overlay); color: var(--red-fg); }
 
   .history-item { font-size: 0.78rem; padding: 6px 0; border-bottom: 1px dashed var(--border); }
   .history-item:last-child { border-bottom: none; }
@@ -474,9 +482,12 @@
   var CONFIGURED = SUPABASE_URL.indexOf("DITT-PROSJEKT") === -1 && SUPABASE_ANON_KEY.indexOf("DIN-ANON-KEY") === -1;
   var supabase = CONFIGURED ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
+  // "Godkjent" finnes ikke lenger som eget steg — å godkjenne en idé flytter
+  // den rett til "i-arbeid" OG starter manusgenerering med én gang (se
+  // approveCaseQuick). Gamle rader i databasen med status "godkjent" er
+  // migrert til "i-arbeid" (se scratchpad-migrasjon 2026-09-30).
   var STATUSES = [
     { id: "ide", label: "Idé" },
-    { id: "godkjent", label: "Godkjente idéer" },
     { id: "i-arbeid", label: "I arbeid" },
     { id: "wp-utkast", label: "WP-utkast opprettet" },
     { id: "publisert", label: "Publisert" }
@@ -610,7 +621,7 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "board", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, assistDraft: {}, assistBusy: {}, mobileMenuOpen: false, manusExpanded: false, manusSaving: false, newCaseTab: "lenke", newCaseBusy: false,
+    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "list", sort: "nyeste", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, assistDraft: {}, assistBusy: {}, mobileMenuOpen: false, manusExpanded: false, manusSaving: false, newCaseTab: "lenke", newCaseBusy: false, expandedCards: {},
       filterPanelOpen: false, filterGroupsOpen: { tema: true, land: true, sakstype: true }, filters: { tema: null, land: null, sakstype: null }, expandedTitleGroups: {} },
     chat: { messages: [], busy: false },
     session: null,
@@ -891,8 +902,11 @@
           '<button class="btn-view' + (state.ui.view === "board" ? " active" : "") + '" data-action="set-view" data-view="board">Kolonner</button>' +
           '<button class="btn-view' + (state.ui.view === "list" ? " active" : "") + '" data-action="set-view" data-view="list">Liste</button>' +
         "</div>" +
+        sortSelectorMarkup() +
         '<button class="btn menu-toggle" data-action="toggle-mobile-menu" aria-label="Meny" aria-expanded="' + (state.ui.mobileMenuOpen ? "true" : "false") + '">☰ Meny</button>' +
         '<div class="topbar-actions' + (state.ui.mobileMenuOpen ? " open" : "") + '">' +
+          '<button class="btn btn-ghost" data-action="collapse-all-cards" title="Kollaps alle saker som har kommet videre fra Idé">▸ Kollaps alle</button>' +
+          '<button class="btn btn-ghost" data-action="expand-all-cards" title="Åpne alle saker">▾ Åpne alle</button>' +
           '<button class="btn" data-action="open-sources">Kilder</button>' +
           '<button class="btn" data-action="toggle-filter-panel">🔎 Filter' + (activeFilterCount() ? ' <span class="badge-count">' + activeFilterCount() + "</span>" : "") + "</button>" +
           '<button class="btn" data-action="open-archive">🗄️ Arkiv</button>' +
@@ -1025,42 +1039,49 @@
     var m = NB_MONTHS[d.getMonth()];
     return d.getDate() + ". " + (m ? m.slice(0, 3) : "") + (m && m.length > 3 ? "." : "") + " " + d.getFullYear();
   }
-  function monthGroupKey(c) {
-    var raw = c.kildePublisertDato || c.createdAt;
-    if (!raw) return null;
-    var d = new Date(raw);
-    if (isNaN(d.getTime())) return null;
-    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
-  }
-  function monthGroupLabel(key) {
-    if (key === "ukjent") return "Ukjent dato";
-    var parts = key.split("-");
-    var name = NB_MONTHS[parseInt(parts[1], 10) - 1];
-    return name.charAt(0).toUpperCase() + name.slice(1) + " " + parts[0];
-  }
-  // "Ny" = kom inn i Idé siste 48 timer. Nye saker vises alltid øverst i Idé-
-  // kolonnen (nyeste først), uavhengig av score — ellers druknet ferske funn
-  // i en lang, score-sortert månedsliste.
-  var NEW_CASE_HOURS = 48;
+  // "Ny" = kom inn i Idé siste 24 timer.
+  var NEW_CASE_HOURS = 24;
   function isNewCase(c) {
     if (c.status !== "ide" || !c.createdAt) return false;
     var t = new Date(c.createdAt).getTime();
     return !isNaN(t) && (Date.now() - t) < NEW_CASE_HOURS * 3600 * 1000;
   }
 
-  function groupByMonth(items) {
-    var groups = {}, order = [];
-    items.forEach(function (c) {
-      var key = monthGroupKey(c) || "ukjent";
-      if (!groups[key]) { groups[key] = []; order.push(key); }
-      groups[key].push(c);
-    });
-    order.sort(function (a, b) {
-      if (a === "ukjent") return 1;
-      if (b === "ukjent") return -1;
-      return b.localeCompare(a);
-    });
-    return order.map(function (key) { return { key: key, label: monthGroupLabel(key), items: groups[key] }; });
+  // Ett globalt sorteringsvalg brukt i både kolonne- og listevisning (ikke
+  // per kolonne) — default "nyeste" sikrer at nyeste saker alltid ligger
+  // øverst uten en egen "Nye siste X timer"-gruppering ved siden av.
+  var SORT_OPTIONS = [
+    { id: "nyeste", label: "🆕 Nyeste i systemet" },
+    { id: "score", label: "⭐ Mest populær / relevant" },
+    { id: "kilde_dato", label: "📰 Publisert hos kilde (nyeste)" },
+    { id: "frist", label: "⏰ Frist nærmest" },
+    { id: "eldste", label: "🕰️ Eldste først" }
+  ];
+  function sortCases(items) {
+    var key = state.ui.sort || "nyeste";
+    var sorted = items.slice();
+    if (key === "score") {
+      sorted.sort(function (a, b) { return computeScore(b.triage, state.weights) - computeScore(a.triage, state.weights); });
+    } else if (key === "kilde_dato") {
+      sorted.sort(function (a, b) { return (b.kildePublisertDato || b.createdAt || "").localeCompare(a.kildePublisertDato || a.createdAt || ""); });
+    } else if (key === "eldste") {
+      sorted.sort(function (a, b) { return (a.createdAt || "").localeCompare(b.createdAt || ""); });
+    } else if (key === "frist") {
+      sorted.sort(function (a, b) {
+        if (!a.frist && !b.frist) return 0;
+        if (!a.frist) return 1;
+        if (!b.frist) return -1;
+        return a.frist.localeCompare(b.frist);
+      });
+    } else {
+      sorted.sort(function (a, b) { return (b.createdAt || "").localeCompare(a.createdAt || ""); });
+    }
+    return sorted;
+  }
+  function sortSelectorMarkup() {
+    return '<select id="sort-select" class="sort-select" aria-label="Sorter etter">' +
+      SORT_OPTIONS.map(function (o) { return '<option value="' + o.id + '"' + (o.id === (state.ui.sort || "nyeste") ? " selected" : "") + ">" + o.label + "</option>"; }).join("") +
+    "</select>";
   }
 
   // Filter-panelet (Tema/Land/Sakstype) — null i state.ui.filters[dim] =
@@ -1120,29 +1141,10 @@
   function renderBoard() {
     var cases = visibleCases();
     var cols = STATUSES.map(function (s) {
-      var items = cases.filter(function (c) { return c.status === s.id; }).sort(function (a, b) {
-        return computeScore(b.triage, state.weights) - computeScore(a.triage, state.weights);
-      });
-      var bodyHtml;
-      if (!items.length) {
-        bodyHtml = '<div class="column-empty">Ingen saker</div>';
-      } else if (s.id === "ide") {
-        // Gruppert på måned publisert hos kilden — nyeste måned øverst, mest
-        // relevante (høyest score) øverst innenfor hver måned. Innad i hver
-        // måned: saker med samme tittel samles under ett.
-        var nyeItems = items.filter(isNewCase).sort(function (a, b) { return (b.createdAt || "").localeCompare(a.createdAt || ""); });
-        var eldreItems = items.filter(function (c) { return !isNewCase(c); });
-        var nyeHtml = nyeItems.length
-          ? '<div class="month-group-header">🆕 Nye siste 48 timer<span class="month-group-count">' + nyeItems.length + "</span></div>" +
-            groupByTitleWithinList(nyeItems).map(renderCardGroup).join("")
-          : "";
-        bodyHtml = nyeHtml + groupByMonth(eldreItems).map(function (g) {
-          return '<div class="month-group-header">' + escapeHtml(g.label) + '<span class="month-group-count">' + g.items.length + "</span></div>" +
-            groupByTitleWithinList(g.items).map(renderCardGroup).join("");
-        }).join("");
-      } else {
-        bodyHtml = groupByTitleWithinList(items).map(renderCardGroup).join("");
-      }
+      var items = sortCases(cases.filter(function (c) { return c.status === s.id; }));
+      var bodyHtml = items.length
+        ? groupByTitleWithinList(items).map(renderCardGroup).join("")
+        : '<div class="column-empty">Ingen saker</div>';
       return (
         '<div class="column">' +
           '<div class="column-header"><span class="column-title">' + escapeHtml(s.label) + '</span><span class="column-count">' + items.length + "</span></div>" +
@@ -1170,10 +1172,14 @@
       ? '<button class="card-source-link" data-action="open-source" data-url="' + escapeHtml(c.kilder[0]) + '">🔗 Åpne kilde' + (sourceHost ? ' <span class="card-source-host">(' + escapeHtml(sourceHost) + ")</span>" : "") + "</button>"
       : "";
 
+    var rejectBtn = (c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist")
+      ? '<button class="btn btn-danger" data-action="reject-case-quick" data-id="' + c.id + '" title="Avvis sak">✕ Avvis</button>'
+      : "";
+
     var actionsHtml = "";
     if (c.status === "ide") {
-      actionsHtml = '<div class="card-actions"><button class="btn btn-primary" data-action="approve-case-quick" data-id="' + c.id + '">✓ Godkjenn</button></div>';
-    } else if (statusAtOrAfter(c.status, "godkjent") && c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist") {
+      actionsHtml = '<div class="card-actions"><button class="btn btn-primary" data-action="approve-case-quick" data-id="' + c.id + '">✓ Godkjenn</button>' + rejectBtn + "</div>";
+    } else if (statusAtOrAfter(c.status, "i-arbeid") && c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist") {
       var manusBtn = c.manusUrl
         ? '<button class="btn" data-action="download-manus" data-id="' + c.id + '" data-path="' + escapeHtml(c.manusUrl) + '">⬇ Manus</button>'
         : '<button class="btn" data-action="generate-manus" data-id="' + c.id + '"' + (state.ui.manusBusy[c.id] ? " disabled" : "") + ">" + (state.ui.manusBusy[c.id] ? "Genererer …" : "📄 Manus") + "</button>";
@@ -1192,35 +1198,52 @@
       var publishBtn = (c.status === "i-arbeid" && c.manusUrl)
         ? '<button class="btn" data-action="quick-publish" data-id="' + c.id + '">🌐 Publiser</button>'
         : "";
-      actionsHtml = '<div class="card-actions">' + previewBtn + publishBtn + manusBtn + nextBtn + "</div>";
+      actionsHtml = '<div class="card-actions">' + previewBtn + publishBtn + manusBtn + nextBtn + rejectBtn + "</div>";
     }
+
+    // Saker som har kommet videre fra Idé kollapses som default (kun tittel +
+    // knapper synlig) — sammendrag/kilder/meta/score skjules til man åpner
+    // kortet eksplisitt (per-kort eller med "Åpne alle"). Idé-kort er alltid
+    // fullt synlige siden det er der triage-informasjonen trengs mest.
+    var isIde = c.status === "ide";
+    var expanded = isIde || !!state.ui.expandedCards[c.id];
+    var collapseToggleHtml = !isIde
+      ? '<button class="icon-btn card-collapse-toggle" data-action="toggle-card-collapse" data-id="' + c.id + '" title="' + (expanded ? "Kollaps kort" : "Åpne kort") + '" aria-label="' + (expanded ? "Kollaps kort" : "Åpne kort") + '">' + (expanded ? "▾" : "▸") + "</button>"
+      : "";
+
+    var detailsHtml = expanded ? (
+      '<div class="chip-row">' +
+        (isNewCase(c) ? '<span class="chip chip-new">Ny</span>' : "") +
+        '<span class="chip chip-type-' + c.sakstype + '">' + TYPE_LABELS[c.sakstype] + "</span>" +
+        '<span class="chip chip-urg-' + c.hastegrad + '">' + URGENCY_LABELS[c.hastegrad] + "</span>" +
+        '<span class="chip chip-site">' + (SITE_LABELS[c.nettsted] || c.nettsted) + "</span>" +
+        (c.land && LAND_LABELS[c.land] ? '<span class="chip chip-tema">' + LAND_LABELS[c.land] + "</span>" : "") +
+        (c.tema && TEMA_LABELS[c.tema] ? '<span class="chip chip-tema">' + TEMA_LABELS[c.tema] + "</span>" : "") +
+        (c.isRss ? '<span class="chip chip-rss">RSS</span>' : "") +
+        (ev ? '<span class="chip chip-event">📅 ' + escapeHtml(ev.title) + "</span>" : "") +
+      "</div>" +
+      (c.status === "ide"
+        ? (c.kildePublisertDato
+            ? '<div class="card-source-date" title="Når saken ble publisert hos kilden">📅 Publisert ' + escapeHtml(fmtSourceDate(c.kildePublisertDato)) + "</div>"
+            : '<div class="card-source-date unknown" title="Kilden oppgir ingen publiseringsdato — dette er datoen saken kom inn i saksbanken">📅 Dato ukjent (lagt inn ' + escapeHtml(fmtSourceDate(c.createdAt)) + ")</div>")
+        : "") +
+      summaryToggleHtml +
+      (sourceLinkHtml ? '<div>' + sourceLinkHtml + "</div>" : "") +
+      '<div class="card-meta"><span class="avatar">' + initials(c.eier) + "</span><span>" + escapeHtml(c.eier || "Ingen eier") + '</span><span class="meta-due' + (overdue ? " overdue" : "") + '">· ' + due + "</span></div>" +
+      '<div class="score-row"><div class="score-meter"><div class="score-fill" style="width:' + score + '%;background:' + scoreColorVar(score) + ';"></div></div><span class="score-num">' + score + "</span></div>"
+    ) : "";
 
     return (
       '<div class="card' + (checked ? " selected" : "") + '" draggable="true" data-action="open-case" data-id="' + c.id + '" role="button" tabindex="0">' +
         '<div class="card-top-row">' +
           '<input type="checkbox" class="card-select" data-select-id="' + c.id + '"' + (checked ? " checked" : "") + ' aria-label="Velg for massehandling" />' +
-          '<button class="icon-btn card-delete" data-action="delete-case-quick" data-id="' + c.id + '" title="Slett sak" aria-label="Slett sak">✕</button>' +
-        "</div>" +
-        '<div class="chip-row">' +
-          (isNewCase(c) ? '<span class="chip chip-new">Ny</span>' : "") +
-          '<span class="chip chip-type-' + c.sakstype + '">' + TYPE_LABELS[c.sakstype] + "</span>" +
-          '<span class="chip chip-urg-' + c.hastegrad + '">' + URGENCY_LABELS[c.hastegrad] + "</span>" +
-          '<span class="chip chip-site">' + (SITE_LABELS[c.nettsted] || c.nettsted) + "</span>" +
-          (c.land && LAND_LABELS[c.land] ? '<span class="chip chip-tema">' + LAND_LABELS[c.land] + "</span>" : "") +
-          (c.tema && TEMA_LABELS[c.tema] ? '<span class="chip chip-tema">' + TEMA_LABELS[c.tema] + "</span>" : "") +
-          (c.isRss ? '<span class="chip chip-rss">RSS</span>' : "") +
-          (ev ? '<span class="chip chip-event">📅 ' + escapeHtml(ev.title) + "</span>" : "") +
+          '<div style="display:flex;align-items:center;">' +
+            collapseToggleHtml +
+            '<button class="icon-btn card-delete" data-action="delete-case-quick" data-id="' + c.id + '" title="Slett sak" aria-label="Slett sak">✕</button>' +
+          "</div>" +
         "</div>" +
         '<div class="card-title">' + escapeHtml(c.title || "(uten tittel)") + "</div>" +
-        (c.status === "ide" || c.status === "godkjent"
-          ? (c.kildePublisertDato
-              ? '<div class="card-source-date" title="Når saken ble publisert hos kilden">📅 Publisert ' + escapeHtml(fmtSourceDate(c.kildePublisertDato)) + "</div>"
-              : '<div class="card-source-date unknown" title="Kilden oppgir ingen publiseringsdato — dette er datoen saken kom inn i saksbanken">📅 Dato ukjent (lagt inn ' + escapeHtml(fmtSourceDate(c.createdAt)) + ")</div>")
-          : "") +
-        summaryToggleHtml +
-        (sourceLinkHtml ? '<div>' + sourceLinkHtml + "</div>" : "") +
-        '<div class="card-meta"><span class="avatar">' + initials(c.eier) + "</span><span>" + escapeHtml(c.eier || "Ingen eier") + '</span><span class="meta-due' + (overdue ? " overdue" : "") + '">· ' + due + "</span></div>" +
-        '<div class="score-row"><div class="score-meter"><div class="score-fill" style="width:' + score + '%;background:' + scoreColorVar(score) + ';"></div></div><span class="score-num">' + score + "</span></div>" +
+        detailsHtml +
         actionsHtml +
       "</div>"
     );
@@ -1234,41 +1257,29 @@
     }).join("");
   }
 
+  // Listevisningen gjenbruker renderCard() (samme kortmarkup/-knapper som
+  // kolonnevisningen), gruppert med en statusoverskrift per seksjon — sikrer
+  // at liste og tavle alltid har nøyaktig samme funksjoner/handlinger uten å
+  // vedlikeholde dem to steder. Ingen dra-og-slipp her, kun de vanlige
+  // knappene/statusvelgeren som allerede finnes på kortet.
   function renderListView() {
-    var order = STATUSES.map(function (s) { return s.id; }).concat(Object.keys(SIDE_STATUSES));
-    var rows = visibleCases().slice().sort(function (a, b) {
-      var oa = order.indexOf(a.status), ob = order.indexOf(b.status);
-      if (oa !== ob) return oa - ob;
-      return computeScore(b.triage, state.weights) - computeScore(a.triage, state.weights);
-    });
-    var allSelected = rows.length > 0 && rows.every(function (c) { return state.ui.selectedIds[c.id]; });
+    var cases = sortCases(visibleCases());
+    var allSelected = cases.length > 0 && cases.every(function (c) { return state.ui.selectedIds[c.id]; });
+    var sections = STATUSES.map(function (s) {
+      var items = cases.filter(function (c) { return c.status === s.id; });
+      if (!items.length) return "";
+      return (
+        '<div class="list-section">' +
+          '<div class="month-group-header">' + escapeHtml(s.label) + '<span class="month-group-count">' + items.length + "</span></div>" +
+          '<div class="list-section-body">' + groupByTitleWithinList(items).map(renderCardGroup).join("") + "</div>" +
+        "</div>"
+      );
+    }).join("");
     return (
-      '<div class="list-wrap"><table class="list-table">' +
-        "<thead><tr><th><input type=\"checkbox\" data-select-all" + (allSelected ? " checked" : "") + " aria-label=\"Velg alle\" /></th><th>Tittel</th><th>Type</th><th>Hastegrad</th><th>Nettsted</th><th>Journalist</th><th>Status</th><th>Frist</th><th>Score</th><th></th></tr></thead><tbody>" +
-        (rows.length ? rows.map(function (c) {
-          var score = computeScore(c.triage, state.weights);
-          var due = fmtDue(c.frist);
-          var overdue = c.frist && daysUntil(c.frist) < 0 && ["publisert", "arkivert", "avvist"].indexOf(c.status) === -1;
-          var checked = !!state.ui.selectedIds[c.id];
-          return (
-            "<tr>" +
-              '<td><input type="checkbox" data-select-id="' + c.id + '"' + (checked ? " checked" : "") + ' aria-label="Velg" /></td>' +
-              '<td class="list-title" data-action="open-case" data-id="' + c.id + '">' + escapeHtml(c.title || "(uten tittel)") + "</td>" +
-              '<td><span class="chip chip-type-' + c.sakstype + '">' + TYPE_LABELS[c.sakstype] + "</span></td>" +
-              '<td><span class="chip chip-urg-' + c.hastegrad + '">' + URGENCY_LABELS[c.hastegrad] + "</span></td>" +
-              '<td><span class="chip chip-site">' + (SITE_LABELS[c.nettsted] || c.nettsted) + "</span></td>" +
-              "<td>" + escapeHtml(c.eier) + "</td>" +
-              '<td><select data-list-status="' + c.id + '">' + statusOptionsMarkup(c.status) + "</select></td>" +
-              '<td class="' + (overdue ? "overdue" : "") + '">' + due + "</td>" +
-              '<td class="score-num">' + score + "</td>" +
-              '<td>' +
-                (c.kilder && c.kilder.length ? '<button class="icon-btn" data-action="open-source" data-url="' + escapeHtml(c.kilder[0]) + '" title="Åpne kilde">🔗</button><span class="list-source-host">' + escapeHtml(sourceHostname(c.kilder[0])) + "</span>" : "") +
-                '<button class="icon-btn" data-action="delete-case-quick" data-id="' + c.id + '" title="Slett sak" aria-label="Slett sak">✕</button>' +
-              "</td>" +
-            "</tr>"
-          );
-        }).join("") : '<tr><td colspan="10" class="column-empty">Ingen saker</td></tr>') +
-        "</tbody></table></div>"
+      '<div class="list-wrap">' +
+        '<label class="list-select-all"><input type="checkbox" data-select-all' + (allSelected ? " checked" : "") + ' aria-label="Velg alle" /> Velg alle</label>' +
+        (cases.length ? sections : '<div class="column-empty">Ingen saker</div>') +
+      "</div>"
     );
   }
 
@@ -1877,8 +1888,11 @@
             renderCaseAssistant(c) +
             (c.eventId && state.eventsById[c.eventId] ? '<p class="helper">📅 Koblet til arrangement: <b>' + escapeHtml(state.eventsById[c.eventId].title) + "</b> (" + escapeHtml(state.eventsById[c.eventId].starts_on) + ")</p>" : "") +
 
-            (c.status === "ide" ? '<button class="btn btn-primary" data-action="approve-case-quick" data-id="' + c.id + '" style="width:100%;">✓ Godkjenn idé → flytt til «Godkjente idéer»</button>' : "") +
+            (c.status === "ide" ? '<button class="btn btn-primary" data-action="approve-case-quick" data-id="' + c.id + '" style="width:100%;">✓ Godkjenn idé → lag manus og flytt til «I arbeid»</button>' : "") +
             (c.status !== "ide" && nextAdvanceableStatus(c.status) ? '<button class="btn btn-primary" data-action="advance-status-quick" data-id="' + c.id + '" data-next="' + nextAdvanceableStatus(c.status) + '" style="width:100%;">→ Flytt videre til «' + escapeHtml(statusLabel(nextAdvanceableStatus(c.status))) + '»</button>' : "") +
+            (c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist"
+              ? '<button class="btn btn-danger" data-action="reject-case-quick" data-id="' + c.id + '" style="width:100%;">✕ Avvis sak</button>'
+              : "") +
 
             '<div class="field-row">' +
               '<div class="field"><label for="c-malgruppe">Målgruppe</label><select id="c-malgruppe" data-field="malgruppe">' +
@@ -1918,7 +1932,7 @@
                 )) +
               "</div>"
             ) : "") +
-            (statusAtOrAfter(c.status, "godkjent") ? (
+            (statusAtOrAfter(c.status, "i-arbeid") ? (
               renderManusEditor(c) +
               (
                 '<div class="section-label" style="border-top:none;padding-top:0;">Publiser til WordPress</div>' +
@@ -2004,12 +2018,13 @@
       el.addEventListener("dragleave", handleDragLeave);
       el.addEventListener("drop", handleDrop);
     });
-    root.querySelectorAll("[data-list-status]").forEach(function (el) {
-      el.addEventListener("change", function () {
-        var c = getCase(el.getAttribute("data-list-status"));
-        if (c) trySetStatus(c, el.value, "listevisning");
+    var sortSelect = document.getElementById("sort-select");
+    if (sortSelect) {
+      sortSelect.addEventListener("change", function () {
+        state.ui.sort = sortSelect.value;
+        render();
       });
-    });
+    }
     root.querySelectorAll("[data-toggle-source]").forEach(function (el) {
       el.addEventListener("change", function () {
         toggleSource(el.getAttribute("data-toggle-source"), el.checked);
@@ -2088,16 +2103,17 @@
 
   async function trySetStatus(c, newStatus, methodLabel) {
     var prevStatus = c.status;
-    if (newStatus === prevStatus) return;
+    if (newStatus === prevStatus) return true;
     var blocked = blockedStatusChangeReason(c, newStatus, prevStatus);
     if (blocked) {
       showToast(blocked);
       state.ui.activeCaseId = c.id; state.ui.modal = "case"; render();
-      return;
+      return false;
     }
     var historikk = [{ ts: nowIso(), text: "Status endret (" + methodLabel + "): " + statusLabel(prevStatus) + " → " + statusLabel(newStatus) }].concat(c.historikk);
     var ok = await updateCase(c.id, { status: newStatus, historikk: historikk });
     if (ok) { showToast("Status oppdatert"); await refreshAndRender(); }
+    return ok;
   }
 
   function handleDragStart(e) {
@@ -2126,6 +2142,19 @@
     if (action !== "toggle-mobile-menu" && state.ui.mobileMenuOpen) state.ui.mobileMenuOpen = false;
     switch (action) {
       case "set-view": state.ui.view = e.currentTarget.getAttribute("data-view"); render(); break;
+      case "toggle-card-collapse": {
+        e.stopPropagation();
+        var tcId = e.currentTarget.getAttribute("data-id");
+        state.ui.expandedCards[tcId] = !state.ui.expandedCards[tcId];
+        render();
+        break;
+      }
+      case "collapse-all-cards": state.ui.expandedCards = {}; render(); break;
+      case "expand-all-cards": {
+        visibleCases().forEach(function (vc) { if (vc.status !== "ide") state.ui.expandedCards[vc.id] = true; });
+        render();
+        break;
+      }
       case "toggle-aside": state.ui.asideOpen = !state.ui.asideOpen; render(); break;
       case "toggle-mobile-menu": state.ui.mobileMenuOpen = !state.ui.mobileMenuOpen; render(); break;
       case "open-chat": state.ui.asideOpen = true; state.ui.asideTab = "chat"; render(); focusChatInput(); break;
@@ -2170,6 +2199,7 @@
         break;
       }
       case "delete-case-quick": e.stopPropagation(); quickDeleteCase(e.currentTarget.getAttribute("data-id")); break;
+      case "reject-case-quick": e.stopPropagation(); rejectCaseQuick(e.currentTarget.getAttribute("data-id")); break;
       case "delete-selected": deleteSelected(); break;
       case "clear-selection": state.ui.selectedIds = {}; render(); break;
       case "import-sources": importSources(); break;
@@ -2219,7 +2249,7 @@
         if (url) window.open(url, "_blank", "noopener,noreferrer");
         break;
       }
-      case "approve-selected": e.stopPropagation(); moveSelected("godkjent"); break;
+      case "approve-selected": e.stopPropagation(); approveSelected(); break;
       case "move-selected": e.stopPropagation(); moveSelected(document.getElementById("bulk-status-select").value); break;
       case "close-modal": case "close-modal-bg": state.ui.modal = null; state.ui.activeCaseId = null; render(); break;
       case "submit-new-tip": submitNewTip(); break;
@@ -2677,10 +2707,37 @@
     showToast(parts.join(", "));
   }
 
+  // Godkjenning hopper rett til "i-arbeid" (ingen egen "Godkjent"-status
+  // lenger) OG starter manusgenerering med én gang — en godkjent idé skal
+  // alltid ha et manus på gang, ikke vente på et eget steg for det.
   async function approveCaseQuick(id) {
     var c = getCase(id);
     if (!c) return;
-    await trySetStatus(c, "godkjent", "godkjenn-knapp");
+    var ok = await trySetStatus(c, "i-arbeid", "godkjenn-knapp");
+    if (ok) generateManuscriptForCase(id);
+  }
+
+  async function rejectCaseQuick(id) {
+    var c = getCase(id);
+    if (!c) return;
+    if (!window.confirm('Avvise "' + (c.title || "denne saken") + '"?')) return;
+    await trySetStatus(c, "avvist", "avvis-knapp");
+  }
+
+  async function approveSelected() {
+    var ids = Object.keys(state.ui.selectedIds);
+    if (!ids.length) return;
+    var cases = ids.map(getCase).filter(Boolean).filter(function (c) { return c.status !== "i-arbeid"; });
+    if (!cases.length) { state.ui.selectedIds = {}; render(); return; }
+    for (var i = 0; i < cases.length; i++) {
+      var c = cases[i];
+      var historikk = [{ ts: nowIso(), text: "Status endret (massehandling): " + statusLabel(c.status) + " → " + statusLabel("i-arbeid") }].concat(c.historikk);
+      await updateCase(c.id, { status: "i-arbeid", historikk: historikk });
+    }
+    state.ui.selectedIds = {};
+    await refreshAndRender();
+    showToast(cases.length + " sak(er) godkjent — sender til manusgenerering i bakgrunnen");
+    cases.forEach(function (c) { generateManuscriptForCase(c.id); });
   }
 
   async function generateManuscriptsForSelected() {

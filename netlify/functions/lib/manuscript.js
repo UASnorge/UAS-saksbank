@@ -621,15 +621,14 @@ async function generateManuscript(supabase, openaiKey, caseId) {
   const historikkEntries = [{ ts: new Date().toISOString(), text: historikkNote }];
 
   // Arbeidsflyt: å generere manus er starten på det redaksjonelle arbeidet —
-  // saken flyttes derfor automatisk fra "Godkjente idéer" til "I arbeid" her
-  // (der selve manusredigeringen skjer i verktøyet), i stedet for å kreve et
-  // eget manuelt statusbytte i tillegg. Rører aldri en sak som allerede har
-  // kommet lenger (i-arbeid/wp-utkast/publisert) eller ligger i "Idé" uten å
-  // være godkjent ennå.
+  // saken flyttes derfor automatisk til "I arbeid" her (der selve
+  // manusredigeringen skjer i verktøyet) om den fortsatt sto i "Idé" (f.eks.
+  // trigget direkte via AI-assistenten, uten å gå via Godkjenn-knappen først).
+  // Rører aldri en sak som allerede har kommet lenger (i-arbeid/wp-utkast/publisert).
   const statusUpdate = {};
-  if (c.status === "godkjent") {
+  if (c.status === "ide") {
     statusUpdate.status = "i-arbeid";
-    historikkEntries.push({ ts: new Date().toISOString(), text: "Status endret automatisk (manus generert): Godkjente idéer → I arbeid" });
+    historikkEntries.push({ ts: new Date().toISOString(), text: "Status endret automatisk (manus generert): Idé → I arbeid" });
   }
   const historikk = historikkEntries.concat(c.historikk || []);
 

@@ -97,7 +97,7 @@ async function publishOneCase(supabase, caseId) {
       (post.usedAcfFields === false ? " — OBS: opprettet med kun standardfelt, ingen bekreftede egendefinerte visningsfelt for dette nettstedet ennå" : "")
   }].concat(c.historikk || []);
 
-  const newStatus = c.status === "ide" || c.status === "godkjent" || c.status === "i-arbeid"
+  const newStatus = c.status === "ide" || c.status === "i-arbeid"
     ? "wp-utkast"
     : c.status;
 

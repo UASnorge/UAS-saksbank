@@ -360,4 +360,16 @@ async function uploadMediaForSite(nettsted, args) {
   return uploadMedia(site, args);
 }
 
-module.exports = { getSiteConfig, uploadMediaForSite, createDraftPost, UASNORWAY_ACF_FIELD_KEYS, paragraphsToHtml };
+// Henter et innleggs FAKTISKE status i WordPress ("draft", "publish", ...) —
+// brukt av check-wp-published.js til å oppdage om en redaktør har publisert
+// direkte i WordPress (utenfor saksbankens egen STOPP-kontroll), slik at
+// saksbanken kan flytte saken til "Publisert" automatisk i stedet for å
+// stille vise et utdatert "WP-utkast opprettet". context=edit kreves for at
+// et utkast (ikke bare publiserte innlegg) skal være synlig via REST-APIet.
+async function getPostStatus(nettsted, postId) {
+  const site = getSiteConfig(nettsted);
+  const post = await wpFetch(site, `/wp/v2/posts/${postId}?context=edit&_fields=id,status,link`);
+  return { status: post.status, link: post.link };
+}
+
+module.exports = { getSiteConfig, uploadMediaForSite, createDraftPost, UASNORWAY_ACF_FIELD_KEYS, paragraphsToHtml, getPostStatus };

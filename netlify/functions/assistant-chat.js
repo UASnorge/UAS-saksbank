@@ -21,7 +21,7 @@ const { reviseManuscript } = require("./lib/reviseManuscript.js");
 
 const MODEL = "gpt-5.5";
 const MAX_ROUNDS = 6;
-const MOVABLE_STATUSES = ["ide", "godkjent", "i-arbeid", "wp-utkast", "arkivert", "avvist"];
+const MOVABLE_STATUSES = ["ide", "i-arbeid", "wp-utkast", "arkivert", "avvist"];
 
 function getSupabaseForUser(token) {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
@@ -56,8 +56,8 @@ WordPress-utkast — det ville løyet om at noe finnes i WordPress som faktisk i
 opprette et WordPress-utkast, forklar at det skjer via selve "🌐 Publiser til WordPress"-knappen i appen
 (assistenten kan ikke gjøre det på vegne av brukeren).
 
-Manusarbeidsflyt: å generere manus (generate_manuscript) flytter automatisk saken fra "Godkjente idéer" til
-"I arbeid" — det er tilsiktet, ikke noe du trenger å gjøre separat med move_case_status. Ber brukeren om å
+Manusarbeidsflyt: å godkjenne en idé flytter saken rett til "I arbeid" OG starter manusgenerering med én
+gang — det finnes ikke lenger noe eget "Godkjent"-steg. Ber brukeren om å
 endre noe i et allerede generert manus (f.eks. "gjør saken lenger", "ta med mer fra kilden", "bytt bilde til
 denne lenken"), bruk revise_manuscript med et presist AI-notat som gjengir akkurat det brukeren ba om —
 ikke skriv om manuset selv i update_case, det feltet finnes ikke der.
@@ -75,7 +75,7 @@ const TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          status: { type: "string", enum: ["ide", "godkjent", "i-arbeid", "wp-utkast", "publisert", "arkivert", "avvist"] },
+          status: { type: "string", enum: ["ide", "i-arbeid", "wp-utkast", "publisert", "arkivert", "avvist"] },
           search: { type: "string", description: "Fritekstsøk i tittel (delvis treff, case-insensitive)." },
           limit: { type: "integer", minimum: 1, maximum: 50, default: 20 }
         },
@@ -164,7 +164,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "generate_manuscript",
-      description: "Generer et AI-førsteutkast (.docx-manus) for én sak. Saken bør være i status 'godkjent' eller senere. Flytter automatisk saken til 'I arbeid' om den fortsatt sto i 'Godkjente idéer'.",
+      description: "Generer et AI-førsteutkast (.docx-manus) for én sak. Saken bør være i status 'i-arbeid' eller senere.",
       parameters: { type: "object", properties: { caseId: { type: "string" } }, required: ["caseId"] }
     }
   },
