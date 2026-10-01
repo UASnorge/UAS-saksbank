@@ -526,6 +526,7 @@
   var APPROVERS = OWNERS.filter(function (o) { return o !== "Ikke tildelt"; });
   var AUDIENCES = ["Ikke satt", "Hobbyoperatører", "Operatører/PfO", "Bransje/leverandører", "Nye operatører", "Alle lesere"];
   var WEIGHTS_KEY = "uas-saksbank-weights-v1"; // personlig visningspreferanse — greit lokalt
+  var VIEW_KEY = "uas-saksbank-view-v1"; // husk Kolonner/Liste-valget på tvers av innlasting
 
   function nowIso() { return new Date().toISOString(); }
   function fmtTime(iso) {
@@ -662,6 +663,16 @@
   }
   function persistWeights() {
     localStorage.setItem(WEIGHTS_KEY, JSON.stringify(state.weights));
+  }
+
+  function loadView() {
+    try {
+      var v = localStorage.getItem(VIEW_KEY);
+      if (v === "board" || v === "list") state.ui.view = v;
+    } catch (e) {}
+  }
+  function persistView() {
+    try { localStorage.setItem(VIEW_KEY, state.ui.view); } catch (e) {}
   }
 
   function computeScore(triage, weights) {
@@ -1296,7 +1307,7 @@
     var allSelected = rows.length > 0 && rows.every(function (c) { return state.ui.selectedIds[c.id]; });
     return (
       '<div class="list-wrap"><table class="list-table">' +
-        "<thead><tr><th><input type=\"checkbox\" data-select-all" + (allSelected ? " checked" : "") + " aria-label=\"Velg alle\" /></th><th>Tittel</th><th>Type</th><th>Hastegrad</th><th>Nettsted</th><th>Journalist</th><th>Status</th><th>Frist</th><th>Score</th><th>Handling</th><th></th></tr></thead><tbody>" +
+        "<thead><tr><th><input type=\"checkbox\" data-select-all" + (allSelected ? " checked" : "") + " aria-label=\"Velg alle\" /></th><th>Tittel</th><th>Type</th><th>Hastegrad</th><th>Nettsted</th><th>Land</th><th>Journalist</th><th>Status</th><th>Frist</th><th>Score</th><th>Handling</th><th></th></tr></thead><tbody>" +
         (rows.length ? rows.map(function (c) {
           var score = computeScore(c.triage, state.weights);
           var due = fmtDue(c.frist);
@@ -1309,6 +1320,7 @@
               '<td><span class="chip chip-type-' + c.sakstype + '">' + TYPE_LABELS[c.sakstype] + "</span></td>" +
               '<td><span class="chip chip-urg-' + c.hastegrad + '">' + URGENCY_LABELS[c.hastegrad] + "</span></td>" +
               '<td><span class="chip chip-site">' + (SITE_LABELS[c.nettsted] || c.nettsted) + "</span></td>" +
+              "<td>" + (c.land && LAND_LABELS[c.land] ? '<span class="chip chip-tema">' + LAND_LABELS[c.land] + "</span>" : "") + "</td>" +
               "<td>" + escapeHtml(c.eier) + "</td>" +
               '<td><select data-list-status="' + c.id + '">' + statusOptionsMarkup(c.status) + "</select></td>" +
               '<td class="' + (overdue ? "overdue" : "") + '">' + due + "</td>" +
@@ -1320,7 +1332,7 @@
               "</td>" +
             "</tr>"
           );
-        }).join("") : '<tr><td colspan="11" class="column-empty">Ingen saker</td></tr>') +
+        }).join("") : '<tr><td colspan="12" class="column-empty">Ingen saker</td></tr>') +
         "</tbody></table></div>"
     );
   }
@@ -2189,7 +2201,7 @@
     // — ellers blir den stående åpen "under" en modal som åpnes fra den.
     if (action !== "toggle-mobile-menu" && state.ui.mobileMenuOpen) state.ui.mobileMenuOpen = false;
     switch (action) {
-      case "set-view": state.ui.view = e.currentTarget.getAttribute("data-view"); render(); break;
+      case "set-view": state.ui.view = e.currentTarget.getAttribute("data-view"); persistView(); render(); break;
       case "toggle-card-collapse": {
         e.stopPropagation();
         var tcId = e.currentTarget.getAttribute("data-id");
@@ -3332,6 +3344,7 @@
     if (!state.session) { renderLoginScreen(authError ? "Innlogging feilet: " + authError : null, authError ? "error" : null); return; }
 
     loadWeights();
+    loadView();
     subscribeRealtime();
     await Promise.all([refreshAndRender(), fetchEvents()]);
     render();
