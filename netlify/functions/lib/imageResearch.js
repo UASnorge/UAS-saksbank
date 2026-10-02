@@ -27,6 +27,7 @@
 const { verifyUrl } = require("./linkCheck.js");
 const { pickArticleImages } = require("./articleImages.js");
 const { classifyImage } = require("./imageCheck.js");
+const { findAttachmentImages, makeUploader } = require("./attachmentImages.js");
 
 const MODEL = "gpt-5-search-api";
 const IMAGE_GEN_MODEL = "gpt-image-1";
@@ -216,7 +217,12 @@ function looksGeneric(alt) {
 // fortsatt vises til redaksjonen som referanse, men skal aldri telle som
 // "vi har et bilde vi kan bruke".
 function isUsableAlternative(alt) {
-  return !!(alt && alt.verifisering && alt.verifisering.lenke_virker && !alt.er_logo && !looksGeneric(alt) && (alt.bruksrett === "A" || alt.bruksrett === "B"));
+  if (!(alt && alt.verifisering && alt.verifisering.lenke_virker && !alt.er_logo && !looksGeneric(alt))) return false;
+  // Bilder trukket ut av vedlegg til sakens EGEN kilde (kart/figurer i en
+  // høringspakke) er det saken faktisk handler om — de regnes som brukbare
+  // selv om bruksretten (alltid C) må bekreftes; det står tydelig merket.
+  if (alt.kilde_vedlegg) return true;
+  return alt.bruksrett === "A" || alt.bruksrett === "B";
 }
 
 // Finner beste brukbare index blant alternativene, eller null.
@@ -293,6 +299,12 @@ async function researchImages(supabase, openaiKey, caseId) {
     "Kilde-URL: " + (sourceUrl || "(ingen oppgitt)") + "\n" +
     (c.oppsummering ? "Sammendrag: " + c.oppsummering + "\n" : "");
 
+  // Bilder i PDF-/Word-vedlegg på kildesiden (kart/figurer i høringer osv.)
+  // hentes parallelt med nettsøket — feiler dette, fortsetter søket uten.
+  var vedleggPromise = findAttachmentImages(c.kilder || [], {
+    openaiKey: openaiKey, title: c.title, uploadImage: makeUploader(supabase, caseId)
+  }).catch(function () { return []; });
+
   var raw = await callOpenAI(openaiKey, userPrompt);
 
   var verifyEditorial = async function (img) { return (await classifyImage(openaiKey, img, { tittel: c.title })).ok; };
@@ -315,6 +327,14 @@ async function researchImages(supabase, openaiKey, caseId) {
     if (looksGeneric(merged)) merged.er_logo = true;
     return merged;
   }));
+
+  // Vedleggsbilder først i listen. Modellens egne indekser (beste/visuelt/
+  // juridisk/manuell avklaring) peker inn i DENNE listen uten vedlegg, så de
+  // forskyves tilsvarende.
+  var vedlegg = (await vedleggPromise).map(function (v) { return v.alt; });
+  var offset = vedlegg.length;
+  alternativer = vedlegg.concat(alternativer);
+  function shift(idx) { return typeof idx === "number" ? idx + offset : null; }
 
   // Ikke stol blindt på modellens egne indekser — en logo skal aldri være
   // "beste"/"mest visuelle" valg selv om modellen skulle foreslå det, og
@@ -340,9 +360,9 @@ async function researchImages(supabase, openaiKey, caseId) {
     }
   }
 
-  var beste = safeIndex(raw.beste_valg_index);
-  var visuelt = safeIndex(raw.best_visuelt_index);
-  var juridisk = safeIndex(raw.sikrest_juridisk_index);
+  var beste = safeIndex(shift(raw.beste_valg_index));
+  var visuelt = safeIndex(shift(raw.best_visuelt_index));
+  var juridisk = safeIndex(shift(raw.sikrest_juridisk_index));
   if (genererteIllustrasjoner > 0) {
     // Fallback-generering ble trigget nettopp fordi INGEN av de opprinnelige
     // forslagene var faktisk brukbare — pek derfor alltid videre til en
@@ -369,12 +389,13 @@ async function researchImages(supabase, openaiKey, caseId) {
     beste_valg_index: beste,
     sikrest_juridisk_index: juridisk,
     best_visuelt_index: visuelt,
-    manuell_avklaring_indekser: raw.manuell_avklaring_indekser || [],
+    manuell_avklaring_indekser: vedlegg.map(function (_, i) { return i; }).concat((raw.manuell_avklaring_indekser || []).map(function (i) { return i + offset; })),
     generert_ts: new Date().toISOString()
   };
 
   var verifiserteAntall = alternativer.filter(function (a) { return a.verifisering.lenke_virker; }).length;
-  var historikkTekst = "Bilderesearch kjørt — " + alternativer.length + " forslag, " + verifiserteAntall + " med bekreftet fungerende bildelenke";
+  var historikkTekst = "Bilderesearch kjørt — " + alternativer.length + " forslag, " + verifiserteAntall + " med bekreftet fungerende bildelenke" +
+    (offset ? " (" + offset + " hentet ut av PDF-/Word-vedlegg til kilden)" : "");
   if (genererteIllustrasjoner > 0) historikkTekst += " (ingen brukbart pressebilde funnet — " + genererteIllustrasjoner + " AI-illustrasjoner generert som alternativ)";
   var historikk = [{ ts: result.generert_ts, text: historikkTekst }].concat(c.historikk || []);
 

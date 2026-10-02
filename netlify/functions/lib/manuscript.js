@@ -18,6 +18,7 @@
 const { Document, Packer, Paragraph, TextRun, ImageRun, ExternalHyperlink } = require("docx");
 const { STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, todayLine, hostCredit, cleanCredit, norwegianCaptions, AI_DISCLOSURE_PARAGRAPHS } = require("./styleGuide.js");
 const { pickArticleImages } = require("./articleImages.js");
+const { findAttachmentImages, makeUploader } = require("./attachmentImages.js");
 const { classifyImage } = require("./imageCheck.js");
 
 const MODEL = "gpt-5.5"; // brukt av lib/reviseManuscript.js (rask tekstrevidering, ikke ny research)
@@ -596,9 +597,29 @@ async function generateManuscript(supabase, openaiKey, caseId) {
     });
     if (picked.length) image = picked[0];
   }
+  // Ingen bilde i selve artikkelen (typisk en høringsside): se i PDF-/Word-
+  // vedleggene på kildesiden etter kart/figurer — krediteres avsenderen av
+  // dokumentet, og bildeteksten beskriver det bildet faktisk viser.
+  let attachmentAlt = null;
+  if (!image) {
+    try {
+      const fromAttachments = await findAttachmentImages(c.kilder || [], {
+        openaiKey: openaiKey, title: c.title, uploadImage: makeUploader(supabase, c.id)
+      });
+      if (fromAttachments.length) {
+        image = fromAttachments[0].image;
+        attachmentAlt = fromAttachments[0].alt;
+      }
+    } catch (err) { /* vedleggssøk er en bonus — feiler det, fortsetter manuset uten bilde */ }
+  }
   // Foto-kreditering = KUN hvor bildet er hentet fra (f.eks. «polisen.se»),
-  // aldri «produsentbilde/illustrasjon» — redaksjonelt krav.
-  fields.fotoKreditering = image ? cleanCredit(hostCredit(sourceUrl)) : "";
+  // aldri «produsentbilde/illustrasjon» — redaksjonelt krav. For vedleggsbilder
+  // er det avsenderen av dokumentet (f.eks. «Luftfartstilsynet»).
+  fields.fotoKreditering = attachmentAlt ? attachmentAlt.foreslatt_kreditering : (image ? cleanCredit(hostCredit(sourceUrl)) : "");
+  if (attachmentAlt) {
+    fields.alt_tekst_bilde = attachmentAlt.motiv;
+    fields.bilde_er_illustrasjon = false;
+  }
   Object.assign(fields, await norwegianCaptions(openaiKey, fields));
 
   const doc = new Document({ sections: [{ children: await buildDocxParagraphs(fields, image) }] });
@@ -615,7 +636,7 @@ async function generateManuscript(supabase, openaiKey, caseId) {
     (fields.tidligere_dekning ? " — lenker til tidligere dekning: " + fields.tidligere_dekning.tittel : "") +
     " — " + (fields.kilder_brukt || []).length + " kilde(r) brukt av " + research.antallVerifisert + " verifiserte" +
     (fields.usikkerhetsnotat ? " — ⚠️ " + fields.usikkerhetsnotat : "") +
-    (image ? "" : " — ingen redaksjonelt bilde funnet i kildeartikkelen (logoer/delingsgrafikk er bevisst ikke brukt), bruk «Finn bilder»") +
+    (attachmentAlt ? " — bilde hentet ut av vedlegg («" + attachmentAlt.vedlegg.dokument_navn + "», side " + (attachmentAlt.vedlegg.side || "?") + "), kreditert " + attachmentAlt.foreslatt_kreditering + " — bruksrett må bekreftes" : (image ? "" : " — ingen redaksjonelt bilde funnet i kildeartikkelen eller vedlegg (logoer/delingsgrafikk er bevisst ikke brukt), bruk «Finn bilder»")) +
     (polished.polished ? " — språkvasket av redaktørrunden" : (polished.forkastet ? " — redaktørrunden ble forkastet (" + polished.forkastet + ")" : "")) +
     " — " + fields.kontrollpunkter.length + " kontrollpunkt(er) å avklare før publisering";
   const historikkEntries = [{ ts: new Date().toISOString(), text: historikkNote }];

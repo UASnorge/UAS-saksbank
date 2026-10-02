@@ -1726,8 +1726,10 @@
           "<p><b>Alternativ " + (i + 1) + (isBest ? " – ANBEFALT" : "") + "</b>" +
             (alt.er_logo ? ' <span style="color:var(--danger,#c33)">🏢 LOGO — skal IKKE brukes som hovedbilde</span>' : "") +
             (alt.ai_generert ? ' <span style="color:var(--ok,#2a7)">🤖 AI-generert illustrasjon (ingen tredjeparts rettighet)</span>' : "") +
+            (alt.kilde_vedlegg ? ' <span style="color:var(--accent)">📎 Fra vedlegg' + (alt.vedlegg && alt.vedlegg.side ? " (side " + alt.vedlegg.side + ")" : "") + "</span>" : "") +
           "</p>" +
           previewHtml +
+          (v.lenke_virker && !alt.er_logo ? '<button class="btn" type="button" data-action="use-image" data-id="' + c.id + '" data-idx="' + i + '">🖼️ Bruk som hovedbilde i saken</button>' : "") +
           "<p><b>Motiv:</b> " + escapeHtml(alt.motiv || "") + "</p>" +
           "<p><b>Hvorfor relevant:</b> " + escapeHtml(alt.hvorfor_relevant || "") + "</p>" +
           "<p><b>Originalkilde:</b> " + escapeHtml(alt.originalkilde_navn || "Ukjent") + (alt.kildeside_url ? linkHtml(alt.kildeside_url, "↗ Åpne kildeside") : "") + "</p>" +
@@ -2308,6 +2310,11 @@
     if (action !== "toggle-mobile-menu" && state.ui.mobileMenuOpen) state.ui.mobileMenuOpen = false;
     switch (action) {
       case "set-view": state.ui.view = e.currentTarget.getAttribute("data-view"); persistView(); render(); break;
+      case "use-image": {
+        e.stopPropagation();
+        useSuggestedImage(e.currentTarget.getAttribute("data-id"), parseInt(e.currentTarget.getAttribute("data-idx"), 10));
+        break;
+      }
       case "assist-toast-open": {
         e.stopPropagation();
         var atId = e.currentTarget.getAttribute("data-id"), atCase = getCase(atId);
@@ -3313,6 +3320,29 @@
       delete state.ui.kildeBusy[id];
       render();
     }
+  }
+
+  // Setter et bildeforslag som sakens hovedbilde: bilde-URL, kreditering
+  // (foto-feltet) og bildetekst. Bruksrett som ikke er avklart (C/D/E) krever
+  // en bekreftelse først, så ingen bruker det i god tro uten å ha sett advarselen.
+  async function useSuggestedImage(id, idx) {
+    var c = getCase(id);
+    var alt = c && c.bildeforslag && c.bildeforslag.alternativer && c.bildeforslag.alternativer[idx];
+    if (!alt || !alt.verifisering || !alt.verifisering.lenke_virker) return;
+    if (alt.bruksrett !== "A" && alt.bruksrett !== "B" && !alt.ai_generert) {
+      if (!window.confirm("Bruksretten til dette bildet er ikke avklart (kategori " + alt.bruksrett + ").\n\nKreditering settes til «" + (alt.foreslatt_kreditering || alt.rettighetshaver || "") + "». Bekreft rettighetene før publisering.\n\nBruke bildet likevel?")) return;
+    }
+    var updates = {
+      manus_bilde_url: alt.verifisering.verifisert_bilde_url,
+      manus_foto: alt.foreslatt_kreditering || alt.rettighetshaver || "",
+      manus_alt_tekst: alt.motiv || c.manusAltTekst
+    };
+    if (alt.kilde_vedlegg) updates.manus_bilde_er_illustrasjon = false;
+    if (alt.ai_generert) updates.manus_bilde_er_illustrasjon = true;
+    var historikk = [{ ts: nowIso(), text: "Hovedbilde satt fra bildeforslag " + (idx + 1) + (alt.kilde_vedlegg ? " (hentet ut av vedlegg)" : "") + ", kreditert «" + updates.manus_foto + "»" }].concat(c.historikk);
+    updates.historikk = historikk;
+    var ok = await updateCase(id, updates);
+    if (ok) { showToast("Hovedbilde satt — kreditert " + updates.manus_foto); await refreshAndRender(); }
   }
 
   async function researchImagesForCase(id) {
