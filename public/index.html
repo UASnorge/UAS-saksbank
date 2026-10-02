@@ -211,9 +211,10 @@
   .list-title:hover { color: var(--accent); }
   .list-table td.overdue { color: var(--red-fg); font-weight: 700; }
   .list-table select { padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elevated); color: var(--text); }
-  .list-actions { white-space: normal; min-width: 180px; max-width: 250px; }
+  .list-actions { white-space: normal; }
+  .list-actions-inner { display: flex; flex-wrap: wrap; gap: 4px; width: 250px; }
+  .list-actions-inner .btn { min-height: 0; padding: 4px 8px; font-size: 0.72rem; margin: 0; flex: 0 0 auto; }
   .list-table .list-source-host { display: inline-block; max-width: 90px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
-  .list-actions .btn { padding: 4px 8px; font-size: 0.72rem; margin: 2px 4px 2px 0; }
 
   .card {
     background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; padding: 10px 11px;
@@ -410,6 +411,31 @@
     background: var(--bg); padding: 6px 0 12px; margin-bottom: 4px; border-bottom: 1px solid var(--border); z-index: 1;
   }
   .manus-editor-bar span { font-weight: 700; font-size: 0.95rem; }
+
+  .manus-expanded-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; align-items: start; }
+  .manus-expanded-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .manus-expanded-assist { position: sticky; top: 64px; }
+  .manus-expanded-assist .case-chat-log { max-height: calc(100vh - 360px); min-height: 160px; }
+  @media (max-width: 900px) {
+    .manus-expanded-layout { grid-template-columns: 1fr; }
+    .manus-expanded-assist { position: static; }
+  }
+
+  .assist-toasts { position: fixed; left: 16px; bottom: 16px; z-index: 70; display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 32px)); }
+  .assist-toast {
+    display: flex; gap: 10px; align-items: flex-start; padding: 11px 12px; border-radius: 12px; font-size: 0.82rem;
+    background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+  }
+  .assist-toast.done { border-color: var(--green-fg); }
+  .assist-toast.failed { border-color: var(--red-fg); }
+  .assist-toast-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .assist-toast-title { font-weight: 700; }
+  .assist-toast-case { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .assist-toast-snippet { color: var(--text); line-height: 1.4; }
+  .assist-toast-actions { display: flex; gap: 6px; margin-top: 4px; }
+  .assist-toast-actions .btn { padding: 4px 10px; font-size: 0.74rem; }
+  .assist-spin { flex: none; width: 16px; height: 16px; margin-top: 2px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: assist-spin 0.8s linear infinite; }
+  @keyframes assist-spin { to { transform: rotate(360deg); } }
 
   .slider-row { display: flex; align-items: center; gap: 10px; }
   .slider-row label { flex: 0 0 110px; font-size: 0.78rem; color: var(--text); font-weight: 600; text-transform: none; letter-spacing: 0; }
@@ -634,7 +660,7 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "list", sort: "nyeste", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, assistDraft: {}, assistBusy: {}, mobileMenuOpen: false, manusExpanded: false, manusPreviewMode: false, manusSaving: false, newCaseTab: "lenke", newCaseBusy: false, expandedCards: {}, listStatus: "alle",
+    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "list", sort: "nyeste", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, assistDraft: {}, assistBusy: {}, mobileMenuOpen: false, manusExpanded: false, manusPreviewMode: false, manusSaving: false, newCaseTab: "lenke", newCaseBusy: false, expandedCards: {}, listStatus: "alle", assistWatch: {},
       filterPanelOpen: false, filterGroupsOpen: { tema: true, land: true, sakstype: true }, filters: { tema: null, land: null, sakstype: null }, expandedTitleGroups: {} },
     chat: { messages: [], busy: false },
     session: null,
@@ -716,6 +742,7 @@
     var res = await supabase.from("cases").select("*").order("created_at", { ascending: false });
     if (res.error) { showToast("Kunne ikke hente saker: " + res.error.message); return; }
     state.cases = (res.data || []).map(dbToCase);
+    updateAssistWatch();
   }
 
   async function refreshAndRender() {
@@ -822,7 +849,8 @@
         (state.ui.view === "list" ? renderListView() : renderBoard()) +
         renderAside(alerts) +
       "</div>" +
-      renderModal();
+      renderModal() +
+      renderAssistToasts();
     bindEvents();
 
     root.querySelectorAll(".column-body[data-status]").forEach(function (el) {
@@ -1343,7 +1371,7 @@
               '<td><select data-list-status="' + c.id + '">' + statusOptionsMarkup(c.status) + "</select></td>" +
               '<td class="' + (overdue ? "overdue" : "") + '">' + due + "</td>" +
               '<td class="score-num">' + score + "</td>" +
-              '<td class="list-actions">' + caseActionButtonsHtml(c) + "</td>" +
+              '<td class="list-actions"><div class="list-actions-inner">' + caseActionButtonsHtml(c) + "</div></td>" +
               '<td>' +
                 (c.kilder && c.kilder.length ? '<button class="icon-btn" data-action="open-source" data-url="' + escapeHtml(c.kilder[0]) + '" title="Åpne kilde">🔗</button><span class="list-source-host">' + escapeHtml(sourceHostname(c.kilder[0])) + "</span>" : "") +
                 '<button class="icon-btn" data-action="delete-case-quick" data-id="' + c.id + '" title="Slett sak" aria-label="Slett sak">✕</button>' +
@@ -1809,8 +1837,9 @@
         (expanded
           ? '<div class="manus-editor-bar"><span>✍️ Manus — forstørret visning</span><span><button class="btn btn-primary" type="button" data-action="save-manus-inline" data-id="' + c.id + '"' + (state.ui.manusSaving ? " disabled" : "") + ">" + (state.ui.manusSaving ? "Lagrer …" : "💾 Lagre") + '</button> <button class="btn" type="button" data-action="toggle-manus-expand">⤡ Vis normalt</button></span></div>'
           : '<div style="display:flex;justify-content:flex-end;gap:8px;"><button class="btn btn-primary" type="button" data-action="save-manus-inline" data-id="' + c.id + '"' + (state.ui.manusSaving ? " disabled" : "") + ">" + (state.ui.manusSaving ? "Lagrer …" : "💾 Lagre") + '</button><button class="btn" type="button" data-action="toggle-manus-expand">⛶ Forstørre</button></div>') +
-        fields +
-        kontrollHtml +
+        (expanded
+          ? '<div class="manus-expanded-layout"><div class="manus-expanded-main">' + fields + kontrollHtml + '</div><aside class="manus-expanded-assist">' + renderCaseAssistant(c) + "</aside></div>"
+          : fields + kontrollHtml) +
       "</div>" +
       genBtn + ' <button class="btn btn-primary" data-action="save-case">💾 Lagre manus</button>' +
       (c.manusUrl ? ' <button class="btn" data-action="download-manus" data-id="' + c.id + '" data-path="' + escapeHtml(c.manusUrl) + '">Last ned .docx</button><p class="helper">Sist generert: ' + fmtTime(c.manusGenerertTs) + "</p>" : "")
@@ -1908,6 +1937,7 @@
 
     var nowStr = nowIso();
     state.ui.assistBusy[id] = { text: text, ts: nowStr, by: (state.session.user && state.session.user.email) || "", until: Date.now() + 30000 };
+    state.ui.assistWatch[id] = { text: text, status: "running" };
     state.ui.assistDraft[id] = "";
     render();
     try {
@@ -1916,15 +1946,73 @@
       });
       if (!res.ok && res.status !== 202) {
         showToast("Kunne ikke sende til assistenten (" + res.status + ")");
-        delete state.ui.assistBusy[id];
+        delete state.ui.assistBusy[id]; delete state.ui.assistWatch[id];
       }
     } catch (err) {
       showToast("Kunne ikke sende til assistenten: " + err.message);
-      delete state.ui.assistBusy[id];
+      delete state.ui.assistBusy[id]; delete state.ui.assistWatch[id];
     }
     render();
     // Utløper «venter»-tilstanden selv om ingen live-oppdatering kommer.
     setTimeout(function () { if (state.ui.assistBusy[id] && Date.now() > state.ui.assistBusy[id].until) { delete state.ui.assistBusy[id]; render(); } }, 31000);
+  }
+
+  // Den forstørrede manusvisningen har sin egen assistent — da skjules
+  // den vanlige under skjemaet, så samme elementer (id-er) ikke finnes to ganger.
+  function assistantInExpandedEditor(c) {
+    return !!(state.ui.manusExpanded && statusAtOrAfter(c.status, "i-arbeid") && (c.manusTittel || (c.manusHovedtekst || []).length));
+  }
+
+  // Globale varsler nede til venstre for oppgaver brukeren har gitt assistenten.
+  // Selve jobben kjører i en Background Function på serveren og skriver svaret
+  // til saken, så den fortsetter uansett hvilken side man er på — dette sporer
+  // bare «jobber» → «ferdig» på tvers av saksvindu og forside.
+  function myEmail() { return (state.session && state.session.user && state.session.user.email) || ""; }
+
+  function updateAssistWatch() {
+    var w = state.ui.assistWatch;
+    state.cases.forEach(function (c) {
+      if (w[c.id] || !c.assistentOpptatt || !assistBusyFor(c)) return;
+      var chat = c.assistentChat || [], last = chat[chat.length - 1];
+      if (last && last.role === "user" && last.by === myEmail()) w[c.id] = { text: last.text, status: "running" };
+    });
+    Object.keys(w).forEach(function (id) {
+      var e = w[id];
+      if (e.status !== "running") return;
+      var c = getCase(id);
+      if (!c) { delete w[id]; return; }
+      if (assistBusyFor(c)) return;
+      var chat = c.assistentChat || [], userIdx = -1, reply = null, i;
+      for (i = chat.length - 1; i >= 0; i--) { if (chat[i].role === "user" && chat[i].text === e.text) { userIdx = i; break; } }
+      if (userIdx >= 0) { for (i = userIdx + 1; i < chat.length; i++) { if (chat[i].role === "assistant") reply = chat[i]; } }
+      if (reply) { e.status = "done"; e.reply = reply; } else delete w[id];
+    });
+  }
+
+  function renderAssistToasts() {
+    var w = state.ui.assistWatch, items = [];
+    Object.keys(w).forEach(function (id) {
+      var e = w[id], c = getCase(id);
+      if (!c) return;
+      if (state.ui.modal === "case" && state.ui.activeCaseId === id) { if (e.status === "done") delete w[id]; return; }
+      var title = '<span class="assist-toast-case">«' + escapeHtml(c.title || "(uten tittel)") + "»</span>";
+      var open = '<button class="btn btn-primary" type="button" data-action="assist-toast-open" data-id="' + id + '">Åpne saken</button>';
+      if (e.status === "running") {
+        items.push('<div class="assist-toast"><span class="assist-spin"></span><div class="assist-toast-body"><span class="assist-toast-title">🤖 Assistenten jobber …</span>' + title +
+          '<div class="assist-toast-actions">' + open + "</div></div></div>");
+        return;
+      }
+      var failed = String((e.reply && e.reply.text) || "").indexOf("❌") === 0;
+      var snippet = String((e.reply && e.reply.text) || "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+      if (snippet.length > 170) snippet = snippet.slice(0, 170).replace(/\s+\S*$/, "") + " …";
+      var did = ((e.reply && e.reply.handlinger) || []).filter(function (h) { return h.ok; }).map(function (h) { return h.label; }).slice(0, 3);
+      items.push('<div class="assist-toast ' + (failed ? "failed" : "done") + '"><span>' + (failed ? "⚠️" : "✅") + '</span><div class="assist-toast-body"><span class="assist-toast-title">' +
+        (failed ? "Assistenten kunne ikke fullføre" : "Assistenten er ferdig") + "</span>" + title +
+        '<span class="assist-toast-snippet">' + escapeHtml(snippet) + "</span>" +
+        (did.length ? '<span class="assist-toast-case">✓ ' + escapeHtml(did.join(" · ")) + "</span>" : "") +
+        '<div class="assist-toast-actions">' + open + '<button class="btn" type="button" data-action="assist-toast-dismiss" data-id="' + id + '">Lukk</button></div></div></div>');
+    });
+    return items.length ? '<div class="assist-toasts" role="status" aria-live="polite">' + items.join("") + "</div>" : "";
   }
 
   function renderCaseModal(c) {
@@ -1957,7 +2045,7 @@
             "</div>" +
             '<div class="field"><label for="c-neste">Neste handling</label><input id="c-neste" data-field="nesteHandling" value="' + escapeHtml(c.nesteHandling) + '" /></div>' +
 
-            renderCaseAssistant(c) +
+            (assistantInExpandedEditor(c) ? "" : renderCaseAssistant(c)) +
             (c.eventId && state.eventsById[c.eventId] ? '<p class="helper">📅 Koblet til arrangement: <b>' + escapeHtml(state.eventsById[c.eventId].title) + "</b> (" + escapeHtml(state.eventsById[c.eventId].starts_on) + ")</p>" : "") +
 
             (c.status === "ide" ? '<button class="btn btn-primary" data-action="approve-case-quick" data-id="' + c.id + '" style="width:100%;">✓ Godkjenn idé → lag manus og flytt til «I arbeid»</button>' : "") +
@@ -2220,6 +2308,17 @@
     if (action !== "toggle-mobile-menu" && state.ui.mobileMenuOpen) state.ui.mobileMenuOpen = false;
     switch (action) {
       case "set-view": state.ui.view = e.currentTarget.getAttribute("data-view"); persistView(); render(); break;
+      case "assist-toast-open": {
+        e.stopPropagation();
+        var atId = e.currentTarget.getAttribute("data-id"), atCase = getCase(atId);
+        delete state.ui.assistWatch[atId];
+        state.ui.activeCaseId = atId; state.ui.modal = "case";
+        state.ui.manusExpanded = !!(atCase && (atCase.manusTittel || (atCase.manusHovedtekst || []).length) && statusAtOrAfter(atCase.status, "i-arbeid"));
+        state.ui.manusPreviewMode = state.ui.manusExpanded;
+        render();
+        break;
+      }
+      case "assist-toast-dismiss": e.stopPropagation(); delete state.ui.assistWatch[e.currentTarget.getAttribute("data-id")]; render(); break;
       case "set-list-status": state.ui.listStatus = e.currentTarget.getAttribute("data-status"); render(); break;
       case "toggle-card-collapse": {
         e.stopPropagation();
@@ -3367,6 +3466,10 @@
     subscribeRealtime();
     await Promise.all([refreshAndRender(), fetchEvents()]);
     render();
+    setInterval(function () {
+      var running = Object.keys(state.ui.assistWatch).some(function (id) { return state.ui.assistWatch[id].status === "running"; });
+      if (running && !state.ui.modal) refreshAndRender();
+    }, 10000);
   }
 
   boot();
