@@ -199,18 +199,20 @@
   .list-tab:hover { box-shadow: inset 0 0 0 999px var(--hover-overlay); }
   .list-tab.active { background: var(--accent); color: var(--accent-contrast); border-color: transparent; }
   .list-tab-count { font-variant-numeric: tabular-nums; opacity: 0.75; font-size: 0.74rem; }
-  .list-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .list-table { width: auto; border-collapse: collapse; font-size: 0.85rem; }
   .list-table th {
     text-align: left; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
     color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--border);
     position: sticky; top: 0; background: var(--bg); z-index: 1;
   }
   .list-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
-  .list-title { cursor: pointer; font-weight: 650; white-space: normal; }
+  .list-title { cursor: pointer; font-weight: 650; }
+  .list-title-text { display: inline-block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
   .list-title:hover { color: var(--accent); }
   .list-table td.overdue { color: var(--red-fg); font-weight: 700; }
   .list-table select { padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elevated); color: var(--text); }
-  .list-actions { white-space: normal; min-width: 220px; }
+  .list-actions { white-space: normal; min-width: 180px; max-width: 250px; }
+  .list-table .list-source-host { display: inline-block; max-width: 90px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
   .list-actions .btn { padding: 4px 8px; font-size: 0.72rem; margin: 2px 4px 2px 0; }
 
   .card {
@@ -1332,7 +1334,7 @@
           return (
             "<tr>" +
               '<td><input type="checkbox" data-select-id="' + c.id + '"' + (checked ? " checked" : "") + ' aria-label="Velg" /></td>' +
-              '<td class="list-title" data-action="open-case" data-id="' + c.id + '">' + (isNewCase(c) ? '<span class="chip chip-new" style="margin-right:6px;">Ny</span>' : "") + escapeHtml(c.title || "(uten tittel)") + "</td>" +
+              '<td class="list-title" data-action="open-case" data-id="' + c.id + '" title="' + escapeHtml(c.title || "(uten tittel)") + '">' + (isNewCase(c) ? '<span class="chip chip-new" style="margin-right:6px;vertical-align:middle;">Ny</span>' : "") + '<span class="list-title-text">' + escapeHtml(c.title || "(uten tittel)") + "</span></td>" +
               '<td><span class="chip chip-type-' + c.sakstype + '">' + TYPE_LABELS[c.sakstype] + "</span></td>" +
               '<td><span class="chip chip-urg-' + c.hastegrad + '">' + URGENCY_LABELS[c.hastegrad] + "</span></td>" +
               '<td><span class="chip chip-site">' + (SITE_LABELS[c.nettsted] || c.nettsted) + "</span></td>" +
