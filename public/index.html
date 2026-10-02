@@ -446,6 +446,14 @@
   .stopp-box.done { border-color: var(--green-fg); background: var(--green-bg); }
   .stopp-title { font-weight: 700; font-size: 0.82rem; display: flex; align-items: center; gap: 6px; }
   .checkline { display: flex; align-items: flex-start; gap: 8px; font-size: 0.82rem; }
+  /* Avkrysningsbokser får aldri arve «.field input» (width:100%, padding): det
+     lot boksen og teksten gli over i hverandre i enkelte nettlesere. */
+  .field input[type="checkbox"], .field input[type="radio"], .checkline input[type="checkbox"] {
+    width: 16px; height: 16px; min-height: 0; padding: 0; margin: 2px 0 0; flex: 0 0 16px;
+  }
+  .check-group { display: flex; flex-wrap: wrap; gap: 8px 18px; padding-top: 9px; }
+  .check-group .checkline { align-items: center; white-space: nowrap; text-transform: none; letter-spacing: 0; font-size: 0.82rem; font-weight: 600; color: var(--text); }
+  .check-group .checkline input { margin: 0; }
 
   .kilder-list { display: flex; flex-direction: column; gap: 6px; }
   .kilde-row { display: flex; gap: 6px; }
@@ -1520,7 +1528,7 @@
               '<div class="field"><label for="pq-stikkord">Stikkord</label><select id="pq-stikkord" data-field="wpStikkord"><option value=""' + (c.wpStikkord ? "" : " selected") + ">Velg stikkord</option>" +
                 WP_STIKKORD_OPTIONS.map(function (o) { return '<option value="' + escapeHtml(o) + '"' + (o === c.wpStikkord ? " selected" : "") + ">" + escapeHtml(o) + "</option>"; }).join("") +
               "</select></div>" +
-              '<div class="field"><label>Kategori (kan velge flere)</label><div style="display:flex;gap:14px;flex-wrap:wrap;padding-top:9px;">' +
+              '<div class="field"><label>Kategori (kan velge flere)</label><div class="check-group">' +
                 WP_KATEGORI_OPTIONS.map(function (o) {
                   return '<label class="checkline"><input type="checkbox" class="wp-kategori-check" value="' + escapeHtml(o) + '"' + ((c.wpKategori || []).indexOf(o) !== -1 ? " checked" : "") + " /> " + escapeHtml(o) + "</label>";
                 }).join("") +
@@ -2103,7 +2111,7 @@
                   '<div class="field"><label for="wp-stikkord">Stikkord</label><select id="wp-stikkord" data-field="wpStikkord"><option value=""' + (c.wpStikkord ? "" : " selected") + ">Velg stikkord</option>" +
                     WP_STIKKORD_OPTIONS.map(function (o) { return '<option value="' + escapeHtml(o) + '"' + (o === c.wpStikkord ? " selected" : "") + ">" + escapeHtml(o) + "</option>"; }).join("") +
                   "</select></div>" +
-                  '<div class="field"><label>Kategori (kan velge flere)</label><div style="display:flex;gap:14px;flex-wrap:wrap;padding-top:9px;">' +
+                  '<div class="field"><label>Kategori (kan velge flere)</label><div class="check-group">' +
                     WP_KATEGORI_OPTIONS.map(function (o) {
                       return '<label class="checkline"><input type="checkbox" class="wp-kategori-check" value="' + escapeHtml(o) + '"' + ((c.wpKategori || []).indexOf(o) !== -1 ? " checked" : "") + " /> " + escapeHtml(o) + "</label>";
                     }).join("") +
