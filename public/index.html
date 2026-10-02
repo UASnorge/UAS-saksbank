@@ -191,6 +191,14 @@
   .column-empty { font-size: 0.78rem; color: var(--text-muted); padding: 12px 4px; text-align: center; }
 
   .list-wrap { flex: 1; overflow: auto; padding: 16px 20px; }
+  .list-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .list-tab {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text); font-weight: 600; font-size: 0.82rem;
+  }
+  .list-tab:hover { box-shadow: inset 0 0 0 999px var(--hover-overlay); }
+  .list-tab.active { background: var(--accent); color: var(--accent-contrast); border-color: transparent; }
+  .list-tab-count { font-variant-numeric: tabular-nums; opacity: 0.75; font-size: 0.74rem; }
   .list-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
   .list-table th {
     text-align: left; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
@@ -624,7 +632,7 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "list", sort: "nyeste", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, assistDraft: {}, assistBusy: {}, mobileMenuOpen: false, manusExpanded: false, manusPreviewMode: false, manusSaving: false, newCaseTab: "lenke", newCaseBusy: false, expandedCards: {},
+    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "list", sort: "nyeste", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, assistDraft: {}, assistBusy: {}, mobileMenuOpen: false, manusExpanded: false, manusPreviewMode: false, manusSaving: false, newCaseTab: "lenke", newCaseBusy: false, expandedCards: {}, listStatus: "alle",
       filterPanelOpen: false, filterGroupsOpen: { tema: true, land: true, sakstype: true }, filters: { tema: null, land: null, sakstype: null }, expandedTitleGroups: {} },
     chat: { messages: [], busy: false },
     session: null,
@@ -1302,11 +1310,19 @@
     var cases = sortCases(visibleCases());
     var rows = [];
     order.forEach(function (statusId) {
+      if (state.ui.listStatus !== "alle" && state.ui.listStatus !== statusId) return;
       cases.forEach(function (c) { if (c.status === statusId) rows.push(c); });
     });
     var allSelected = rows.length > 0 && rows.every(function (c) { return state.ui.selectedIds[c.id]; });
+    var tabs = [{ id: "alle", label: "Alle", count: cases.filter(function (c) { return order.indexOf(c.status) !== -1; }).length }].concat(
+      STATUSES.map(function (s) { return { id: s.id, label: s.label, count: cases.filter(function (c) { return c.status === s.id; }).length }; })
+    );
+    var tabsHtml = '<div class="list-tabs" role="tablist" aria-label="Status">' + tabs.map(function (t) {
+      return '<button class="list-tab' + (state.ui.listStatus === t.id ? " active" : "") + '" type="button" role="tab" data-action="set-list-status" data-status="' + t.id + '">' +
+        escapeHtml(t.label) + '<span class="list-tab-count">' + t.count + "</span></button>";
+    }).join("") + "</div>";
     return (
-      '<div class="list-wrap"><table class="list-table">' +
+      '<div class="list-wrap">' + tabsHtml + '<table class="list-table">' +
         "<thead><tr><th><input type=\"checkbox\" data-select-all" + (allSelected ? " checked" : "") + " aria-label=\"Velg alle\" /></th><th>Tittel</th><th>Type</th><th>Hastegrad</th><th>Nettsted</th><th>Land</th><th>Journalist</th><th>Status</th><th>Frist</th><th>Score</th><th>Handling</th><th></th></tr></thead><tbody>" +
         (rows.length ? rows.map(function (c) {
           var score = computeScore(c.triage, state.weights);
@@ -2202,6 +2218,7 @@
     if (action !== "toggle-mobile-menu" && state.ui.mobileMenuOpen) state.ui.mobileMenuOpen = false;
     switch (action) {
       case "set-view": state.ui.view = e.currentTarget.getAttribute("data-view"); persistView(); render(); break;
+      case "set-list-status": state.ui.listStatus = e.currentTarget.getAttribute("data-status"); render(); break;
       case "toggle-card-collapse": {
         e.stopPropagation();
         var tcId = e.currentTarget.getAttribute("data-id");
