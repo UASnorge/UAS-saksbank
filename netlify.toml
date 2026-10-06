@@ -25,6 +25,9 @@
 [functions."generate-manuscript-background"]
   external_node_modules = ["pdf-parse"]
 
+[functions."research-images"]
+  external_node_modules = ["pdf-parse"]
+
 [functions."assistant-chat"]
   external_node_modules = ["pdf-parse"]
 
