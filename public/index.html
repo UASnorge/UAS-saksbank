@@ -668,7 +668,7 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "list", sort: "nyeste", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, assistDraft: {}, assistBusy: {}, mobileMenuOpen: false, manusExpanded: false, manusPreviewMode: false, manusSaving: false, newCaseTab: "lenke", newCaseBusy: false, expandedCards: {}, listStatus: "alle", assistWatch: {},
+    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "list", sort: "nyeste", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, assistDraft: {}, assistBusy: {}, mobileMenuOpen: false, manusExpanded: false, manusPreviewMode: false, manusSaving: false, newCaseTab: "lenke", newCaseBusy: false, expandedCards: {}, listStatus: "alle", assistWatch: {}, writeDraft: {},
       filterPanelOpen: false, filterGroupsOpen: { tema: true, land: true, sakstype: true }, filters: { tema: null, land: null, sakstype: null }, expandedTitleGroups: {} },
     chat: { messages: [], busy: false },
     session: null,
@@ -845,6 +845,9 @@
     if (prevPanel) scrollState.panel = prevPanel.scrollTop;
     var prevLog = document.getElementById("case-chat-log");
     var logState = prevLog ? { top: prevLog.scrollTop, atBottom: prevLog.scrollHeight - prevLog.scrollTop - prevLog.clientHeight < 40 } : null;
+    var ae = document.activeElement;
+    var focusedWrite = ae && ae.id && ae.id.indexOf("nw-") === 0 && typeof ae.selectionStart === "number"
+      ? { id: ae.id, start: ae.selectionStart, end: ae.selectionEnd, scroll: ae.scrollTop } : null;
     var prevInput = document.getElementById("case-chat-input");
     var hadFocus = prevInput && document.activeElement === prevInput;
     var selStart = hadFocus ? prevInput.selectionStart : 0;
@@ -874,6 +877,13 @@
     if (scrollState.window[0] || scrollState.window[1]) window.scrollTo(scrollState.window[0], scrollState.window[1]);
     var newLog = document.getElementById("case-chat-log");
     if (newLog) newLog.scrollTop = (!logState || logState.atBottom) ? newLog.scrollHeight : logState.top;
+    if (focusedWrite) {
+      var wEl = document.getElementById(focusedWrite.id);
+      if (wEl) {
+        wEl.focus();
+        try { wEl.setSelectionRange(focusedWrite.start, focusedWrite.end); wEl.scrollTop = focusedWrite.scroll; } catch (e) {}
+      }
+    }
     var newInput = document.getElementById("case-chat-input");
     if (newInput && hadFocus && !newInput.disabled) { newInput.focus(); try { newInput.setSelectionRange(selStart, selStart); } catch (e) {} }
   }
@@ -1226,6 +1236,11 @@
   // Handlingsknappene for en sak — DELT mellom kortet (tavle-/listevisning)
   // og den nye, kompakte tabellraden (list-table), slik at begge visningene
   // alltid har nøyaktig de samme handlingene uten å vedlikeholdes to steder.
+  // Saken har faktisk manustekst (generert av AI ELLER skrevet inn selv) —
+  // også uten en generert .docx. Brukes slik at en selvskrevet sak aldri får
+  // en «Generer manus»-knapp som ville overskrevet teksten, og kan publiseres.
+  function caseHasManusText(c) { return !!(c.manusTittel || (c.manusHovedtekst || []).length); }
+
   function caseActionButtonsHtml(c) {
     var rejectBtn = (c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist")
       ? '<button class="btn btn-danger" data-action="reject-case-quick" data-id="' + c.id + '" title="Avvis sak">✕ Avvis</button>'
@@ -1237,7 +1252,7 @@
     if (statusAtOrAfter(c.status, "i-arbeid") && c.status !== "publisert" && c.status !== "arkivert" && c.status !== "avvist") {
       var manusBtn = c.manusUrl
         ? '<button class="btn" data-action="download-manus" data-id="' + c.id + '" data-path="' + escapeHtml(c.manusUrl) + '">⬇ Manus</button>'
-        : '<button class="btn" data-action="generate-manus" data-id="' + c.id + '"' + (state.ui.manusBusy[c.id] ? " disabled" : "") + ">" + (state.ui.manusBusy[c.id] ? "Genererer …" : "📄 Manus") + "</button>";
+        : (caseHasManusText(c) ? "" : '<button class="btn" data-action="generate-manus" data-id="' + c.id + '"' + (state.ui.manusBusy[c.id] ? " disabled" : "") + ">" + (state.ui.manusBusy[c.id] ? "Genererer …" : "📄 Manus") + "</button>");
       var nextStatus = nextAdvanceableStatus(c.status);
       var nextBtn = nextStatus ? '<button class="btn" data-action="advance-status-quick" data-id="' + c.id + '" data-next="' + nextStatus + '">→ ' + escapeHtml(statusLabel(nextStatus)) + "</button>" : "";
       // Direkte snarvei, kun mens saken faktisk er "I arbeid" — hopper rett
@@ -1250,7 +1265,7 @@
       // Direkte snarvei til å publisere til WordPress uten å måtte åpne
       // saken først — kun mens saken er "I arbeid" OG manus faktisk er
       // generert (ellers er det ingenting å publisere ennå).
-      var publishBtn = (c.status === "i-arbeid" && c.manusUrl)
+      var publishBtn = (c.status === "i-arbeid" && (c.manusUrl || caseHasManusText(c)))
         ? '<button class="btn" data-action="quick-publish" data-id="' + c.id + '">🌐 Publiser</button>'
         : "";
       return previewBtn + publishBtn + manusBtn + nextBtn + rejectBtn;
@@ -1559,6 +1574,7 @@
       newCaseTabBtn("opplasting", "📄 Last opp manus") +
       newCaseTabBtn("lydopptak", "🎙️ Lydopptak") +
       newCaseTabBtn("skriv", "✍️ Skriv selv") +
+      newCaseTabBtn("tips", "💡 Tips") +
       newCaseTabBtn("materiale", "📎 Fra dokument/lenker") +
       newCaseTabBtn("bestill", "🎯 Bestill innhold") +
     "</div>";
@@ -1614,6 +1630,40 @@
         '<div class="field"><label for="nc-bestill-ekstra">Målgruppe, vinkler, budskap (valgfritt)</label><textarea id="nc-bestill-ekstra" rows="3" placeholder="F.eks. en sak rettet mot energibransjen, en om early bird-pris, en om å sende med kollegene …"></textarea></div>' +
         '<p class="helper">AI leser de nyeste INFO-sakene fra uasnorway.no og skriver i samme språk og stil. Hver sak får en egen vinkel og havner i «I arbeid» som førsteutkast (tar ca. 30–60 sekunder). AI dikter aldri opp priser, frister eller navn — det som mangler settes som [PLASSHOLDER] og listes som kontrollpunkt du må fylle inn før publisering.</p>' +
         '<button class="btn btn-primary" type="button" data-action="submit-new-content-batch"' + (busy ? " disabled" : "") + ">" + (busy ? "Bestiller …" : "Produser saker") + "</button>";
+    } else if (tab === "skriv") {
+      var d = state.ui.writeDraft || {};
+      var dv = function (k, def) { return escapeHtml(d[k] !== undefined ? d[k] : (def || "")); };
+      var valgteKat = d.kategorier || [];
+      bodyHtml =
+        '<div class="field"><label for="nw-title">Tittel *</label><input id="nw-title" data-write="title" value="' + dv("title") + '" /></div>' +
+        '<div class="field"><label for="nw-ingress">Ingress *</label><textarea id="nw-ingress" data-write="ingress" rows="3" style="font-family:var(--font-sans);font-size:0.95rem;line-height:1.5;">' + dv("ingress") + "</textarea></div>" +
+        '<div class="field"><label for="nw-hovedtekst">Hovedtekst * (blank linje mellom avsnitt · «## » lager mellomtittel · «&gt; » lager sitat)</label><textarea id="nw-hovedtekst" data-write="hovedtekst" rows="14" style="font-family:var(--font-sans);font-size:0.95rem;line-height:1.55;min-height:260px;">' + dv("hovedtekst") + "</textarea></div>" +
+        '<div class="field-row">' +
+          '<div class="field"><label for="nw-bildefil">Bilde — last opp fil</label><input id="nw-bildefil" type="file" accept="image/png,image/jpeg" /></div>' +
+          '<div class="field"><label for="nw-bildeurl">…eller bilde-URL</label><input id="nw-bildeurl" data-write="bildeurl" type="url" placeholder="https://…" value="' + dv("bildeurl") + '" /></div>' +
+        "</div>" +
+        '<div class="field-row">' +
+          '<div class="field"><label for="nw-bildetekst">Bildetekst</label><input id="nw-bildetekst" data-write="bildetekst" value="' + dv("bildetekst") + '" /></div>' +
+          '<div class="field"><label for="nw-foto">Foto / kreditering</label><input id="nw-foto" data-write="foto" placeholder="F.eks. Luftfartstilsynet" value="' + dv("foto") + '" /></div>' +
+        "</div>" +
+        '<div class="field-row">' +
+          '<div class="field"><label for="nw-site">Nettsted</label><select id="nw-site" data-write="nettsted">' + optionsFor(SITE_LABELS, d.nettsted || "dronemag.no") + "</select></div>" +
+          '<div class="field"><label for="nw-type">Sakstype</label><select id="nw-type" data-write="sakstype">' + optionsFor(TYPE_LABELS, d.sakstype || "redaksjonell") + "</select></div>" +
+        "</div>" +
+        '<div class="field-row">' +
+          '<div class="field"><label for="nw-stikkord">Stikkord</label><select id="nw-stikkord" data-write="stikkord"><option value="">Velg stikkord</option>' +
+            WP_STIKKORD_OPTIONS.map(function (o) { return '<option value="' + escapeHtml(o) + '"' + (d.stikkord === o ? " selected" : "") + ">" + escapeHtml(o) + "</option>"; }).join("") + "</select></div>" +
+          '<div class="field"><label>Kategori (kan velge flere)</label><div class="check-group">' +
+            WP_KATEGORI_OPTIONS.map(function (o) { return '<label class="checkline"><input type="checkbox" data-write-kat value="' + escapeHtml(o) + '"' + (valgteKat.indexOf(o) !== -1 ? " checked" : "") + " /> " + escapeHtml(o) + "</label>"; }).join("") +
+          "</div></div>" +
+        "</div>" +
+        '<div class="field-row">' +
+          '<div class="field"><label for="nw-byline">Byline</label><input id="nw-byline" data-write="byline" list="nw-byline-list" placeholder="F.eks. Redaksjonen, KI, eller et navn" value="' + dv("byline") + '" />' +
+            '<datalist id="nw-byline-list">' + bylineHistory().map(function (b) { return '<option value="' + escapeHtml(b) + '"></option>'; }).join("") + "</datalist></div>" +
+          '<div class="field"><label for="nw-kilde">Kilde-lenke (valgfritt)</label><input id="nw-kilde" data-write="kilde" type="url" placeholder="https://…" value="' + dv("kilde") + '" /></div>' +
+        "</div>" +
+        '<p class="helper">Ingen AI brukes — teksten lagres akkurat slik du limer den inn, og saken havner i «I arbeid» klar for publisering. Det du ikke fyller ut nå (bilde, stikkord, kategori, byline) kan du legge til i saken etterpå; WordPress-utkast krever at alle er satt. Det du skriver huskes om vinduet lukkes ved en feil.</p>' +
+        '<button class="btn btn-primary" type="button" data-action="submit-new-case-write"' + (busy ? " disabled" : "") + ">" + (busy ? "Oppretter saken …" : "Opprett sak") + "</button>";
     } else {
       bodyHtml =
         '<form id="new-tip-form">' +
@@ -2201,6 +2251,18 @@
         if (c) trySetStatus(c, el.value, "listevisning");
       });
     });
+    // «Skriv selv»-skjemaet: tekst huskes i state.ui.writeDraft slik at en
+    // live-oppdatering (som tegner siden på nytt) aldri sletter det man har skrevet.
+    root.querySelectorAll("[data-write]").forEach(function (el) {
+      var save = function () { state.ui.writeDraft[el.getAttribute("data-write")] = el.value; };
+      el.addEventListener("input", save);
+      el.addEventListener("change", save);
+    });
+    root.querySelectorAll("[data-write-kat]").forEach(function (el) {
+      el.addEventListener("change", function () {
+        state.ui.writeDraft.kategorier = [].slice.call(root.querySelectorAll("[data-write-kat]:checked")).map(function (x) { return x.value; });
+      });
+    });
     root.querySelectorAll("[data-toggle-source]").forEach(function (el) {
       el.addEventListener("change", function () {
         toggleSource(el.getAttribute("data-toggle-source"), el.checked);
@@ -2464,6 +2526,7 @@
       case "submit-new-content-batch": submitNewContentBatch(); break;
       case "submit-new-case-material": submitNewCaseFromMaterial(); break;
       case "submit-new-case-link": submitNewCaseFromLink(); break;
+      case "submit-new-case-write": submitNewCaseWritten(); break;
       case "submit-new-case-upload": submitNewCaseFromUpload(); break;
       case "submit-new-case-audio": submitNewCaseFromAudio(); break;
       case "assist-send": e.stopPropagation(); (function () { var id = e.currentTarget.getAttribute("data-id"); var el = document.getElementById("case-chat-input"); sendAssistantMessage(id, el ? el.value : ""); })(); break;
@@ -2476,6 +2539,54 @@
       case "remove-kilde": removeKildeRow(parseInt(e.currentTarget.getAttribute("data-idx"), 10)); break;
       case "save-weights": saveWeights(); break;
       case "sign-out": signOut(); break;
+    }
+  }
+
+  // «Skriv selv»: oppretter en ferdig sak i «I arbeid» direkte fra det
+  // redaksjonen limer inn — ingen AI. Valgfri bildefil lastes opp til lagring.
+  async function submitNewCaseWritten() {
+    var d = state.ui.writeDraft || {};
+    var title = (d.title || "").trim();
+    var ingress = (d.ingress || "").trim();
+    var hoved = (d.hovedtekst || "").replace(/\r\n/g, "\n").trim();
+    var missing = [];
+    if (!title) missing.push("tittel");
+    if (!ingress) missing.push("ingress");
+    if (!hoved) missing.push("hovedtekst");
+    if (missing.length) { showToast("Fyll ut " + missing.join(", ") + " først"); return; }
+    var fileEl = document.getElementById("nw-bildefil");
+    var file = fileEl && fileEl.files && fileEl.files[0] ? fileEl.files[0] : null;
+    if (file && file.size > 10 * 1024 * 1024) { showToast("Bildet er for stort (maks 10 MB)"); return; }
+    var paragraphs = hoved.split(/\n\s*\n/).map(function (p) { return p.trim(); }).filter(Boolean);
+    var kilde = (d.kilde || "").trim();
+
+    state.ui.newCaseBusy = true; render();
+    try {
+      var created = await createCase({
+        title: title, sakstype: d.sakstype || "redaksjonell", hastegrad: "planlagt", status: "i-arbeid", eier: "Ikke tildelt",
+        nettsted: d.nettsted || "dronemag.no", kilder: kilde ? [kilde] : [], neste_handling: "Kontroller og publiser",
+        manus_tittel: title, manus_ingress: ingress, manus_hovedtekst: paragraphs,
+        manus_alt_tekst: (d.bildetekst || "").trim(), manus_foto: (d.foto || "").trim(), manus_bilde_url: (d.bildeurl || "").trim(),
+        manus_bilde_er_illustrasjon: false,
+        wp_stikkord: d.stikkord || "", wp_kategori: d.kategorier || [], wp_byline: (d.byline || "").trim(),
+        historikk: [{ ts: nowIso(), text: "Sak skrevet inn manuelt (uten AI) — klar for kontroll og publisering" }]
+      });
+      if (!created) return;
+      if (file) {
+        var ext = /png/i.test(file.type) ? "png" : "jpg";
+        var path = created.id + "/bilde-" + Date.now() + "." + ext;
+        var up = await supabase.storage.from("manus").upload(path, file, { contentType: file.type || "image/jpeg", upsert: false });
+        var signed = up.error ? null : await supabase.storage.from("manus").createSignedUrl(path, 60 * 60 * 24 * 365);
+        if (signed && signed.data && signed.data.signedUrl) await updateCase(created.id, { manus_bilde_url: signed.data.signedUrl });
+        else showToast("Saken er opprettet, men bildet kunne ikke lastes opp — legg det til i saken");
+      }
+      state.ui.writeDraft = {};
+      state.ui.modal = null;
+      await openCreatedCase(created.id);
+      showToast("Saken er opprettet i «I arbeid»");
+    } finally {
+      state.ui.newCaseBusy = false;
+      render();
     }
   }
 
