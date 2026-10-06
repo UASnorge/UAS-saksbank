@@ -6,6 +6,7 @@
 // innlogget bruker (Bearer-token) og OPENAI_API_KEY.
 
 const { createClient } = require("@supabase/supabase-js");
+const { friendlyError } = require("./lib/errors.js");
 const { reviseManuscript } = require("./lib/reviseManuscript.js");
 
 function getSupabaseForUser(token) {
@@ -40,6 +41,6 @@ exports.handler = async function (event) {
     const result = await reviseManuscript(supabase, openaiKey, body.caseId, body.aiNotat);
     return { statusCode: 200, body: JSON.stringify(result) };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    return { statusCode: 500, body: JSON.stringify({ error: friendlyError(err.message) }) };
   }
 };

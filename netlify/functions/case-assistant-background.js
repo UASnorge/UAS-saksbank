@@ -9,6 +9,7 @@
 // false til slutt, også ved feil.
 
 const { createClient } = require("@supabase/supabase-js");
+const { friendlyError } = require("./lib/errors.js");
 const { getAuthorizedUser } = require("./lib/authCheck.js");
 const { runCaseAssistant } = require("./lib/caseAssistant.js");
 
@@ -51,7 +52,7 @@ exports.handler = async function (event) {
     reply = out.reply; handlinger = out.handlinger;
   } catch (err) {
     console.error("case-assistant-background feilet for " + caseId + ":", err);
-    reply = "❌ Beklager, noe gikk galt: " + err.message;
+    reply = "❌ Beklager, noe gikk galt: " + friendlyError(err.message);
   }
 
   // Les samtalen på nytt (saken kan ha fått nye felter/historikk underveis), legg til svaret, og frigi.

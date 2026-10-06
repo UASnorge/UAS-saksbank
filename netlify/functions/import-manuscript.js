@@ -5,6 +5,7 @@
 // den, ikke selve fil-innholdet — holder forespørselen liten).
 
 const { createClient } = require("@supabase/supabase-js");
+const { friendlyError } = require("./lib/errors.js");
 const { createCaseFromUpload } = require("./lib/importManuscript.js");
 
 function getSupabaseForUser(token) {
@@ -38,6 +39,6 @@ exports.handler = async function (event) {
     const result = await createCaseFromUpload(supabase, openaiKey, body.storagePath, body.filename);
     return { statusCode: 200, body: JSON.stringify(result) };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    return { statusCode: 500, body: JSON.stringify({ error: friendlyError(err.message) }) };
   }
 };

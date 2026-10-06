@@ -2,6 +2,7 @@
 // Kalles fra "Kjør AI-vurdering"-knappen(e) i saksbanken.
 
 const { createClient } = require("@supabase/supabase-js");
+const { friendlyError } = require("./lib/errors.js");
 const { runTriage } = require("./lib/triage.js");
 
 function getSupabaseForUser(token) {
@@ -48,6 +49,6 @@ exports.handler = async function (event) {
       body: JSON.stringify({ vurdert: result.vurdert.length, feilet: result.feilet, overflow: result.overflow })
     };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    return { statusCode: 500, body: JSON.stringify({ error: friendlyError(err.message) }) };
   }
 };

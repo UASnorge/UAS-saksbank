@@ -12,6 +12,7 @@
 // generate-manuscript-background.js via lib/ — ikke egne, uverifiserte kopier.
 
 const { createClient } = require("@supabase/supabase-js");
+const { friendlyError } = require("./lib/errors.js");
 const { runTriage } = require("./lib/triage.js");
 const { generateManuscript } = require("./lib/manuscript.js");
 const { cleanupIrrelevantCases } = require("./lib/cleanup.js");
@@ -427,6 +428,6 @@ exports.handler = async function (event) {
     const result = await runAssistant(supabase, openaiKey, body.history || [], body.message);
     return { statusCode: 200, body: JSON.stringify(result) };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    return { statusCode: 500, body: JSON.stringify({ error: friendlyError(err.message) }) };
   }
 };

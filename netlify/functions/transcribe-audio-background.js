@@ -17,6 +17,7 @@
 // allerede lastet opp direkte til Supabase Storage av nettleseren).
 
 const { createClient } = require("@supabase/supabase-js");
+const { friendlyError } = require("./lib/errors.js");
 const { transcribeMultipleAudioFiles } = require("./lib/transcribe.js");
 const { generateManuscriptFromTranscript } = require("./lib/manuscript.js");
 const { isAuthorizedUser } = require("./lib/authCheck.js");
@@ -100,7 +101,7 @@ exports.handler = async function (event) {
     console.log("transcribe-audio-background fullført:", JSON.stringify(result));
   } catch (err) {
     console.error("transcribe-audio-background feilet:", err);
-    await recordFailure(supabase, caseId, err.message);
+    await recordFailure(supabase, caseId, friendlyError(err.message));
   }
 
   return { statusCode: 200, body: "" };

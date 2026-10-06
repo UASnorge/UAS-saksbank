@@ -9,6 +9,7 @@
 // nettleseren — sjekker derfor ekte innlogging først.
 
 const { createClient } = require("@supabase/supabase-js");
+const { friendlyError } = require("./lib/errors.js");
 const { generateCasesFromMaterial } = require("./lib/documentCases.js");
 const { recordFailureOn, MAX_ANTALL } = require("./lib/contentBatch.js");
 const { isAuthorizedUser } = require("./lib/authCheck.js");
@@ -49,7 +50,7 @@ exports.handler = async function (event) {
     console.log("generate-cases-from-material-background fullført:", JSON.stringify(result));
   } catch (err) {
     console.error("generate-cases-from-material-background feilet:", err);
-    await failAll(err.message);
+    await failAll(friendlyError(err.message));
   }
   return { statusCode: 200, body: "" };
 };

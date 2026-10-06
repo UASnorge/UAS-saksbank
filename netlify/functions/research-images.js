@@ -7,6 +7,7 @@
 // kildevurdering og manusgenerering.
 
 const { createClient } = require("@supabase/supabase-js");
+const { friendlyError } = require("./lib/errors.js");
 const { researchImages } = require("./lib/imageResearch.js");
 
 function getSupabaseForUser(token) {
@@ -40,6 +41,6 @@ exports.handler = async function (event) {
     const result = await researchImages(supabase, openaiKey, body.caseId);
     return { statusCode: 200, body: JSON.stringify(result) };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    return { statusCode: 500, body: JSON.stringify({ error: friendlyError(err.message) }) };
   }
 };

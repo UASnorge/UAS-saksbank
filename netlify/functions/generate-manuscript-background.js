@@ -21,6 +21,7 @@
 // selv ekte innlogging FØR det kostbare arbeidet starter (lib/authCheck.js).
 
 const { createClient } = require("@supabase/supabase-js");
+const { friendlyError } = require("./lib/errors.js");
 const { generateManuscript } = require("./lib/manuscript.js");
 const { isAuthorizedUser } = require("./lib/authCheck.js");
 
@@ -60,7 +61,7 @@ exports.handler = async function (event) {
     console.log("generate-manuscript-background fullført for " + caseId + ":", JSON.stringify(result));
   } catch (err) {
     console.error("generate-manuscript-background feilet for " + caseId + ":", err);
-    await recordFailure(supabase, caseId, err.message);
+    await recordFailure(supabase, caseId, friendlyError(err.message));
   }
 
   return { statusCode: 200, body: "" };

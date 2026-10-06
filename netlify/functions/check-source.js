@@ -7,6 +7,7 @@
 // samme avveining som for AI-vurdering og manusgenerering i appen ellers.
 
 const { createClient } = require("@supabase/supabase-js");
+const { friendlyError } = require("./lib/errors.js");
 const { checkSource } = require("./lib/sourceCheck.js");
 
 function getSupabaseForUser(token) {
@@ -40,6 +41,6 @@ exports.handler = async function (event) {
     const result = await checkSource(supabase, openaiKey, body.caseId);
     return { statusCode: 200, body: JSON.stringify(result) };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    return { statusCode: 500, body: JSON.stringify({ error: friendlyError(err.message) }) };
   }
 };
