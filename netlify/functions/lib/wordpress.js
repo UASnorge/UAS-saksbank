@@ -11,9 +11,10 @@ const { AI_DISCLOSURE_PARAGRAPHS } = require("./styleGuide.js");
 
 // ACF-feltnøkler for "Innlegg"-feltgruppen på uasnorway.no (bekreftet
 // 18.08.2026 i wordpress-infosak-verktøyet). Disse styrer den faktiske
-// visningen på nettsiden — IKKE WordPress sine native content/excerpt/
-// featured_media, som settes i tillegg for Yoast SEO-fallback og andre
-// systemer som leser dem. Hold i sync med kilden om feltene endres der.
+// visningen på nettsiden. Bildet legges KUN i ACF-feltet «Bilde» (under
+// Tittellinje 2) — aldri som WordPress sitt «Fremhevet bilde» (featured_media),
+// etter eksplisitt redaksjonell beskjed. Native content/excerpt settes i
+// tillegg for Yoast SEO-fallback. Hold i sync med kilden om feltene endres der.
 const UASNORWAY_ACF_FIELD_KEYS = {
   image: "field_58ac635e3fd79", // Bilde
   imageTxt: "field_58ad5800ad8f8", // Bildetekst
@@ -277,7 +278,7 @@ function paragraphsToHtml(paragraphs, imageUrlMap) {
 // Oppretter et WordPress-innlegg på det gitte nettstedet. status er ALLTID
 // "draft" — ingen kallere i denne appen sender noe annet. Publisering skjer
 // kun manuelt, i WordPress selv eller i wordpress-infosak sin Oversikt-fane.
-async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, byline, photoCredit, caption, featuredMediaId, tagNames, categoryNames }) {
+async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, byline, photoCredit, caption, imageMediaId, tagNames, categoryNames }) {
   const site = getSiteConfig(nettsted);
   // Ekstra bilder midt i saken (utover selve hovedbildet) lastes opp til
   // WordPress sitt eget mediebibliotek FØR innholdet bygges, slik at de
@@ -298,7 +299,7 @@ async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, by
   // medier-fane) også, ikke bare som WordPress sitt vanlige hovedbilde —
   // samme mekanisme (meta-felt) som _yoast_wpseo_title/_metadesc over, som
   // allerede er bekreftet virkende i denne appen.
-  if (featuredMediaId) meta["_yoast_wpseo_opengraph-image-id"] = String(featuredMediaId);
+  if (imageMediaId) meta["_yoast_wpseo_opengraph-image-id"] = String(imageMediaId);
   const acf = site.acfFieldKeys;
   // WordPress sin REST API kan eksponere ACF-felt på TO uavhengige måter,
   // og et gitt nettsted kan ha kun én av dem faktisk satt opp:
@@ -322,7 +323,7 @@ async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, by
     if (byline) { meta.byline = byline; meta._byline = acf.byline; }
     if (caption) { meta.imageTxt = caption; meta._imageTxt = acf.imageTxt; }
     if (photoCredit) { meta.photoCredits = photoCredit; meta._photoCredits = acf.photoCredits; }
-    if (featuredMediaId) { meta.image = String(featuredMediaId); meta._image = acf.image; }
+    if (imageMediaId) { meta.image = String(imageMediaId); meta._image = acf.image; }
 
     // (b) ACF sitt eget "acf"-objekt — adresserer felt ved NAVN (samme
     // navn som (a) over bruker som meta-nøkkel), ikke ved field_xxx-nøkkel.
@@ -330,7 +331,7 @@ async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, by
     if (byline) acfObject.byline = byline;
     if (caption) acfObject.imageTxt = caption;
     if (photoCredit) acfObject.photoCredits = photoCredit;
-    if (featuredMediaId) acfObject.image = featuredMediaId;
+    if (imageMediaId) acfObject.image = imageMediaId;
   }
 
   const post = await wpFetch(site, "/wp/v2/posts", {
@@ -343,7 +344,6 @@ async function createDraftPost(nettsted, { title, ingress, hovedtekstAvsnitt, by
       status: "draft",
       tags: tagIds,
       categories: categoryIds.length ? categoryIds : undefined,
-      featured_media: featuredMediaId || undefined,
       meta,
     }, acfObject ? { acf: acfObject } : {})),
   });

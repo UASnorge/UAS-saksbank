@@ -81,7 +81,7 @@ async function publishOneCase(supabase, caseId) {
     byline: c.wp_byline,
     photoCredit: c.manus_foto || "",
     caption: c.manus_alt_tekst || "",
-    featuredMediaId: media.id,
+    imageMediaId: media.id,
     // wp_stikkord er det ENESTE som sendes som WP-stikkord (tags) — nøyaktig
     // det redaksjonen selv har valgt (INFO/Dronemagasinet), ingen AI-
     // foreslåtte eller andre automatisk utledede stikkord i tillegg.
