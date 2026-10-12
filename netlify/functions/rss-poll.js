@@ -12,6 +12,7 @@ const { createClient } = require("@supabase/supabase-js");
 const { checkRelevance } = require("./lib/relevance.js");
 const { runTriage } = require("./lib/triage.js");
 const { archiveOldIdeas, isBeforeCaseStartDate } = require("./lib/ageGate.js");
+const { norskTittel, originalTittelHistorikk } = require("./lib/norskTittel.js");
 
 const parser = new Parser({ timeout: 15000 });
 
@@ -129,8 +130,11 @@ async function pollAllSources(supabase) {
       const kilder = [item.link || source.feed_url];
       if (source.feed_url && source.feed_url !== kilder[0]) kilder.push(source.feed_url);
 
+      // Alle titler skal inn på norsk — oversett (norske titler røres ikke).
+      const tittelNo = await norskTittel(openaiKey, title);
+
       const { data: inserted, error: caseErr } = await supabase.from("cases").insert({
-        title: title,
+        title: tittelNo.tittel,
         sakstype: "redaksjonell",
         hastegrad: "planlagt",
         status: "ide",
@@ -142,7 +146,7 @@ async function pollAllSources(supabase) {
         kilde_publisert_dato: publishedAt ? publishedAt.toISOString() : null,
         historikk: [
           { ts: nowIso, text: `Automatisk oppdaget via RSS-kilde: ${source.name}` }
-        ].concat(relevansBegrunnelse ? [{ ts: nowIso, text: "AI-relevanssjekk: " + relevansBegrunnelse }] : []),
+        ].concat(relevansBegrunnelse ? [{ ts: nowIso, text: "AI-relevanssjekk: " + relevansBegrunnelse }] : []).concat(originalTittelHistorikk(tittelNo, nowIso)),
       }).select("id").single();
 
       if (caseErr) {

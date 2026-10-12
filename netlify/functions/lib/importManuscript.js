@@ -10,6 +10,7 @@
 //    faktisk står der.
 
 const mammoth = require("mammoth");
+const { norskTittel, originalTittelHistorikk } = require("./norskTittel.js");
 const { Document, Packer } = require("docx");
 const { fetchSourceArticle, buildDocxParagraphs, callOpenAI, HOUSE_STYLE, MODEL, IMAGE_MARKER_RE } = require("./manuscript.js");
 
@@ -112,11 +113,14 @@ const IMPORT_SCHEMA = {
 // rett etter at denne returnerer caseId). Et ekte gpt-5-search-api-kall kan
 // ta lenger enn Netlify sin grense for vanlige, synkrone funksjoner —
 // oppdaget i praksis (HTTP 504) da dette fortsatt lå i samme kall.
-async function createCaseFromLink(supabase, url) {
+async function createCaseFromLink(supabase, url, openaiKey) {
   if (!/^https?:\/\//i.test(url || "")) throw new Error("Ugyldig lenke — må starte med http:// eller https://");
 
   const preview = await fetchSourceArticle(url);
-  const title = (preview.ok && preview.title) ? preview.title : url;
+  const rawTitle = (preview.ok && preview.title) ? preview.title : url;
+  // Alle titler skal inn på norsk (en ren URL som tittel røres ikke).
+  const tittelNo = preview.ok && preview.title ? await norskTittel(openaiKey, rawTitle) : { tittel: rawTitle, original: rawTitle, oversatt: false };
+  const title = tittelNo.tittel;
 
   const nowIsoStr = new Date().toISOString();
   const caseRes = await supabase.from("cases").insert({
@@ -128,7 +132,7 @@ async function createCaseFromLink(supabase, url) {
     kilder: [url],
     neste_handling: "AI genererer manus …",
     triage: { aktualitet: 3, betydning: 3, innsats: 3, eksklusivitet: 3 },
-    historikk: [{ ts: nowIsoStr, text: "Sak opprettet manuelt fra lenke — AI genererer manus i bakgrunnen" }]
+    historikk: [{ ts: nowIsoStr, text: "Sak opprettet manuelt fra lenke — AI genererer manus i bakgrunnen" }].concat(originalTittelHistorikk(tittelNo, nowIsoStr))
   }).select().single();
   if (caseRes.error) throw new Error("Kunne ikke opprette sak: " + caseRes.error.message);
 

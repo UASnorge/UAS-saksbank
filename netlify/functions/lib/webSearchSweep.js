@@ -15,6 +15,7 @@ const {
   searchCivilianDroneNews, searchIndustryDroneNews, searchPolicySecurityDroneNews, searchNordicRegulatoryNews, searchDefenseDroneNews,
   searchWebsiteSource, searchKeywordMentions
 } = require("./webSearch.js");
+const { norskTittel, originalTittelHistorikk } = require("./norskTittel.js");
 
 // Nettsteder vi selv publiserer på — gpt-5-search-api har vist seg å av og
 // til "finne" en sak som egentlig er egen, tidligere publisert
@@ -133,8 +134,10 @@ async function createCaseFromHit(supabase, openaiKey, hit, extraContext, kildeLa
   }
 
   var nowIso = new Date().toISOString();
+  // Alle titler skal inn på norsk — oversett (norske titler røres ikke).
+  var tittelNo = await norskTittel(openaiKey, hit.tittel || "(uten tittel)");
   var caseRes = await supabase.from("cases").insert({
-    title: hit.tittel || "(uten tittel)",
+    title: tittelNo.tittel,
     sakstype: "redaksjonell",
     hastegrad: "planlagt",
     status: "ide",
@@ -147,7 +150,7 @@ async function createCaseFromHit(supabase, openaiKey, hit, extraContext, kildeLa
     historikk: [
       { ts: nowIso, text: "Automatisk oppdaget via websøk: " + kildeLabel + (hit.utgiver ? " (utgiver: " + hit.utgiver + ")" : "") },
       { ts: nowIso, text: "AI: " + hit.kort_hvorfor_relevant }
-    ].concat(relevansBegrunnelse ? [{ ts: nowIso, text: "AI-relevanssjekk: " + relevansBegrunnelse }] : [])
+    ].concat(relevansBegrunnelse ? [{ ts: nowIso, text: "AI-relevanssjekk: " + relevansBegrunnelse }] : []).concat(originalTittelHistorikk(tittelNo, nowIso))
   }).select("id").single();
 
   if (caseRes.error) {

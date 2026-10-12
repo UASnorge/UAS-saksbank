@@ -36,7 +36,7 @@ exports.handler = async function (event) {
   if (!body.url) return { statusCode: 400, body: JSON.stringify({ error: "Mangler lenke." }) };
 
   try {
-    const result = await createCaseFromLink(supabase, body.url);
+    const result = await createCaseFromLink(supabase, body.url, process.env.OPENAI_API_KEY);
     return { statusCode: 200, body: JSON.stringify(result) };
   } catch (err) {
     return { statusCode: 500, body: JSON.stringify({ error: friendlyError(err.message) }) };
