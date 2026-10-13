@@ -29,9 +29,9 @@ function getSupabaseForUser(token) {
   });
 }
 
-// Samme feltkrav som malen ("Mal-opplasting-av-saker.docx") og det
-// eksisterende WordPress-verktøyet stiller: TITTEL, INGRESS, HOVEDTEKST og
-// minst ett bilde er obligatorisk. FOTO (fotokreditering) er valgfritt.
+// Feltkrav for et WordPress-utkast: TITTEL, INGRESS og HOVEDTEKST. BILDE er
+// valgfritt (redaksjonen må kunne lage utkast uten bilde og legge det inn i
+// WordPress selv) — FOTO/bildetekst følger bildet og sendes bare hvis det finnes.
 // Stikkord/kategori/byline er, etter tilbakemelding, ALDRI noe som skal
 // utledes stille — redaksjonen velger dem selv per sak, og publisering
 // stoppes her (samme prinsipp som manus-feltene) om noen av dem mangler.
@@ -40,7 +40,6 @@ function findMissingFields(c) {
   if (!((c.manus_tittel || c.title || "").trim())) missing.push("Tittel");
   if (!((c.manus_ingress || "").trim())) missing.push("Ingress");
   if (!(Array.isArray(c.manus_hovedtekst) && c.manus_hovedtekst.some((p) => (p || "").trim()))) missing.push("Hovedtekst");
-  if (!((c.manus_bilde_url || "").trim())) missing.push("Bilde");
   if (!((c.wp_stikkord || "").trim())) missing.push("Stikkord");
   if (!(Array.isArray(c.wp_kategori) && c.wp_kategori.length)) missing.push("Kategori");
   if (!((c.wp_byline || "").trim())) missing.push("Byline");
@@ -68,20 +67,25 @@ async function publishOneCase(supabase, caseId) {
     throw err;
   }
 
-  const img = await fetchImageForUpload(c.manus_bilde_url);
-  const media = await uploadMediaForSite(c.nettsted, {
-    buffer: img.buffer, filename: img.filename, mimeType: img.mimeType,
-    altText: c.manus_alt_tekst || "", caption: c.manus_alt_tekst || ""
-  });
+  // Bilde er valgfritt: uten bilde lages utkastet uten bildefelt.
+  let media = null;
+  const hasImage = !!(c.manus_bilde_url || "").trim();
+  if (hasImage) {
+    const img = await fetchImageForUpload(c.manus_bilde_url);
+    media = await uploadMediaForSite(c.nettsted, {
+      buffer: img.buffer, filename: img.filename, mimeType: img.mimeType,
+      altText: c.manus_alt_tekst || "", caption: c.manus_alt_tekst || ""
+    });
+  }
 
   const post = await createDraftPost(c.nettsted, {
     title: c.manus_tittel || c.title,
     ingress: c.manus_ingress,
     hovedtekstAvsnitt: c.manus_hovedtekst,
     byline: c.wp_byline,
-    photoCredit: c.manus_foto || "",
-    caption: c.manus_alt_tekst || "",
-    imageMediaId: media.id,
+    photoCredit: hasImage ? (c.manus_foto || "") : "",
+    caption: hasImage ? (c.manus_alt_tekst || "") : "",
+    imageMediaId: media ? media.id : undefined,
     // wp_stikkord er det ENESTE som sendes som WP-stikkord (tags) — nøyaktig
     // det redaksjonen selv har valgt (INFO/Dronemagasinet), ingen AI-
     // foreslåtte eller andre automatisk utledede stikkord i tillegg.
@@ -93,7 +97,7 @@ async function publishOneCase(supabase, caseId) {
 
   const historikk = [{
     ts: new Date().toISOString(),
-    text: "WordPress-utkast opprettet på " + c.nettsted + " (automatisk, via saksbanken) — post-ID " + post.id +
+    text: "WordPress-utkast opprettet på " + c.nettsted + " (automatisk, via saksbanken) — post-ID " + post.id + (hasImage ? "" : " — uten bilde (legg inn bildet i WordPress)") +
       (post.usedAcfFields === false ? " — OBS: opprettet med kun standardfelt, ingen bekreftede egendefinerte visningsfelt for dette nettstedet ennå" : "")
   }].concat(c.historikk || []);
 
