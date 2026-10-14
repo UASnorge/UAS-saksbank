@@ -23,6 +23,30 @@ const { extractPptx } = require("./lib/pptx.js");
 const { generateManuscriptFromTranscript } = require("./lib/manuscript.js");
 const { isAuthorizedUser } = require("./lib/authCheck.js");
 
+// En «sti» kan være én lagringssti, eller { parts: [...], ext } når filen var for stor
+// til å lastes opp samlet (Supabase avviser >50 MB) og ble delt i biter i nettleseren.
+// Delene settes sammen igjen i rekkefølge — byte for byte, så filen er identisk med originalen.
+function pathParts(entry) { return typeof entry === "string" ? [entry] : ((entry && entry.parts) || []); }
+function pathExt(entry, fallback) {
+  var src = typeof entry === "string" ? entry : (entry && entry.ext) || "";
+  var m = String(src).match(/\.[a-zA-Z0-9]+$/);
+  return m ? m[0] : fallback;
+}
+function validEntry(entry) {
+  var parts = pathParts(entry);
+  return parts.length > 0 && parts.every(function (p) { return typeof p === "string" && p.indexOf("..") === -1; });
+}
+async function downloadAssembled(supabase, entry) {
+  var bufs = [];
+  var parts = pathParts(entry);
+  for (var i = 0; i < parts.length; i++) {
+    var dl = await supabase.storage.from("manus").download(parts[i]);
+    if (dl.error || !dl.data) throw new Error("Kunne ikke laste ned " + (parts.length > 1 ? "del " + (i + 1) + " av " + parts.length : "filen") + " fra lagringen: " + (dl.error ? dl.error.message : "ukjent feil"));
+    bufs.push(Buffer.from(await dl.data.arrayBuffer()));
+  }
+  return bufs.length === 1 ? bufs[0] : Buffer.concat(bufs);
+}
+
 function getSupabase() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -66,6 +90,7 @@ exports.handler = async function (event) {
   var aiNotat = body.aiNotat || "";
 
   if (!caseId || (!audioPaths.length && !pptxPaths.length)) return { statusCode: 400, body: "" };
+  if (!audioPaths.concat(pptxPaths).every(validEntry)) return { statusCode: 400, body: "" };
 
   var supabase = getSupabase();
   if (!openaiKey) { await recordFailure(supabase, caseId, "OPENAI_API_KEY er ikke satt i Netlify ennå."); return { statusCode: 200, body: "" }; }
@@ -74,13 +99,14 @@ exports.handler = async function (event) {
     var files = [];
     var audioUrls = [];
     for (var p = 0; p < audioPaths.length; p++) {
-      var audioPath = audioPaths[p];
-      var dl = await supabase.storage.from("manus").download(audioPath);
-      if (dl.error || !dl.data) throw new Error("Kunne ikke laste ned lydfil " + (p + 1) + " fra lagringen: " + (dl.error ? dl.error.message : "ukjent feil"));
-      var buffer = Buffer.from(await dl.data.arrayBuffer());
-      var extMatch = audioPath.match(/\.[a-zA-Z0-9]+$/);
-      files.push({ buffer: buffer, ext: extMatch ? extMatch[0] : ".m4a" });
-      console.log("transcribe-audio-background: lydfil " + (p + 1) + "/" + audioPaths.length + " (" + audioPath + ", " + (buffer.length / 1024 / 1024).toFixed(1) + " MB)");
+      var audioEntry = audioPaths[p];
+      var buffer = await downloadAssembled(supabase, audioEntry);
+      files.push({ buffer: buffer, ext: pathExt(audioEntry, ".m4a") });
+      console.log("transcribe-audio-background: lydfil " + (p + 1) + "/" + audioPaths.length + " (" + pathParts(audioEntry).length + " del(er), " + (buffer.length / 1024 / 1024).toFixed(1) + " MB)");
+
+      // Delt opp i biter = ingen enkelt lagringsfil å lenke til (kan ikke spilles av samlet).
+      if (typeof audioEntry !== "string") continue;
+      var audioPath = audioEntry;
 
       // Signert lenke til selve lydopptaket (1 år) — lagres som saken sine
       // kilder, slik at noen faktisk kan spille det av igjen for å
@@ -88,6 +114,9 @@ exports.handler = async function (event) {
       var audioUrlRes = await supabase.storage.from("manus").createSignedUrl(audioPath, 60 * 60 * 24 * 365);
       if (audioUrlRes.data && audioUrlRes.data.signedUrl) audioUrls.push(audioUrlRes.data.signedUrl);
     }
+
+    var delteOpptak = audioPaths.filter(function (e) { return typeof e !== "string"; }).length;
+    if (delteOpptak) await recordProgress(supabase, caseId, "🎙️ " + delteOpptak + " lydfil(er) var over 50 MB og ble lastet opp i deler — de er satt sammen igjen for transkribering, men kan ikke spilles av direkte fra saken");
 
     // Koble lydopptaket til saken UMIDDELBART — ikke først når hele jobben er
     // ferdig. Transkribering + research + manusskriving kan feile eller gå ut
@@ -102,9 +131,7 @@ exports.handler = async function (event) {
     // ekstra faktagrunnlag sammen med opptaket (eller alene, uten opptak).
     var presTekster = [], presInfo = [];
     for (var q = 0; q < pptxPaths.length; q++) {
-      var pdl = await supabase.storage.from("manus").download(pptxPaths[q]);
-      if (pdl.error || !pdl.data) throw new Error("Kunne ikke laste ned presentasjon " + (q + 1) + " fra lagringen: " + (pdl.error ? pdl.error.message : "ukjent feil"));
-      var ppt = await extractPptx(Buffer.from(await pdl.data.arrayBuffer()));
+      var ppt = await extractPptx(await downloadAssembled(supabase, pptxPaths[q]));
       if (ppt.tekst.trim()) {
         presTekster.push((pptxPaths.length > 1 ? "=== PRESENTASJON " + (q + 1) + " ===\n" : "") + ppt.tekst);
         presInfo.push(ppt.slides.length + " lysbilder, " + ppt.antallNotater + " med talernotater");

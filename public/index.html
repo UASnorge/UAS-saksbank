@@ -1594,7 +1594,7 @@
       bodyHtml =
         '<div class="import-report"><div class="warn-line">NB: Opptak deles og transkriberes automatisk i bakgrunnen, uansett lengde — kan ta noen minutter for lengre/flere opptak. Systemet skiller mellom ulike stemmer i intervjuer, men kan bomme på hvem som er hvem — sjekk sitatattribusjon før publisering.</div></div>' +
         '<div class="field"><label for="nc-audio">Lydopptak (kan velge flere, f.eks. et intervju tatt opp i flere økter)</label><input id="nc-audio" type="file" accept="audio/*" multiple /></div>' +
-        '<div class="field"><label for="nc-audio-pptx">PowerPoint-presentasjon (.pptx, opptil 80 MB per fil, valgfritt, kan velge flere) — lysbilder og talernotater leses og brukes sammen med opptaket</label><input id="nc-audio-pptx" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple /></div>' +
+        '<div class="field"><label for="nc-audio-pptx">PowerPoint-presentasjon (.pptx, opptil 100 MB per fil, valgfritt, kan velge flere) — lysbilder og talernotater leses og brukes sammen med opptaket</label><input id="nc-audio-pptx" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple /></div>' +
         '<div class="field"><label for="nc-audio-images">Bilder til saken (valgfritt, kan velge flere)</label><input id="nc-audio-images" type="file" accept="image/png,image/jpeg" multiple /></div>' +
         '<div class="field"><label for="nc-audio-title">Arbeidstittel</label><input id="nc-audio-title" type="text" placeholder="F.eks. Intervju med … om …" /></div>' +
         '<div class="field"><label for="nc-audio-notat">AI-notat (valgfritt)</label><textarea id="nc-audio-notat" rows="3" placeholder="Vinkling, hva saken skal handle om, ønsket lengde, e.l."></textarea></div>' +
@@ -1610,7 +1610,7 @@
           '<div class="field"><label for="nc-mat-type">Type</label><select id="nc-mat-type"><option value="redaksjonell">Dronemagasin (nyhetssak)</option><option value="content">INFO (uasnorway.no-stil)</option></select></div>' +
         "</div>" +
         '<div class="field"><label for="nc-mat-site">Nettsted</label><select id="nc-mat-site">' + optionsFor(SITE_LABELS, "dronemag.no") + "</select></div>" +
-        '<p class="helper">AI leser alt materialet (også skannede PDF-er), søker dypt på nettet etter eksterne kilder om akkurat dette materialet (regelverk, omtale, tidligere dekning — hver lenke kontrolleres), henter ut bilder fra dokumentene som hovedbilde og støttebilder med bildetekst, og skriver ett førsteutkast per sak i «I arbeid». Tar ca. 3–5 minutter — du ser fremdriften i sakenes historikk. Kildene AI faktisk brukte står i kildelisten på saken. Ting som må sjekkes mot originalen listes som kontrollpunkter. Maks 10 filer, 25 MB per fil (PowerPoint opptil 80 MB), 45 MB totalt (PowerPoint ikke medregnet).</p>' +
+        '<p class="helper">AI leser alt materialet (også skannede PDF-er), søker dypt på nettet etter eksterne kilder om akkurat dette materialet (regelverk, omtale, tidligere dekning — hver lenke kontrolleres), henter ut bilder fra dokumentene som hovedbilde og støttebilder med bildetekst, og skriver ett førsteutkast per sak i «I arbeid». Tar ca. 3–5 minutter — du ser fremdriften i sakenes historikk. Kildene AI faktisk brukte står i kildelisten på saken. Ting som må sjekkes mot originalen listes som kontrollpunkter. Maks 10 filer, 25 MB per fil (PowerPoint opptil 100 MB), 45 MB totalt (PowerPoint ikke medregnet).</p>' +
         '<button class="btn btn-primary" type="button" data-action="submit-new-case-material"' + (busy ? " disabled" : "") + ">" + (busy ? "Laster opp og bestiller …" : "Lag saker fra materialet") + "</button>";
     } else if (tab === "bestill") {
       var idagStr = new Date().toISOString().slice(0, 10);
@@ -2684,8 +2684,30 @@
     }
   }
 
-  var MAX_PPTX_UPLOAD_BYTES = 80 * 1024 * 1024; // PowerPoint med mange bilder blir fort stor — kun teksten leses, så størrelsen er ikke noe problem
-  var MAX_AUDIO_UPLOAD_BYTES = 500 * 1024 * 1024; // 500 MB — romslig margin over et 45 min opptak
+  // Supabase Storage avviser filer over 50 MB (global grense, testet: 49 MB OK, 55 MB avvist).
+  // Større filer lastes derfor opp i deler à 40 MB (uploadLargeFile) og settes sammen igjen
+  // på serveren — byte for byte, så formatet spiller ingen rolle.
+  var MAX_PPTX_UPLOAD_BYTES = 100 * 1024 * 1024;
+  var MAX_AUDIO_UPLOAD_BYTES = 100 * 1024 * 1024;
+  var SINGLE_UPLOAD_MAX_BYTES = 45 * 1024 * 1024;
+  var UPLOAD_PART_BYTES = 40 * 1024 * 1024;
+
+  // Laster opp én fil. Små filer som vanlig (returnerer stien som tekst); store filer i deler
+  // (returnerer { parts: [...], ext }). Returnerer { error } hvis noe feiler.
+  async function uploadLargeFile(path, file, contentType) {
+    if (file.size <= SINGLE_UPLOAD_MAX_BYTES) {
+      var one = await supabase.storage.from("manus").upload(path, file, { contentType: contentType });
+      return one.error ? { error: one.error.message } : { path: path };
+    }
+    var parts = [], n = Math.ceil(file.size / UPLOAD_PART_BYTES);
+    for (var i = 0; i < n; i++) {
+      var partPath = path + ".del" + String(i + 1).padStart(3, "0");
+      var up = await supabase.storage.from("manus").upload(partPath, file.slice(i * UPLOAD_PART_BYTES, (i + 1) * UPLOAD_PART_BYTES), { contentType: "application/octet-stream" });
+      if (up.error) return { error: "del " + (i + 1) + " av " + n + ": " + up.error.message };
+      parts.push(partPath);
+    }
+    return { path: { parts: parts, ext: (path.match(/\.[a-zA-Z0-9]+$/) || [""])[0] } };
+  }
 
   // Lydfilen (og evt. bilder) lastes DIREKTE til Supabase Storage fra
   // nettleseren her — akkurat som submitNewCaseFromUpload gjør med .docx-
@@ -2723,7 +2745,7 @@
     if (files.length > 10) { showToast("Maks 10 filer om gangen"); return; }
     var isPptx = function (f) { return /\.pptx$/i.test(f.name); };
     var tooBig = files.find(function (f) { return f.size > (isPptx(f) ? MAX_PPTX_UPLOAD_BYTES : 25 * 1024 * 1024); });
-    if (tooBig) { showToast('Filen "' + tooBig.name + '" er for stor (maks ' + (isPptx(tooBig) ? "80" : "25") + " MB per fil)"); return; }
+    if (tooBig) { showToast('Filen "' + tooBig.name + '" er for stor (maks ' + (isPptx(tooBig) ? "100" : "25") + " MB per fil)"); return; }
     if (files.filter(function (f) { return !isPptx(f); }).reduce(function (n, f) { return n + f.size; }, 0) > 45 * 1024 * 1024) { showToast("Filene er til sammen for store (maks 45 MB totalt, PowerPoint ikke medregnet)"); return; }
     var badType = files.find(function (f) { return !/\.(pdf|docx|pptx|txt|md)$/i.test(f.name); });
     if (badType) { showToast('«' + badType.name + '» støttes ikke — bruk PDF, Word (.docx), PowerPoint (.pptx) eller tekst'); return; }
@@ -2829,9 +2851,9 @@
     var badPptx = pptxFiles.find(function (f) { return !/\.pptx$/i.test(f.name); });
     if (badPptx) { showToast('«' + badPptx.name + '» er ikke en .pptx-fil (eldre .ppt støttes ikke — lagre som .pptx i PowerPoint)'); return; }
     var bigPptx = pptxFiles.find(function (f) { return f.size > MAX_PPTX_UPLOAD_BYTES; });
-    if (bigPptx) { showToast('«' + bigPptx.name + '» er for stor (maks 80 MB per presentasjon)'); return; }
+    if (bigPptx) { showToast('«' + bigPptx.name + '» er for stor (maks 100 MB per presentasjon)'); return; }
     var tooBig = audioFiles.find(function (f) { return f.size > MAX_AUDIO_UPLOAD_BYTES; });
-    if (tooBig) { showToast('Filen "' + tooBig.name + '" er for stor (maks 500 MB per fil)'); return; }
+    if (tooBig) { showToast('Filen "' + tooBig.name + '" er for stor (maks 100 MB per fil)'); return; }
     if (!state.session) { showToast("Du må være innlogget"); return; }
 
     var imagesInput = document.getElementById("nc-audio-images");
@@ -2847,17 +2869,17 @@
       for (var a = 0; a < audioFiles.length; a++) {
         var audioExt = (audioFiles[a].name.match(/\.[a-zA-Z0-9]+$/) || [".m4a"])[0];
         var audioPath = prefix + "-opptak" + (a + 1) + audioExt;
-        var audioUpload = await supabase.storage.from("manus").upload(audioPath, audioFiles[a], { contentType: audioFiles[a].type || "audio/mp4" });
-        if (audioUpload.error) { showToast('Kunne ikke laste opp "' + audioFiles[a].name + '": ' + audioUpload.error.message); return; }
-        audioPaths.push(audioPath);
+        var audioUpload = await uploadLargeFile(audioPath, audioFiles[a], audioFiles[a].type || "audio/mp4");
+        if (audioUpload.error) { showToast('Kunne ikke laste opp "' + audioFiles[a].name + '": ' + audioUpload.error); return; }
+        audioPaths.push(audioUpload.path);
       }
 
       var pptxPaths = [];
       for (var pp = 0; pp < pptxFiles.length; pp++) {
         var pptxPath = prefix + "-presentasjon" + (pp + 1) + ".pptx";
-        var pptxUpload = await supabase.storage.from("manus").upload(pptxPath, pptxFiles[pp], { contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
-        if (pptxUpload.error) { showToast('Kunne ikke laste opp "' + pptxFiles[pp].name + '": ' + pptxUpload.error.message); return; }
-        pptxPaths.push(pptxPath);
+        var pptxUpload = await uploadLargeFile(pptxPath, pptxFiles[pp], "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+        if (pptxUpload.error) { showToast('Kunne ikke laste opp "' + pptxFiles[pp].name + '": ' + pptxUpload.error); return; }
+        pptxPaths.push(pptxUpload.path);
       }
 
       var imagePaths = [];
