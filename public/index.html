@@ -1603,11 +1603,11 @@
       bodyHtml =
         '<div class="import-report"><div class="warn-line">NB: Opptak deles og transkriberes automatisk i bakgrunnen, uansett lengde — kan ta noen minutter for lengre/flere opptak. Systemet skiller mellom ulike stemmer i intervjuer, men kan bomme på hvem som er hvem — sjekk sitatattribusjon før publisering.</div></div>' +
         '<div class="field"><label for="nc-audio">Lydopptak (kan velge flere, f.eks. et intervju tatt opp i flere økter)</label><input id="nc-audio" type="file" accept="audio/*" multiple /></div>' +
-        '<div class="field"><label for="nc-audio-pptx">PowerPoint-presentasjon (.pptx, opptil 500 MB per fil — bilder og video fjernes før opplasting, valgfritt, kan velge flere) — lysbilder og talernotater leses og brukes sammen med opptaket</label><input id="nc-audio-pptx" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple /></div>' +
+        '<div class="field"><label for="nc-audio-pptx">Presentasjon (PowerPoint .pptx eller PDF, valgfritt, kan velge flere) — lysbilder/sider og talernotater leses og brukes sammen med opptaket. PowerPoint opptil 500 MB (bilder og video fjernes før opplasting), PDF opptil 100 MB</label><input id="nc-audio-pptx" type="file" accept=".pptx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple /></div>' +
         '<div class="field"><label for="nc-audio-images">Bilder til saken (valgfritt, kan velge flere)</label><input id="nc-audio-images" type="file" accept="image/png,image/jpeg" multiple /></div>' +
         '<div class="field"><label for="nc-audio-title">Arbeidstittel</label><input id="nc-audio-title" type="text" placeholder="F.eks. Intervju med … om …" /></div>' +
         '<div class="field"><label for="nc-audio-notat">AI-notat (valgfritt)</label><textarea id="nc-audio-notat" rows="3" placeholder="Vinkling, hva saken skal handle om, ønsket lengde, e.l."></textarea></div>' +
-        '<p class="helper">AI transkriberer opptaket og skriver et redaksjonelt førsteutkast basert på det som faktisk sies. Laster du opp en PowerPoint, leses lysbildetekst og talernotater også (kun .pptx — ikke eldre .ppt), og brukes som faktagrunnlag; avviker notatene fra opptaket, går opptaket foran. Du kan også laste opp bare en presentasjon uten lydopptak. Du havner rett i «I arbeid» og ser fremdriften i historikken mens det jobbes.</p>' +
+        '<p class="helper">AI transkriberer opptaket og skriver et redaksjonelt førsteutkast basert på det som faktisk sies. Laster du opp en presentasjon (PowerPoint .pptx eller PDF), leses lysbildetekst og talernotater også (ikke eldre .ppt — lagre som .pptx eller PDF; en PDF må ha tekst, ikke bare bilder av sider), og brukes som faktagrunnlag; avviker notatene fra opptaket, går opptaket foran. Du kan også laste opp bare en presentasjon uten lydopptak. Du havner rett i «I arbeid» og ser fremdriften i historikken mens det jobbes.</p>' +
         '<button class="btn btn-primary" type="button" data-action="submit-new-case-audio"' + (busy ? " disabled" : "") + ">" + (busy ? "Laster opp …" : "Last opp og opprett sak") + "</button>";
     } else if (tab === "materiale") {
       bodyHtml =
@@ -2956,10 +2956,10 @@
     var pptxInput = document.getElementById("nc-audio-pptx");
     var pptxFiles = pptxInput && pptxInput.files ? Array.prototype.slice.call(pptxInput.files) : [];
     if (!audioFiles.length && !pptxFiles.length) { showToast("Velg minst én lydfil eller PowerPoint først"); return; }
-    var badPptx = pptxFiles.find(function (f) { return !/\.pptx$/i.test(f.name); });
-    if (badPptx) { showToast('«' + badPptx.name + '» er ikke en .pptx-fil (eldre .ppt støttes ikke — lagre som .pptx i PowerPoint)'); return; }
-    var bigPptx = pptxFiles.find(function (f) { return f.size > MAX_PPTX_UPLOAD_BYTES; });
-    if (bigPptx) { showToast('«' + bigPptx.name + '» (' + Math.round(bigPptx.size / 1048576) + ' MB) er for stor (maks 500 MB)'); return; }
+    var badPptx = pptxFiles.find(function (f) { return !/\.(pptx|pdf)$/i.test(f.name); });
+    if (badPptx) { showToast('«' + badPptx.name + '» støttes ikke — bruk PowerPoint (.pptx) eller PDF (eldre .ppt: lagre som .pptx eller PDF i PowerPoint)'); return; }
+    var bigPptx = pptxFiles.find(function (f) { return f.size > (/\.pdf$/i.test(f.name) ? MAX_PPTX_AFTER_SLIM_BYTES : MAX_PPTX_UPLOAD_BYTES); });
+    if (bigPptx) { showToast('«' + bigPptx.name + '» (' + Math.round(bigPptx.size / 1048576) + ' MB) er for stor (maks ' + (/\.pdf$/i.test(bigPptx.name) ? "100" : "500") + ' MB)'); return; }
     var tooBig = audioFiles.find(function (f) { return f.size > MAX_AUDIO_UPLOAD_BYTES; });
     if (tooBig) { showToast('Filen "' + tooBig.name + '" er for stor (maks 100 MB per fil)'); return; }
     if (!state.session) { showToast("Du må være innlogget"); return; }
@@ -2984,10 +2984,11 @@
 
       var pptxPaths = [];
       for (var pp = 0; pp < pptxFiles.length; pp++) {
-        var pptxPath = prefix + "-presentasjon" + (pp + 1) + ".pptx";
+        var pptxIsPdf = /\.pdf$/i.test(pptxFiles[pp].name);
+        var pptxPath = prefix + "-presentasjon" + (pp + 1) + (pptxIsPdf ? ".pdf" : ".pptx");
         var prepP = await preparePptx(pptxFiles[pp]);
         if (prepP.error) { showToast(prepP.error); return; }
-        var pptxUpload = await uploadLargeFile(pptxPath, prepP.file, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+        var pptxUpload = await uploadLargeFile(pptxPath, prepP.file, pptxIsPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.presentationml.presentation");
         if (pptxUpload.error) { showToast('Kunne ikke laste opp "' + pptxFiles[pp].name + '": ' + pptxUpload.error); return; }
         pptxPaths.push(pptxUpload.path);
       }

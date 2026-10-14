@@ -21,8 +21,12 @@ async function readAttachment(supabase, v) {
   var doc = await readDocument(supabase, entryPath(v));
   doc.navn = v.navn || doc.navn;
   if (doc.feil) return { navn: doc.navn, feil: doc.feil };
-  if (doc.nativePdf) return { navn: doc.navn, feil: "PDF-en ser ut til å være skannet (nesten ingen tekst) og kan ikke leses som tekst — last opp en PDF med tekst, eller en Word-/tekstfil." };
   var tekst = String(doc.tekst || "").trim();
+  if (doc.nativePdf) {
+    // Lite tekst per side (typisk en slide-PDF) kalles «skannet» av readDocument — bruk teksten som finnes.
+    tekst = (doc.sideTekster || []).map(function (t, i) { return "SIDE " + (i + 1) + ":\n" + String(t).trim(); }).filter(function (t) { return t.length > 12; }).join("\n\n");
+    if (tekst.replace(/SIDE \d+:/g, "").trim().length < 40) return { navn: doc.navn, feil: "PDF-en ser ut til å være skannet (nesten ingen tekst) og kan ikke leses som tekst — last opp en PDF med tekst, eller en Word-/tekstfil." };
+  }
   if (!tekst) return { navn: doc.navn, feil: "Fant ingen tekst i filen." };
   return { navn: doc.navn, tekst: tekst };
 }

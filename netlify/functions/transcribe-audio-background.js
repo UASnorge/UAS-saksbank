@@ -20,6 +20,7 @@ const { createClient } = require("@supabase/supabase-js");
 const { friendlyError } = require("./lib/errors.js");
 const { transcribeMultipleAudioFiles } = require("./lib/transcribe.js");
 const { extractPptx } = require("./lib/pptx.js");
+const { readDocument } = require("./lib/documentCases.js");
 const { generateManuscriptFromTranscript } = require("./lib/manuscript.js");
 const { isAuthorizedUser } = require("./lib/authCheck.js");
 
@@ -45,6 +46,22 @@ async function downloadAssembled(supabase, entry) {
     bufs.push(Buffer.from(await dl.data.arrayBuffer()));
   }
   return bufs.length === 1 ? bufs[0] : Buffer.concat(bufs);
+}
+
+// Leser én presentasjon: PowerPoint (lysbilder + talernotater) eller PDF (tekst per side).
+async function readPresentation(supabase, entry) {
+  if (pathExt(entry, "").toLowerCase() === ".pdf") {
+    var doc = await readDocument(supabase, typeof entry === "string" ? entry : { parts: entry.parts, ext: ".pdf", navn: "presentasjon.pdf" });
+    if (doc.feil) throw new Error(doc.feil);
+    // Slide-PDF-er har ofte lite tekst per side, og readDocument kan da kalle dem «skannet» —
+    // bruk likevel teksten som finnes, og avvis først når nesten ingenting kan leses.
+    var sider = (doc.sideTekster || []).map(function (t, i) { return "SIDE " + (i + 1) + ":\n" + String(t).trim(); }).filter(function (t) { return t.length > 12; });
+    var tekst = sider.length ? sider.join("\n\n") : String(doc.tekst || "").trim();
+    if (tekst.replace(/SIDE \d+:/g, "").trim().length < 40) throw new Error("PDF-en ser ut til å være skannet (bilder av sider uten tekst) og kan ikke leses — last opp en PDF med tekst, eller selve .pptx-filen");
+    return { tekst: tekst, info: (doc.sider || sider.length) + " sider (PDF)" };
+  }
+  var ppt = await extractPptx(await downloadAssembled(supabase, entry));
+  return { tekst: ppt.tekst, info: ppt.slides.length + " lysbilder, " + ppt.antallNotater + " med talernotater" };
 }
 
 function getSupabase() {
@@ -131,10 +148,17 @@ exports.handler = async function (event) {
     // ekstra faktagrunnlag sammen med opptaket (eller alene, uten opptak).
     var presTekster = [], presInfo = [];
     for (var q = 0; q < pptxPaths.length; q++) {
-      var ppt = await extractPptx(await downloadAssembled(supabase, pptxPaths[q]));
-      if (ppt.tekst.trim()) {
-        presTekster.push((pptxPaths.length > 1 ? "=== PRESENTASJON " + (q + 1) + " ===\n" : "") + ppt.tekst);
-        presInfo.push(ppt.slides.length + " lysbilder, " + ppt.antallNotater + " med talernotater");
+      try {
+        var pres = await readPresentation(supabase, pptxPaths[q]);
+        if (pres.tekst.trim()) {
+          presTekster.push((pptxPaths.length > 1 ? "=== PRESENTASJON " + (q + 1) + " ===\n" : "") + pres.tekst);
+          presInfo.push(pres.info);
+        } else {
+          await recordProgress(supabase, caseId, "⚠️ Fant ingen tekst i presentasjon " + (q + 1) + " — hoppet over");
+        }
+      } catch (presErr) {
+        // Én uleselig presentasjon skal ikke stoppe resten (lydopptaket kan fortsatt gi en sak).
+        await recordProgress(supabase, caseId, "⚠️ Kunne ikke lese presentasjon " + (q + 1) + ": " + presErr.message);
       }
     }
     if (pptxPaths.length) await recordProgress(supabase, caseId, "📊 Leste " + presTekster.length + " presentasjon(er): " + (presInfo.join("; ") || "ingen tekst funnet"));
