@@ -80,6 +80,15 @@ exports.handler = async function (event) {
       if (audioUrlRes.data && audioUrlRes.data.signedUrl) audioUrls.push(audioUrlRes.data.signedUrl);
     }
 
+    // Koble lydopptaket til saken UMIDDELBART — ikke først når hele jobben er
+    // ferdig. Transkribering + research + manusskriving kan feile eller gå ut
+    // på tid (lange opptak), og da ble opptaket liggende i lagringen uten
+    // noen kobling til saken. Rører aldri kilder som allerede er satt.
+    var curCase = await supabase.from("cases").select("kilder").eq("id", caseId).maybeSingle();
+    if (audioUrls.length && !(curCase.data && curCase.data.kilder && curCase.data.kilder.length)) {
+      await supabase.from("cases").update({ kilder: audioUrls }).eq("id", caseId);
+    }
+
     var transcription = await transcribeMultipleAudioFiles(openaiKey, files);
     if (!transcription.text || !transcription.text.trim()) {
       throw new Error("Fant ingen tale i opptaket/opptakene — sjekk at filen(e) faktisk inneholder lyd/tale.");
