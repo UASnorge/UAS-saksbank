@@ -2758,9 +2758,9 @@
       var docPaths = [];
       for (var f = 0; f < files.length; f++) {
         var path = "dokumenter/" + stamp + "-" + (f + 1) + "-" + safeStorageName(files[f].name);
-        var up = await supabase.storage.from("manus").upload(path, files[f], { contentType: files[f].type || "application/octet-stream" });
-        if (up.error) { showToast('Kunne ikke laste opp "' + files[f].name + '": ' + up.error.message); return; }
-        docPaths.push(path);
+        var up = await uploadLargeFile(path, files[f], files[f].type || "application/octet-stream");
+        if (up.error) { showToast('Kunne ikke laste opp "' + files[f].name + '": ' + up.error); return; }
+        docPaths.push(typeof up.path === "string" ? up.path : Object.assign({ navn: files[f].name }, up.path));
       }
 
       var kildeTekst = files.length + " dokument(er)" + (links.length ? " og " + links.length + " lenke(r)" : "");

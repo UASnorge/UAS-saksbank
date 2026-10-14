@@ -38,21 +38,38 @@ const MIN_CHARS_PER_PAGE = 120; // under dette regnes PDF-en som skannet
 const MAX_IMAGE_LIBRARY = 8;
 
 function extOf(path) {
+  if (path && typeof path === "object") path = path.navn || path.ext || "";
   var m = String(path || "").toLowerCase().match(/\.([a-z0-9]+)$/);
   return m ? m[1] : "";
 }
 
+// «path» er en lagringssti — eller { parts, ext, navn } for en fil som var for stor til å
+// lastes opp samlet (Supabase avviser >50 MB) og ble delt i biter i nettleseren.
 function displayName(path) {
+  if (path && typeof path === "object") return path.navn || "dokument" + (path.ext || "");
   var base = String(path || "").split("/").pop() || "";
   return base.replace(/^\d+-\d+-/, "");
 }
+function chunkedParts(path) { return path && typeof path === "object" ? (path.parts || []) : null; }
 
 // Leser ett dokument til { navn, tekst | nativePdf, sider, bilder[] } eller { navn, feil }.
 async function readDocument(supabase, path) {
   var navn = displayName(path);
-  var dl = await supabase.storage.from("manus").download(path);
-  if (dl.error || !dl.data) return { navn: navn, feil: "Kunne ikke laste ned filen fra lagring." };
-  var buf = Buffer.from(await dl.data.arrayBuffer());
+  var buf;
+  var parts = chunkedParts(path);
+  if (parts) {
+    var bufs = [];
+    for (var pi = 0; pi < parts.length; pi++) {
+      var pdl = await supabase.storage.from("manus").download(parts[pi]);
+      if (pdl.error || !pdl.data) return { navn: navn, feil: "Kunne ikke laste ned del " + (pi + 1) + " av " + parts.length + " fra lagring." };
+      bufs.push(Buffer.from(await pdl.data.arrayBuffer()));
+    }
+    buf = Buffer.concat(bufs);
+  } else {
+    var dl = await supabase.storage.from("manus").download(path);
+    if (dl.error || !dl.data) return { navn: navn, feil: "Kunne ikke laste ned filen fra lagring." };
+    buf = Buffer.from(await dl.data.arrayBuffer());
+  }
   var ext = extOf(path);
   try {
     if (ext === "pdf") {
@@ -330,6 +347,7 @@ async function generateCasesFromMaterial(supabase, openaiKey, opts) {
   // appen leser kilder[0] som en nettside-URL)
   var docKilder = [];
   for (var k = 0; k < (opts.docPaths || []).length; k++) {
+    if (chunkedParts(opts.docPaths[k])) continue; // delt i biter — ingen samlet fil å lenke til
     var signed = await supabase.storage.from("manus").createSignedUrl(opts.docPaths[k], 60 * 60 * 24 * 365);
     if (!signed.error && signed.data) docKilder.push({ navn: displayName(opts.docPaths[k]), url: signed.data.signedUrl });
   }

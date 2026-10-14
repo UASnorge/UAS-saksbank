@@ -32,7 +32,15 @@ exports.handler = async function (event) {
   var body;
   try { body = JSON.parse(event.body || "{}"); } catch (e) { return { statusCode: 400, body: "" }; }
   var caseIds = strArray(body.caseIds, MAX_ANTALL);
-  var docPaths = strArray(body.docPaths, 20).filter(function (p) { return p.indexOf("..") === -1; });
+  // Hver dokumentsti er enten en lagringssti, eller { parts, ext, navn } for en stor fil delt i biter.
+  var docPaths = (Array.isArray(body.docPaths) ? body.docPaths : []).slice(0, 20).map(function (p) {
+    if (typeof p === "string") return p.trim();
+    if (p && Array.isArray(p.parts)) return { parts: strArray(p.parts, 10), ext: String(p.ext || "").slice(0, 8), navn: String(p.navn || "").slice(0, 200) };
+    return "";
+  }).filter(function (p) {
+    if (typeof p === "string") return p && p.indexOf("..") === -1;
+    return p.parts.length > 0 && p.parts.every(function (x) { return x.indexOf("..") === -1; });
+  });
   var links = strArray(body.links, 20).filter(function (u) { return /^https?:\/\//i.test(u); });
   var beskrivelse = typeof body.beskrivelse === "string" ? body.beskrivelse.trim() : "";
   if (!caseIds.length || !beskrivelse || (!docPaths.length && !links.length)) return { statusCode: 400, body: "" };
