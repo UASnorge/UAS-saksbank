@@ -717,6 +717,8 @@ ${STYLE_PRINCIPLES}
 
 (Skrivestilen over gjelder språket og oppbyggingen. Reglene om at alt må ha dekning i opptaket, og om sitatattribusjon, går alltid foran.)`;
 
+const MAX_PRESENTATION_CHARS = 30000;
+
 async function generateManuscriptFromTranscript(supabase, openaiKey, caseId, transcript, opts) {
   opts = opts || {};
   const caseRes = await supabase.from("cases").select("*").eq("id", caseId).maybeSingle();
@@ -728,6 +730,10 @@ async function generateManuscriptFromTranscript(supabase, openaiKey, caseId, tra
 
   const styleExamples = await fetchDronemagExamples();
 
+  var presRaw = String(opts.presentasjonTekst || "").trim();
+  var presTruncated = presRaw.length > MAX_PRESENTATION_CHARS;
+  var presText = presTruncated ? presRaw.slice(0, MAX_PRESENTATION_CHARS) : presRaw;
+
   const userPrompt =
     todayLine() + "\n\n" +
     (styleExamples.length ? styleExamplesBlock(styleExamples) + "\n\n=====\n\n" : "") +
@@ -736,14 +742,19 @@ async function generateManuscriptFromTranscript(supabase, openaiKey, caseId, tra
     "Destinasjonsnettsted: " + (c.nettsted || "dronemag.no") + " — søk primært i dronemag.no sitt arkiv etter tidligere dekning, også om saken skal publiseres på uasnorway.no.\n" +
     (opts.flerBiter ? "MERK: opptaket var langt og ble transkribert i " + opts.antallBiter + " deler — talermerking er IKKE nødvendigvis konsistent på tvers av delene, se instruks over.\n" : "") +
     (truncated ? "(NB: transkripsjonen var svært lang og er kuttet til de første " + MAX_TRANSCRIPT_CHARS + " tegnene.)\n" : "") +
-    "\nTRANSKRIBERT LYDOPPTAK:\n" + transcriptForPrompt;
+    "\nTRANSKRIBERT LYDOPPTAK:\n" + transcriptForPrompt +
+    (presText
+      ? "\n\n=====\n\nPRESENTASJON (lysbilder og talerens EGNE NOTATER, lastet opp sammen med opptaket). Bruk den som faktagrunnlag: navn, tall, begreper og rekkefølge kan hentes herfra. " +
+        "Talernotatene er det taleren hadde forberedt — ikke nødvendigvis det som faktisk ble sagt; avviker de fra opptaket, går opptaket foran (si fra i kontrollpunktene ved vesentlige avvik). " +
+        (presTruncated ? "(NB: presentasjonen var svært lang og er kuttet.)\n" : "") + "\n" + presText
+      : "");
 
   const { deepResearch } = require("./materialResearch.js");
   await logProgress(supabase, c.id, "🔎 Søker dypt på nettet for å verifisere og utdype det som sies i opptaket (2–3 minutter) …");
   let research = { kilder: [], antallFunnet: 0, antallVerifisert: 0, feil: [] };
   try {
     research = await deepResearch(openaiKey, {
-      materialUtdrag: transcriptForPrompt.slice(0, 7000),
+      materialUtdrag: (transcriptForPrompt + (presText ? "\n\nPRESENTASJON:\n" + presText : "")).slice(0, 7000),
       beskrivelse: "Intervju/opptak som skal bli en fagjournalistisk sak i Dronemagasinet. Arbeidstittel: " + c.title + (opts.aiNotat ? ". Redaksjonelt notat: " + opts.aiNotat : ""),
       dokumentNavn: [], lenker: [], egenSok: c.title + " " + (opts.aiNotat || "")
     });
@@ -801,6 +812,7 @@ async function generateManuscriptFromTranscript(supabase, openaiKey, caseId, tra
   if (uploadRes.error) throw new Error("Kunne ikke laste opp manus: " + uploadRes.error.message);
 
   const historikkNote = "Manus generert fra lydopptak (AI-førsteutkast)" +
+    (opts.presentasjonInfo ? " — med presentasjon: " + opts.presentasjonInfo : "") +
     (opts.flerBiter ? " — opptak i " + opts.antallBiter + " deler, dobbeltsjekk taler-attribusjon" : "") +
     (fields.tidligere_dekning ? " — fant tidligere dekning: " + fields.tidligere_dekning.tittel : "") +
     (fields.usikkerhetsnotat ? " — ⚠️ " + fields.usikkerhetsnotat : "") +

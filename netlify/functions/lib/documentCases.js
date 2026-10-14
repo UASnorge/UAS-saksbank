@@ -27,6 +27,7 @@ const { fetchSourceArticle, buildDocxParagraphs, MODEL, restrictLinksToKnown, st
 const { fetchInfoStyleExamples, recordFailureOn, MAX_ANTALL } = require("./contentBatch.js");
 const { STYLE_PRINCIPLES, fetchDronemagExamples, styleExamplesBlock, polishManuscript, todayLine, cleanCredit, norwegianCaptions } = require("./styleGuide.js");
 const { extractPdfImages, extractDocxImages } = require("./docImages.js");
+const { extractPptx } = require("./pptx.js");
 const { pickArticleImages } = require("./articleImages.js");
 const { classifyImage } = require("./imageCheck.js");
 const { deepResearch } = require("./materialResearch.js");
@@ -84,10 +85,14 @@ async function readDocument(supabase, path) {
       try { docxBilder = await extractDocxImages(buf); } catch (e) { docxBilder = []; }
       return { navn: navn, tekst: (res.value || "").trim(), bilder: docxBilder };
     }
+    if (ext === "pptx") {
+      var ppt = await extractPptx(buf);
+      return { navn: navn, tekst: ppt.tekst.trim(), bilder: [] };
+    }
     if (ext === "txt" || ext === "md" || ext === "csv") {
       return { navn: navn, tekst: buf.toString("utf8").trim(), bilder: [] };
     }
-    return { navn: navn, feil: "Filtypen ." + ext + " støttes ikke (bruk PDF, Word .docx eller tekst)." };
+    return { navn: navn, feil: "Filtypen ." + ext + " støttes ikke (bruk PDF, Word .docx, PowerPoint .pptx eller tekst)." };
   } catch (err) {
     return { navn: navn, feil: "Kunne ikke lese innholdet: " + err.message };
   }

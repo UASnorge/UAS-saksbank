@@ -1594,14 +1594,15 @@
       bodyHtml =
         '<div class="import-report"><div class="warn-line">NB: Opptak deles og transkriberes automatisk i bakgrunnen, uansett lengde — kan ta noen minutter for lengre/flere opptak. Systemet skiller mellom ulike stemmer i intervjuer, men kan bomme på hvem som er hvem — sjekk sitatattribusjon før publisering.</div></div>' +
         '<div class="field"><label for="nc-audio">Lydopptak (kan velge flere, f.eks. et intervju tatt opp i flere økter)</label><input id="nc-audio" type="file" accept="audio/*" multiple /></div>' +
+        '<div class="field"><label for="nc-audio-pptx">PowerPoint-presentasjon (.pptx, valgfritt, kan velge flere) — lysbilder og talernotater leses og brukes sammen med opptaket</label><input id="nc-audio-pptx" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple /></div>' +
         '<div class="field"><label for="nc-audio-images">Bilder til saken (valgfritt, kan velge flere)</label><input id="nc-audio-images" type="file" accept="image/png,image/jpeg" multiple /></div>' +
         '<div class="field"><label for="nc-audio-title">Arbeidstittel</label><input id="nc-audio-title" type="text" placeholder="F.eks. Intervju med … om …" /></div>' +
         '<div class="field"><label for="nc-audio-notat">AI-notat (valgfritt)</label><textarea id="nc-audio-notat" rows="3" placeholder="Vinkling, hva saken skal handle om, ønsket lengde, e.l."></textarea></div>' +
-        '<p class="helper">AI transkriberer opptaket og skriver et redaksjonelt førsteutkast basert på det som faktisk sies — du havner rett i «I arbeid» og ser fremdriften i historikken mens det jobbes.</p>' +
+        '<p class="helper">AI transkriberer opptaket og skriver et redaksjonelt førsteutkast basert på det som faktisk sies. Laster du opp en PowerPoint, leses lysbildetekst og talernotater også (kun .pptx — ikke eldre .ppt), og brukes som faktagrunnlag; avviker notatene fra opptaket, går opptaket foran. Du kan også laste opp bare en presentasjon uten lydopptak. Du havner rett i «I arbeid» og ser fremdriften i historikken mens det jobbes.</p>' +
         '<button class="btn btn-primary" type="button" data-action="submit-new-case-audio"' + (busy ? " disabled" : "") + ">" + (busy ? "Laster opp …" : "Last opp og opprett sak") + "</button>";
     } else if (tab === "materiale") {
       bodyHtml =
-        '<div class="field"><label for="nc-mat-files">Dokumenter (PDF, Word .docx eller tekst — kan velge flere samtidig)</label><input id="nc-mat-files" type="file" accept=".pdf,.docx,.txt,.md,application/pdf" multiple /></div>' +
+        '<div class="field"><label for="nc-mat-files">Dokumenter (PDF, Word .docx, PowerPoint .pptx eller tekst — kan velge flere samtidig)</label><input id="nc-mat-files" type="file" accept=".pdf,.docx,.pptx,.txt,.md,application/pdf" multiple /></div>' +
         '<div class="field"><label for="nc-mat-links">Lenker (én per linje, kan brukes sammen med — eller i stedet for — dokumenter)</label><textarea id="nc-mat-links" rows="3" placeholder="https://…&#10;https://…"></textarea></div>' +
         '<div class="field"><label for="nc-mat-beskrivelse">Forklar hva materialet inneholder og hva sakene skal inneholde *</label><textarea id="nc-mat-beskrivelse" rows="5" placeholder="F.eks. Dokument 1 er høringsnotatet fra Luftfartstilsynet om … Lag én sak om hva som foreslås og hva det betyr for droneoperatører, og én kort sak om fristen og hvordan man svarer. Lenken er bare bakgrunn."></textarea></div>' +
         '<div class="field-row">' +
@@ -2722,8 +2723,8 @@
     var tooBig = files.find(function (f) { return f.size > 25 * 1024 * 1024; });
     if (tooBig) { showToast('Filen "' + tooBig.name + '" er for stor (maks 25 MB per fil)'); return; }
     if (files.reduce(function (n, f) { return n + f.size; }, 0) > 45 * 1024 * 1024) { showToast("Filene er til sammen for store (maks 45 MB totalt)"); return; }
-    var badType = files.find(function (f) { return !/\.(pdf|docx|txt|md)$/i.test(f.name); });
-    if (badType) { showToast('«' + badType.name + '» støttes ikke — bruk PDF, Word (.docx) eller tekst'); return; }
+    var badType = files.find(function (f) { return !/\.(pdf|docx|pptx|txt|md)$/i.test(f.name); });
+    if (badType) { showToast('«' + badType.name + '» støttes ikke — bruk PDF, Word (.docx), PowerPoint (.pptx) eller tekst'); return; }
     if (!state.session) { showToast("Du må være innlogget"); return; }
 
     state.ui.newCaseBusy = true;
@@ -2820,7 +2821,13 @@
   async function submitNewCaseFromAudio() {
     var audioInput = document.getElementById("nc-audio");
     var audioFiles = audioInput && audioInput.files ? Array.prototype.slice.call(audioInput.files) : [];
-    if (!audioFiles.length) { showToast("Velg minst én lydfil først"); return; }
+    var pptxInput = document.getElementById("nc-audio-pptx");
+    var pptxFiles = pptxInput && pptxInput.files ? Array.prototype.slice.call(pptxInput.files) : [];
+    if (!audioFiles.length && !pptxFiles.length) { showToast("Velg minst én lydfil eller PowerPoint først"); return; }
+    var badPptx = pptxFiles.find(function (f) { return !/\.pptx$/i.test(f.name); });
+    if (badPptx) { showToast('«' + badPptx.name + '» er ikke en .pptx-fil (eldre .ppt støttes ikke — lagre som .pptx i PowerPoint)'); return; }
+    var bigPptx = pptxFiles.find(function (f) { return f.size > 50 * 1024 * 1024; });
+    if (bigPptx) { showToast('«' + bigPptx.name + '» er for stor (maks 50 MB per presentasjon)'); return; }
     var tooBig = audioFiles.find(function (f) { return f.size > MAX_AUDIO_UPLOAD_BYTES; });
     if (tooBig) { showToast('Filen "' + tooBig.name + '" er for stor (maks 500 MB per fil)'); return; }
     if (!state.session) { showToast("Du må være innlogget"); return; }
@@ -2843,6 +2850,14 @@
         audioPaths.push(audioPath);
       }
 
+      var pptxPaths = [];
+      for (var pp = 0; pp < pptxFiles.length; pp++) {
+        var pptxPath = prefix + "-presentasjon" + (pp + 1) + ".pptx";
+        var pptxUpload = await supabase.storage.from("manus").upload(pptxPath, pptxFiles[pp], { contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
+        if (pptxUpload.error) { showToast('Kunne ikke laste opp "' + pptxFiles[pp].name + '": ' + pptxUpload.error.message); return; }
+        pptxPaths.push(pptxPath);
+      }
+
       var imagePaths = [];
       for (var i = 0; i < imageFiles.length; i++) {
         var imgExt = (imageFiles[i].name.match(/\.[a-zA-Z0-9]+$/) || [".jpg"])[0];
@@ -2856,7 +2871,7 @@
       var created = await createCase({
         title: arbeidstittel || "(Lydopptak — tittel ikke satt ennå)",
         status: "i-arbeid",
-        historikk: [{ ts: nowIsoStr, text: "🎙️ " + audioPaths.length + " lydopptak lastet opp, transkriberes automatisk (kan ta noen minutter for lengre/flere opptak) …" }]
+        historikk: [{ ts: nowIsoStr, text: (audioPaths.length ? "🎙️ " + audioPaths.length + " lydopptak lastet opp, transkriberes automatisk (kan ta noen minutter for lengre/flere opptak) …" : "📊 Presentasjon lastet opp — AI leser den og skriver førsteutkast …") + (pptxPaths.length && audioPaths.length ? " 📊 + " + pptxPaths.length + " presentasjon(er) med lysbilder og talernotater" : "") }]
       });
       if (!created) return;
 
@@ -2866,10 +2881,10 @@
       // allerede og kan da regenereres manuelt fra saken selv.
       fetch("/.netlify/functions/transcribe-audio-background", {
         method: "POST", headers: authHeader(),
-        body: JSON.stringify({ caseId: created.id, audioPaths: audioPaths, imagePaths: imagePaths, aiNotat: aiNotat })
+        body: JSON.stringify({ caseId: created.id, audioPaths: audioPaths, pptxPaths: pptxPaths, imagePaths: imagePaths, aiNotat: aiNotat })
       }).catch(function () {});
 
-      showToast("Sak opprettet — transkriberer lydopptaket i bakgrunnen");
+      showToast(audioPaths.length ? "Sak opprettet — transkriberer lydopptaket i bakgrunnen" : "Sak opprettet — leser presentasjonen i bakgrunnen");
       await openCreatedCase(created.id);
     } catch (err) {
       showToast("Kunne ikke opprette sak fra lydopptak: " + err.message);

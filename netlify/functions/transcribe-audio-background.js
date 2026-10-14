@@ -19,6 +19,7 @@
 const { createClient } = require("@supabase/supabase-js");
 const { friendlyError } = require("./lib/errors.js");
 const { transcribeMultipleAudioFiles } = require("./lib/transcribe.js");
+const { extractPptx } = require("./lib/pptx.js");
 const { generateManuscriptFromTranscript } = require("./lib/manuscript.js");
 const { isAuthorizedUser } = require("./lib/authCheck.js");
 
@@ -27,6 +28,13 @@ function getSupabase() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("Mangler SUPABASE_URL og/eller SUPABASE_SERVICE_ROLE_KEY som miljøvariabler i Netlify.");
   return createClient(url, key);
+}
+
+async function recordProgress(supabase, caseId, text) {
+  try {
+    var current = await supabase.from("cases").select("historikk").eq("id", caseId).maybeSingle();
+    await supabase.from("cases").update({ historikk: [{ ts: new Date().toISOString(), text: text }].concat((current.data && current.data.historikk) || []) }).eq("id", caseId);
+  } catch (err) { /* fremdriftsnotis er ikke kritisk */ }
 }
 
 async function recordFailure(supabase, caseId, message) {
@@ -54,9 +62,10 @@ exports.handler = async function (event) {
   // fallback for bakoverkompatibilitet.
   var audioPaths = body.audioPaths || (body.audioPath ? [body.audioPath] : []);
   var imagePaths = body.imagePaths || [];
+  var pptxPaths = body.pptxPaths || [];
   var aiNotat = body.aiNotat || "";
 
-  if (!caseId || !audioPaths.length) return { statusCode: 400, body: "" };
+  if (!caseId || (!audioPaths.length && !pptxPaths.length)) return { statusCode: 400, body: "" };
 
   var supabase = getSupabase();
   if (!openaiKey) { await recordFailure(supabase, caseId, "OPENAI_API_KEY er ikke satt i Netlify ennå."); return { statusCode: 200, body: "" }; }
@@ -89,9 +98,30 @@ exports.handler = async function (event) {
       await supabase.from("cases").update({ kilder: audioUrls }).eq("id", caseId);
     }
 
-    var transcription = await transcribeMultipleAudioFiles(openaiKey, files);
-    if (!transcription.text || !transcription.text.trim()) {
-      throw new Error("Fant ingen tale i opptaket/opptakene — sjekk at filen(e) faktisk inneholder lyd/tale.");
+    // PowerPoint-presentasjoner: lysbildetekst + talernotater brukes som
+    // ekstra faktagrunnlag sammen med opptaket (eller alene, uten opptak).
+    var presTekster = [], presInfo = [];
+    for (var q = 0; q < pptxPaths.length; q++) {
+      var pdl = await supabase.storage.from("manus").download(pptxPaths[q]);
+      if (pdl.error || !pdl.data) throw new Error("Kunne ikke laste ned presentasjon " + (q + 1) + " fra lagringen: " + (pdl.error ? pdl.error.message : "ukjent feil"));
+      var ppt = await extractPptx(Buffer.from(await pdl.data.arrayBuffer()));
+      if (ppt.tekst.trim()) {
+        presTekster.push((pptxPaths.length > 1 ? "=== PRESENTASJON " + (q + 1) + " ===\n" : "") + ppt.tekst);
+        presInfo.push(ppt.slides.length + " lysbilder, " + ppt.antallNotater + " med talernotater");
+      }
+    }
+    if (pptxPaths.length) await recordProgress(supabase, caseId, "📊 Leste " + presTekster.length + " presentasjon(er): " + (presInfo.join("; ") || "ingen tekst funnet"));
+
+    var transcription = { text: "", flerBiter: false, antallBiter: 0 };
+    if (files.length) {
+      transcription = await transcribeMultipleAudioFiles(openaiKey, files);
+      if (!transcription.text || !transcription.text.trim()) {
+        throw new Error("Fant ingen tale i opptaket/opptakene — sjekk at filen(e) faktisk inneholder lyd/tale.");
+      }
+    } else if (!presTekster.length) {
+      throw new Error("Fant ingen tekst i presentasjonen(e) — sjekk at filen(e) er gyldige .pptx-filer med tekst.");
+    } else {
+      transcription.text = "(Ingen lydopptak ble lastet opp — saken bygger kun på presentasjonen under.)";
     }
 
     var imageUrls = [];
@@ -104,6 +134,8 @@ exports.handler = async function (event) {
       aiNotat: aiNotat,
       imageUrls: imageUrls,
       audioUrls: audioUrls,
+      presentasjonTekst: presTekster.join("\n\n"),
+      presentasjonInfo: presInfo.join("; "),
       flerBiter: transcription.flerBiter,
       antallBiter: transcription.antallBiter
     });
