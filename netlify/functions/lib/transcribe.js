@@ -36,7 +36,12 @@ const ffmpegPath = require("ffmpeg-static");
 
 const TRANSCRIBE_MODEL = "gpt-4o-transcribe-diarize";
 const MAX_CHUNK_BYTES = 20 * 1024 * 1024; // 20 MB — god margin under den faktiske 25 MB-grensen
-const CHUNK_SECONDS = 12 * 60; // 12 min — god margin under ~25 min-grensen, selv ved høyere bitrate enn typisk taleopptak
+// 8 min per bit. Diarisert transkribering tar ca. 1/3 av lydens lengde (3 min lyd ≈ 68 s),
+// og Node (undici) avbryter en forespørsel som ikke har fått svar-hodene innen 5 min —
+// 12-minutters biter (~4–5 min) feilet derfor tilfeldig med «fetch failed» på lange opptak.
+const CHUNK_SECONDS = 8 * 60;
+const PARALLEL_CHUNKS = 3; // biter transkriberes parallelt — kortere totaltid, innenfor funksjonens tidsgrense
+const MAX_ATTEMPTS = 3;
 
 function execFileP(cmd, args) {
   return new Promise(function (resolve, reject) {
@@ -91,14 +96,42 @@ async function transcribeChunkBuffer(openaiKey, buffer, filename) {
   form.append("response_format", "diarized_json");
   form.append("chunking_strategy", "auto");
 
-  var res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + openaiKey },
-    body: form
-  });
-  if (!res.ok) throw new Error("Transkribering feilet (" + res.status + "): " + (await res.text()).slice(0, 300));
+  var res;
+  try {
+    res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + openaiKey },
+      body: form
+    });
+  } catch (err) {
+    // Node sin generiske «fetch failed» skjuler årsaken — ta den med.
+    var cause = err.cause ? (err.cause.code || err.cause.name || err.cause.message) : "";
+    var netErr = new Error("Transkribering feilet (nettverk" + (cause ? ": " + cause : "") + "): " + err.message);
+    netErr.retryable = true;
+    throw netErr;
+  }
+  if (!res.ok) {
+    var failure = new Error("Transkribering feilet (" + res.status + "): " + (await res.text()).slice(0, 300));
+    failure.retryable = res.status === 429 || res.status >= 500;
+    throw failure;
+  }
   var data = await res.json();
   return data.segments || [];
+}
+
+// Nettverksfeil og 429/5xx prøves på nytt (opptil MAX_ATTEMPTS ganger med økende pause);
+// alt annet (f.eks. ugyldig fil, tom kreditt) feiler med en gang.
+async function transcribeChunkWithRetry(openaiKey, buffer, filename) {
+  var lastErr;
+  for (var attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try { return await transcribeChunkBuffer(openaiKey, buffer, filename); }
+    catch (err) {
+      lastErr = err;
+      if (!err.retryable || /insufficient_quota|credit_balance_exhausted/.test(err.message) || attempt === MAX_ATTEMPTS) break;
+      await new Promise(function (r) { setTimeout(r, 4000 * attempt); });
+    }
+  }
+  throw lastErr;
 }
 
 function segmentsToText(segments, chunkLabel) {
@@ -123,22 +156,29 @@ async function transcribeAudio(openaiKey, buffer, ext, filePrefix) {
     var mustSplit = buffer.length > MAX_CHUNK_BYTES || (durationSeconds !== null && durationSeconds > CHUNK_SECONDS);
 
     if (!mustSplit) {
-      var segments = await transcribeChunkBuffer(openaiKey, buffer, "opptak" + safeExt);
+      var segments = await transcribeChunkWithRetry(openaiKey, buffer, "opptak" + safeExt);
       return { text: segmentsToText(segments, filePrefix || null), flerBiter: false, antallBiter: 1 };
     }
 
     var chunkPaths = await splitAudio(inputPath, safeExt);
     if (!chunkPaths.length) throw new Error("ffmpeg delte opp filen, men fant ingen biter etterpå.");
 
-    var allText = [];
-    for (var i = 0; i < chunkPaths.length; i++) {
-      var chunkBuf = await fs.readFile(chunkPaths[i]);
-      if (!chunkBuf.length) continue; // ffmpeg kan skrive en tom siste-bit
-      var chunkSegments = await transcribeChunkBuffer(openaiKey, chunkBuf, "bit" + (i + 1) + safeExt);
-      var label = (filePrefix ? filePrefix + ", " : "") + "del " + (i + 1) + " av " + chunkPaths.length;
-      allText.push(segmentsToText(chunkSegments, label));
+    // Biter transkriberes parallelt (PARALLEL_CHUNKS om gangen), men settes
+    // sammen i opprinnelig rekkefølge.
+    var results = new Array(chunkPaths.length);
+    var next = 0;
+    async function worker() {
+      while (next < chunkPaths.length) {
+        var i = next++;
+        var chunkBuf = await fs.readFile(chunkPaths[i]);
+        if (!chunkBuf.length) { results[i] = ""; continue; } // ffmpeg kan skrive en tom siste-bit
+        var chunkSegments = await transcribeChunkWithRetry(openaiKey, chunkBuf, "bit" + (i + 1) + safeExt);
+        var label = (filePrefix ? filePrefix + ", " : "") + "del " + (i + 1) + " av " + chunkPaths.length;
+        results[i] = segmentsToText(chunkSegments, label);
+      }
     }
-    return { text: allText.join("\n"), flerBiter: true, antallBiter: chunkPaths.length };
+    await Promise.all(new Array(Math.min(PARALLEL_CHUNKS, chunkPaths.length)).fill(0).map(worker));
+    return { text: results.filter(Boolean).join("\n"), flerBiter: true, antallBiter: chunkPaths.length };
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(function () {});
   }
