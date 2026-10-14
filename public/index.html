@@ -323,6 +323,13 @@
   .chat-handlinger { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .chat-handling { font-size: 0.66rem; padding: 2px 7px; border-radius: 999px; background: var(--green-bg); color: var(--green-fg); }
   .chat-handling.feil { background: var(--red-bg); color: var(--red-fg); }
+  .case-attach { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 12px 0; }
+  .attach-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 3px 4px 3px 9px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); font-size: 0.74rem; font-weight: 600; }
+  .attach-chip-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attach-chip .icon-btn { min-width: 0; min-height: 0; padding: 2px 5px; }
+  .attach-add { position: relative; padding: 4px 10px; min-height: 0; font-size: 0.74rem; cursor: pointer; }
+  .attach-add input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; min-height: 0; padding: 0; }
+  .attach-add.disabled { opacity: 0.5; pointer-events: none; }
   .case-chat-quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; }
   .case-chat-quick button { font-size: 0.72rem; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
   .case-chat-quick button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
@@ -630,6 +637,7 @@
       kildePublisertDato: row.kilde_publisert_dato || "", manusAiNotat: row.manus_ai_notat || "",
       assistentChat: Array.isArray(row.assistent_chat) ? row.assistent_chat : [], assistentOpptatt: !!row.assistent_opptatt, assistentOpptattTs: row.assistent_opptatt_ts || "",
       createdAt: row.created_at || "",
+      vedlegg: Array.isArray(row.vedlegg) ? row.vedlegg : [],
       manusEmnefelt: row.manus_emnefelt || [], manusTitlerAlternativer: row.manus_titler_alternativer || [],
       manusTidligereDekning: row.manus_tidligere_dekning || null, manusKilderBrukt: row.manus_kilder_brukt || [],
       manusKontrollpunkter: row.manus_kontrollpunkter || [], manusBildeErIllustrasjon: !!row.manus_bilde_er_illustrasjon,
@@ -668,7 +676,7 @@
     events: [],
     eventsById: {},
     weights: { aktualitet: 1, betydning: 1, eksklusivitet: 1, innsats: 1 },
-    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "list", sort: "nyeste", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, assistDraft: {}, assistBusy: {}, mobileMenuOpen: false, manusExpanded: false, manusPreviewMode: false, manusSaving: false, newCaseTab: "lenke", newCaseBusy: false, expandedCards: {}, listStatus: "alle", assistWatch: {}, writeDraft: {},
+    ui: { asideOpen: false, asideTab: "activity", modal: null, activeCaseId: null, view: "list", sort: "nyeste", importBusy: false, importReport: null, selectedIds: {}, aiBusy: {}, manusBusy: {}, wpBusy: {}, aiBulkBusy: false, wpReport: null, expandedSummaries: {}, kildeBusy: {}, bildeBusy: {}, assistDraft: {}, assistBusy: {}, mobileMenuOpen: false, manusExpanded: false, manusPreviewMode: false, manusSaving: false, newCaseTab: "lenke", newCaseBusy: false, expandedCards: {}, listStatus: "alle", assistWatch: {}, writeDraft: {}, attachBusy: {},
       filterPanelOpen: false, filterGroupsOpen: { tema: true, land: true, sakstype: true }, filters: { tema: null, land: null, sakstype: null }, expandedTitleGroups: {} },
     chat: { messages: [], busy: false },
     session: null,
@@ -1959,7 +1967,19 @@
       return '<div class="chat-msg assistant">' + chatTextHtml(m.text) + chips + "</div>";
     }).join("");
     var emptyHtml = '<div class="chat-empty">Jeg kjenner denne saken — manus, kilder og kontrollpunkter. Be meg om å gjøre saken lengre, researche mer bakgrunn, lenke til tidligere saker, faktasjekke mot kilden, foreslå tittel, finne bilder eller gi kritikk. Jeg endrer manuset direkte i saken.</div>';
-    var quick = ASSIST_QUICK.map(function (q) {
+    var attBusy = !!state.ui.attachBusy[c.id];
+    var attachHtml =
+      '<div class="case-attach">' +
+        (c.vedlegg || []).map(function (v) {
+          return '<span class="attach-chip" title="' + escapeHtml(v.navn) + '">📎 <span class="attach-chip-name">' + escapeHtml(v.navn) + "</span>" +
+            '<button class="icon-btn" type="button" data-action="remove-attachment" data-id="' + c.id + '" data-att="' + escapeHtml(v.id) + '" title="Fjern vedlegg" aria-label="Fjern vedlegg">✕</button></span>';
+        }).join("") +
+        '<label class="btn attach-add' + (attBusy ? " disabled" : "") + '">' + (attBusy ? "Laster opp …" : "📎 Legg ved fil") +
+          '<input type="file" multiple accept=".pptx,.pdf,.docx,.txt,.md,.csv" data-attach-case="' + c.id + '"' + (attBusy ? " disabled" : "") + ' title="Presentasjon (.pptx), PDF, Word (.docx) eller tekst — assistenten kan lese dem og skrive om saken med dem" /></label>' +
+      "</div>";
+    var quickList = ASSIST_QUICK.slice();
+    if ((c.vedlegg || []).length) quickList.unshift(["📎 Skriv om med vedleggene", "Les vedleggene jeg har lastet opp og skriv om saken med utgangspunkt i dem — ta med det viktigste derfra, behold riktig vinkling og stil, og si fra hvis noe i vedleggene avviker fra det som står i saken."]);
+    var quick = quickList.map(function (q) {
       return '<button type="button" data-action="assist-quick" data-id="' + c.id + '" data-prompt="' + escapeHtml(q[1]) + '"' + (busy ? " disabled" : "") + ">" + escapeHtml(q[0]) + "</button>";
     }).join("");
     return (
@@ -1969,6 +1989,7 @@
         '<div class="case-chat-log" id="case-chat-log">' + (msgs || emptyHtml) +
           (busy ? '<div class="chat-typing">Assistenten jobber … (research og manusendringer kan ta noen minutter — du kan lukke saken og komme tilbake)</div>' : "") +
         "</div>" +
+        attachHtml +
         '<div class="case-chat-quick">' + quick + "</div>" +
         '<div class="chat-input-row">' +
           '<textarea id="case-chat-input" rows="2" placeholder="Be assistenten om noe … (Enter sender, Shift+Enter gir linjeskift)"' + (busy ? " disabled" : "") + ">" + escapeHtml(state.ui.assistDraft[c.id] || "") + "</textarea>" +
@@ -1977,6 +1998,60 @@
       "</div>" +
       (c.oppsummering ? '<p class="helper"><b>AI-sammendrag:</b> ' + escapeHtml(c.oppsummering) + "</p>" : "")
     );
+  }
+
+  // Vedlegg (presentasjon/PDF/Word/tekst) inn i en eksisterende sak. Filene
+  // lastes opp til lagring (store filer i deler, se uploadLargeFile) og føres opp i
+  // cases.vedlegg — AI-assistenten leser dem derfra og bruker dem som faktagrunnlag.
+  async function attachFilesToCase(id, files) {
+    var c = getCase(id);
+    if (!c) return;
+    if (!state.session) { showToast("Du må være innlogget"); return; }
+    var bad = files.find(function (f) { return !/\.(pptx|pdf|docx|txt|md|csv)$/i.test(f.name); });
+    if (bad) { showToast('«' + bad.name + '» støttes ikke — bruk PowerPoint (.pptx), PDF, Word (.docx) eller tekst'); return; }
+    var big = files.find(function (f) { return f.size > MAX_PPTX_UPLOAD_BYTES; });
+    if (big) { showToast('«' + big.name + '» er for stor (maks 100 MB per fil)'); return; }
+
+    state.ui.attachBusy[id] = true; render();
+    var added = [];
+    try {
+      var stamp = Date.now();
+      for (var i = 0; i < files.length; i++) {
+        var path = "saker/" + id + "/" + stamp + "-" + (i + 1) + "-" + safeStorageName(files[i].name);
+        var up = await uploadLargeFile(path, files[i], files[i].type || "application/octet-stream");
+        if (up.error) { showToast('Kunne ikke laste opp "' + files[i].name + '": ' + up.error); continue; }
+        added.push({ id: stamp + "-" + (i + 1), navn: files[i].name, sti: up.path, storrelse: files[i].size, ts: nowIso(), av: (state.session.user && state.session.user.email) || "" });
+      }
+      if (added.length) {
+        var fresh = getCase(id) || c;
+        var ok = await updateCase(id, {
+          vedlegg: (fresh.vedlegg || []).concat(added),
+          historikk: [{ ts: nowIso(), text: "📎 Vedlegg lagt til: " + added.map(function (a) { return a.navn; }).join(", ") }].concat(fresh.historikk || [])
+        });
+        if (ok) showToast(added.length + " vedlegg lagt til — spør assistenten om å bruke dem");
+      }
+    } catch (err) {
+      showToast("Kunne ikke legge ved filen: " + err.message);
+    } finally {
+      delete state.ui.attachBusy[id];
+      await refreshAndRender();
+    }
+  }
+
+  async function removeAttachment(id, attId) {
+    var c = getCase(id);
+    var v = c && (c.vedlegg || []).filter(function (x) { return x.id === attId; })[0];
+    if (!v) return;
+    if (!window.confirm('Fjerne vedlegget «' + v.navn + '» fra saken?')) return;
+    var ok = await updateCase(id, {
+      vedlegg: (c.vedlegg || []).filter(function (x) { return x.id !== attId; }),
+      historikk: [{ ts: nowIso(), text: "📎 Vedlegg fjernet: " + v.navn }].concat(c.historikk || [])
+    });
+    if (ok) {
+      var paths = v.sti && typeof v.sti === "object" ? (v.sti.parts || []) : [v.sti];
+      supabase.storage.from("manus").remove(paths).catch(function () {});
+      await refreshAndRender();
+    }
   }
 
   // Sender en melding til saks-assistenten (Background Function). Ulagrede
@@ -2259,6 +2334,13 @@
       el.addEventListener("input", save);
       el.addEventListener("change", save);
     });
+    root.querySelectorAll("[data-attach-case]").forEach(function (el) {
+      el.addEventListener("click", function (e) { e.stopPropagation(); });
+      el.addEventListener("change", function () {
+        var files = [].slice.call(el.files || []);
+        if (files.length) attachFilesToCase(el.getAttribute("data-attach-case"), files);
+      });
+    });
     root.querySelectorAll("[data-write-kat]").forEach(function (el) {
       el.addEventListener("change", function () {
         state.ui.writeDraft.kategorier = [].slice.call(root.querySelectorAll("[data-write-kat]:checked")).map(function (x) { return x.value; });
@@ -2386,6 +2468,7 @@
         useSuggestedImage(e.currentTarget.getAttribute("data-id"), parseInt(e.currentTarget.getAttribute("data-idx"), 10));
         break;
       }
+      case "remove-attachment": e.stopPropagation(); removeAttachment(e.currentTarget.getAttribute("data-id"), e.currentTarget.getAttribute("data-att")); break;
       case "assist-toast-open": {
         e.stopPropagation();
         var atId = e.currentTarget.getAttribute("data-id"), atCase = getCase(atId);

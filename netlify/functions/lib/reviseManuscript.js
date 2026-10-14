@@ -19,6 +19,7 @@ const { fetchSourceArticle, fetchImage, buildDocxParagraphs, callOpenAI, scaleTo
   researchBlock, stripCitationsFromFields, restrictLinksToKnown, isOwnUrl } = require("./manuscript.js");
 const { todayLine, norwegianCaptions } = require("./styleGuide.js");
 const { verifyUrl } = require("./linkCheck.js");
+const { attachmentsBlock } = require("./caseAttachments.js");
 const { Document, Packer } = require("docx");
 
 const REVISE_SYSTEM_PROMPT = HOUSE_STYLE + `
@@ -27,6 +28,8 @@ Du reviderer nå en sak som ALLEREDE ER SKREVET, basert på en konkret instruks 
 UTELUKKENDE til fakta som allerede står i den eksisterende saksteksten eller i den oppgitte kildeteksten under — finn ALDRI på nye
 detaljer, tall, sitater eller navn bare fordi notatet ber om f.eks. en lengre sak. Er kildeteksten for tynn til
 å dekke det notatet ber om, skriv det tydelig i usikkerhetsnotat i stedet for å gjette. Viktig: den reviderte teksten skal ALDRI omtale seg selv eller referere til at noe "står i manuset"/"i saken"/"i teksten" — skriv som en ferdig, selvstendig nyhetssak, ikke som en kommentar til et dokument.
+
+VEDLEGG: får du VEDLEGG (filer redaksjonen selv har lastet opp i saken — presentasjon, PDF, Word), er de godkjent faktagrunnlag på lik linje med kildeteksten: du kan hente navn, tall, begreper, rekkefølge og poenger derfra når notatet ber om det. Talernotater i en presentasjon er det taleren hadde FORBEREDT, ikke nødvendigvis det som faktisk ble sagt — skriv ikke at noe «ble sagt» bare fordi det står i notatene. Er noe i vedleggene i strid med kilden eller det som allerede står i saken, ikke velg stille: skriv det i usikkerhetsnotat.
 
 NYE OPPLYSNINGER FRA RESEARCH: får du et RESEARCH-GRUNNLAG (nummererte kilder E1, E2 … med utdrag av kildenes egen tekst), kan du bruke det utdragene faktisk sier til å utvide eller utdype saken — KUN det, og kun når kilden gjelder samme sak. Navngi kilden i prosa der den brukes («skriver Lovdata», «ifølge forskriften»). List E-numrene du faktisk har brukt i brukte_eksterne. Kilder merket EGEN er våre egne tidligere saker.
 
@@ -77,6 +80,7 @@ async function reviseManuscript(supabase, openaiKey, caseId, aiNotat, opts) {
   var sourceUrl = (c.kilder || []).filter(function (k) { return /^https?:\/\//i.test(k) && !/supabase\.co\/storage/.test(k); })[0] || null;
   var source = sourceUrl ? await fetchSourceArticle(sourceUrl) : { ok: false, reason: "ingen nettside-kilde registrert" };
   var research = opts.research && opts.research.kilder && opts.research.kilder.length ? opts.research : null;
+  var vedlegg = await attachmentsBlock(supabase, c.vedlegg);
 
   var userPrompt =
     todayLine() + "\n\n" +
@@ -90,6 +94,7 @@ async function reviseManuscript(supabase, openaiKey, caseId, aiNotat, opts) {
     (source.ok
       ? "Kildeteksten (bruk denne om notatet ber om mer stoff/detaljer):\n" + source.text
       : "Kildeteksten kunne ikke hentes på nytt (" + source.reason + ") — hold deg til det som allerede står i den eksisterende saksteksten.") +
+    (vedlegg.tekst ? "\n\n=====\n\nVEDLEGG LASTET OPP AV REDAKSJONEN (godkjent faktagrunnlag):\n\n" + vedlegg.tekst : "") +
     (research ? "\n\n=====\n\n" + researchBlock(research) : "");
 
   var fields = await callOpenAI(openaiKey, MODEL, REVISE_SYSTEM_PROMPT, userPrompt, REVISE_SCHEMA);
@@ -144,7 +149,9 @@ async function reviseManuscript(supabase, openaiKey, caseId, aiNotat, opts) {
   });
   if (uploadRes.error) throw new Error("Kunne ikke laste opp revidert manus: " + uploadRes.error.message);
 
-  var historikkNote = "Manus revidert via AI-notat: «" + note.slice(0, 120) + (note.length > 120 ? "…" : "") + "» — " + fields.hva_ble_endret + bildeMerknad + (nyeKilder ? " — " + nyeKilder + " ny(e) kilde(r) lagt til i kildelisten" : "") +
+  var vedleggNote = vedlegg.navn.length ? " — bygger på vedlegg: " + vedlegg.navn.join(", ") : "";
+  if (vedlegg.feil.length) vedleggNote += " — ⚠️ kunne ikke lese: " + vedlegg.feil.join("; ");
+  var historikkNote = "Manus revidert via AI-notat: «" + note.slice(0, 120) + (note.length > 120 ? "…" : "") + "» — " + fields.hva_ble_endret + bildeMerknad + vedleggNote + (nyeKilder ? " — " + nyeKilder + " ny(e) kilde(r) lagt til i kildelisten" : "") +
     (fields.usikkerhetsnotat ? " — ⚠️ " + fields.usikkerhetsnotat : "");
   var historikk = [{ ts: new Date().toISOString(), text: historikkNote }].concat(c.historikk || []);
 

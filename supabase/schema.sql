@@ -545,3 +545,11 @@ alter table cases add constraint cases_land_check check (land is null or land in
 alter table cases add column if not exists assistent_chat jsonb default '[]'::jsonb;
 alter table cases add column if not exists assistent_opptatt boolean default false;
 alter table cases add column if not exists assistent_opptatt_ts timestamptz;
+
+-- ═══════════════════════════════════════════════════════════════
+-- v16 — Vedlegg til en sak (presentasjoner, PDF, Word, tekst)
+-- ═══════════════════════════════════════════════════════════════
+-- Redaksjonen kan laste opp filer inn i en eksisterende sak; AI-assistenten
+-- kan lese dem og bruke dem som faktagrunnlag når saken skrives om.
+-- Liste av { id, navn, sti | { parts, ext }, storrelse, ts, av }.
+alter table cases add column if not exists vedlegg jsonb not null default '[]'::jsonb;

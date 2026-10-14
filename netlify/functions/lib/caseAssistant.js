@@ -19,6 +19,7 @@ const { generateManuscript, MODEL, fetchSourceArticle } = require("./manuscript.
 const { researchImages } = require("./imageResearch.js");
 const { checkSource } = require("./sourceCheck.js");
 const { reviseManuscript } = require("./reviseManuscript.js");
+const { readAttachment, MAX_TOOL_CHARS } = require("./caseAttachments.js");
 const { deepResearch, searchOwnArchive, readExternalSource } = require("./materialResearch.js");
 const { STYLE_PRINCIPLES, todayLine } = require("./styleGuide.js");
 
@@ -37,7 +38,8 @@ REGLER — MANUS OG FAKTA:
 - Trenger endringen NYE opplysninger (mer bakgrunn, reaksjoner, tall, regelverk, sammenligning med Norge): kall FØRST research_topic med et presist spørsmål, og deretter revise_manuscript med bruk_research=true. Uten research bruker revisjonen kun det som allerede står i manus og kilde.
 - Spørsmål om saken (faktasjekk, vinkling, tittelforslag, kritikk): svar direkte ut fra SAKSKONTEKST; hent hele manuset (get_manuscript) eller kilden (read_source) ved behov. Ved faktasjekk: sammenlign konkret manus mot kilden og si nøyaktig hva som stemmer og hva som avviker — dikt aldri.
 - Limer journalisten inn en lenke: les den med read_url før du bruker eller kommenterer innholdet.
-- Nye opplysninger som ikke stammer fra manus, kilde, verifisert research eller en lenke journalisten ga deg, skal ALDRI inn i saken. Er noe usikkert eller mangler: si det.
+- VEDLEGG: journalisten kan laste opp filer inn i saken (presentasjon .pptx, PDF, Word, tekst) — de står under «Vedlegg» i SAKSKONTEKST. De er godkjent faktagrunnlag, lagt ved av redaksjonen selv. Skal du svare om innholdet i et vedlegg: les det med les_vedlegg først (en presentasjon gir lysbildetekst OG talerens notater — notatene er det taleren hadde forberedt, ikke nødvendigvis det som ble sagt). Ber journalisten deg skrive om/utvide saken med vedleggene: kall revise_manuscript med en presis instruks om hva fra vedleggene som skal inn — revisjonen leser vedleggene selv og bruker dem som faktagrunnlag, men husk å nevne hva som er viktigst.
+- Nye opplysninger som ikke stammer fra manus, kilde, vedlegg, verifisert research eller en lenke journalisten ga deg, skal ALDRI inn i saken. Er noe usikkert eller mangler: si det.
 - Henvisning til egne tidligere saker: bruk search_own_archive for å finne dem (ekte URL-er). Revisjonen lager lenkene — du skal aldri skrive en URL du ikke har fått fra et verktøy.
 - Bilder: du kan aldri finne på en bilde-URL. Bytte av bilde skjer kun med en lenke journalisten selv gir (send den med i revise_manuscript-instruksen), eller via research_images (verifiserte forslag som vises i saken).
 
@@ -56,6 +58,7 @@ const TOOLS = [
   { type: "function", function: { name: "read_source", description: "Hent teksten fra sakens opprinnelige nettside-kilde (første kilde-lenke), til faktasjekk eller når det trengs mer stoff derfra.", parameters: { type: "object", properties: {}, required: [] } } },
   { type: "function", function: { name: "read_url", description: "Les teksten på en nettside eller PDF-lenke (f.eks. en lenke journalisten limte inn). Returnerer et utdrag.", parameters: { type: "object", properties: { url: { type: "string" }, hva_leter_du_etter: { type: "string", description: "Kort: hva du vil finne i siden (brukes til å velge relevante utdrag)." } }, required: ["url"] } } },
   { type: "function", function: { name: "search_own_archive", description: "Søk i Dronemagasinets og UAS Norways eget arkiv (dronemag.no/uasnorway.no) etter tidligere saker om et tema. Gir ekte URL-er. Raskt.", parameters: { type: "object", properties: { sporring: { type: "string", description: "Nøkkelord/tema, f.eks. «svensk politi droner kameraovervåking»." } }, required: ["sporring"] } } },
+  { type: "function", function: { name: "les_vedlegg", description: "Les innholdet i et vedlegg journalisten har lastet opp i saken (presentasjon: lysbildetekst + talernotater; PDF/Word/tekst: teksten). Oppgi navn (eller del av navnet) — utelates det og saken har ett vedlegg, leses det. Lange vedlegg leses i deler med offset.", parameters: { type: "object", properties: { navn: { type: "string", description: "Filnavn (eller del av det) som står under Vedlegg i SAKSKONTEKST." }, offset: { type: "integer", description: "Start på tegn nr. N for å lese videre i et langt vedlegg (standard 0)." } }, required: [] } } },
   { type: "function", function: { name: "research_topic", description: "Dyp research på nettet (flere søkerunder, verifiserte lenker, kildenes egen tekst) om et konkret spørsmål/tema knyttet til saken — f.eks. bakgrunn, regelverk, reaksjoner, tall. Tar 2–3 minutter. Resultatet kan deretter brukes i revise_manuscript med bruk_research=true.", parameters: { type: "object", properties: { sporsmal: { type: "string", description: "Presist: hva skal researches, og hvorfor." } }, required: ["sporsmal"] } } },
   { type: "function", function: { name: "revise_manuscript", description: "Reviderer manuset ut fra en presis instruks (gjør lengre/kortere, ta med X, endre tittel/ingress, bytt bilde til en lenke journalisten oppga, legg inn henvisning til tidligere sak …). Er bruk_research=true, kan revisjonen bygge på research_topic-resultatene fra denne samtalen.", parameters: { type: "object", properties: { instruks: { type: "string", description: "Så presist som mulig gjengitt det journalisten ba om (evt. med lenker de ga)." }, bruk_research: { type: "boolean", description: "true hvis research_topic er kjørt og skal brukes." } }, required: ["instruks"] } } },
   { type: "function", function: { name: "research_images", description: "Finn 3–6 bildealternativer til saken (kontrollerte lenker, rettighetsvurdering; genererer AI-illustrasjoner om ingenting brukbart finnes). Vises i saken under Bildeforslag. Tar et halvt minutt.", parameters: { type: "object", properties: {}, required: [] } } },
@@ -83,6 +86,11 @@ function caseContext(c, eventRow) {
     "Kilder: " + ((c.kilder || []).map(function (k) { return /supabase\.co\/storage/.test(k) ? "(opplastet fil)" : k; }).join(" | ") || "ingen"),
     "AI-sammendrag: " + (c.oppsummering || "(ingen)")
   ];
+  if ((c.vedlegg || []).length) {
+    lines.push("Vedlegg (lastet opp av journalisten — les med les_vedlegg): " + c.vedlegg.map(function (v) {
+      return "«" + v.navn + "» (" + (v.storrelse ? (v.storrelse / 1048576).toFixed(1) + " MB" : "?") + ")";
+    }).join(" | "));
+  }
   if (eventRow) lines.push("Koblet til arrangement: " + eventRow.title + " (" + eventRow.starts_on + ", " + eventRow.location + ")");
   if (c.manus_tittel || manus) {
     lines.push("", "MANUS I SAKEN:", "Tittel: " + (c.manus_tittel || ""), "Ingress: " + (c.manus_ingress || ""),
@@ -107,6 +115,7 @@ function actionLabel(name, args, result) {
     search_own_archive: "Søkte i eget arkiv",
     research_topic: "Researchet: " + String(args.sporsmal || "").slice(0, 70) + (result && result.kilder ? " (" + result.kilder.length + " kilder)" : ""),
     revise_manuscript: "Reviderte manuset",
+    les_vedlegg: "Leste vedlegg" + (result && result.navn ? ": " + result.navn : ""),
     research_images: "Foreslo bilder",
     check_source: "Kjørte kildevurdering",
     vurder_saken: "Vurderte saken",
@@ -125,6 +134,19 @@ async function executeTool(ctx, name, args) {
       if (r.error || !r.data) return { error: "Fant ikke saken." };
       return { tittel: r.data.manus_tittel, ingress: r.data.manus_ingress, brodtekst: (r.data.manus_hovedtekst || []).join("\n\n"), bildetekst: r.data.manus_alt_tekst, foto: r.data.manus_foto,
         kontrollpunkter: r.data.manus_kontrollpunkter, kilder_brukt: (r.data.manus_kilder_brukt || []).map(function (k) { return k.navn + " — " + k.tittel + " " + k.url; }) };
+    }
+    case "les_vedlegg": {
+      var vr = await supabase.from("cases").select("vedlegg").eq("id", caseId).maybeSingle();
+      var vlist = (vr.data && vr.data.vedlegg) || [];
+      if (!vlist.length) return { error: "Saken har ingen vedlegg." };
+      var want = String(args.navn || "").toLowerCase().trim();
+      var valgt = want ? vlist.filter(function (v) { return String(v.navn || "").toLowerCase().indexOf(want) !== -1; })[0] : (vlist.length === 1 ? vlist[0] : null);
+      if (!valgt) return { error: want ? "Fant ikke noe vedlegg som heter noe slikt. Tilgjengelig: " + vlist.map(function (v) { return v.navn; }).join(", ") : "Saken har flere vedlegg — oppgi navn. Tilgjengelig: " + vlist.map(function (v) { return v.navn; }).join(", ") };
+      var rd = await readAttachment(supabase, valgt);
+      if (rd.feil) return { navn: rd.navn, error: rd.feil };
+      var off = Math.max(0, parseInt(args.offset, 10) || 0);
+      var bit = rd.tekst.slice(off, off + MAX_TOOL_CHARS);
+      return { navn: rd.navn, tegn_totalt: rd.tekst.length, fra: off, til: off + bit.length, mer_igjen: off + bit.length < rd.tekst.length, tekst: bit };
     }
     case "read_source": {
       var cr = await supabase.from("cases").select("kilder").eq("id", caseId).maybeSingle();
