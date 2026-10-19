@@ -35,6 +35,12 @@ Netlify-miljøvariabler (kun navn): `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_
 
 ## 3. Kom i gang på en ny Claude-konto
 
+**Vanligste tilfelle — samme data, samme maskin, bare en annen Claude-konto:** ingenting i infrastrukturen endres. Logg inn med den nye kontoen,
+åpne den eksisterende prosjektmappen (`~/Desktop/Claude WORK FOLDER/uas-saksbank` — `.env` ligger allerede der) og start Claude der. `CLAUDE.md` leses automatisk.
+Det eneste som ikke følger med kontoen er chatthistorikken (derfor `CLAUDE.md`, dette dokumentet og `chat-logg/`) og Claudes minne. Hopp til punkt 5.
+
+Trenger du å sette det opp fra bunnen (ny maskin e.l.):
+
 1. Installer Claude Code (eller bruk skrivebordsappen) og logg inn med den nye kontoen.
 2. Hent koden: `git clone https://github.com/UASnorge/UAS-saksbank.git` (du trenger tilgang til GitHub-organisasjonen UASnorge).
    Alternativt: pakk ut `kildekode/` fra denne mappen, eller gjenopprett full historikk fra `kildekode-git/saksbank-full-historikk.bundle` (`git clone saksbank-full-historikk.bundle saksbank`).
@@ -131,15 +137,13 @@ Grupper (se `endringslogg-git.txt` for alle commits):
 - `README.md` beskriver oppsett steg for steg og er delvis eldre enn funksjonene over — stol på denne filen og koden ved avvik.
 - Idéer brukeren har antydet: bedre mobilvisning, PowerPoint-bilder som støttebilder, vedlegg til «Generer manus».
 
-## 10. Sikkerhet — GJØR DETTE ved overføring
+## 10. Sikkerhet
 
-Under arbeidet har noen hemmeligheter (databasepassord via `SUPABASE_DB_URL`, Netlify-token, Supabase service_role-nøkkel) vært innom Claude-økter/loggene på den gamle kontoen.
-Anbefalt ved kontobytte:
-1. Roter **Netlify personal access token** (lag nytt, slett gammelt).
-2. Tilbakestill **Supabase database-passord** (Project Settings → Database) og oppdater `SUPABASE_DB_URL`.
-3. Vurder å rotere **service_role-nøkkelen** (Supabase → Project Settings → API; husk å oppdatere Netlify-variabelen `SUPABASE_SERVICE_ROLE_KEY` og redeploye).
-4. Vurder ny **OpenAI API-nøkkel** og nye **WordPress Application Passwords**, og oppdater Netlify.
-5. Ikke legg `.env` eller rå chatt-logger (`.jsonl`) i delte mapper — de kan inneholde disse verdiene. Mappen `chat-logg/` her er renset.
+Fortsetter dere på samme oppsett (samme Supabase/Netlify/OpenAI/WordPress) er **ingen nøkkelbytte nødvendig**. Å rotere nøkler er valgfritt og bare aktuelt dersom noen utenfor teamet kan ha fått tilgang til loggene.
+
+Gode vaner uansett:
+- Ikke legg `.env` eller rå chatt-logger (`.jsonl`) i delte mapper. Under arbeidet har databasepassord, Netlify-token og service_role-nøkkel vært innom de rå loggene på den gamle kontoen (lokalt på maskinen). Mappen `chat-logg/` her er renset.
+- Skulle dere en gang ønske å rotere: Netlify personal access token (nytt token), Supabase database-passord (Project Settings → Database → oppdater `SUPABASE_DB_URL`), service_role-nøkkel (Project Settings → API → oppdater Netlify-variabelen og redeploy), OpenAI-nøkkel og WP Application Passwords.
 
 ## 11. Slik jobber Claude best med deg (observert)
 
