@@ -117,7 +117,11 @@ async function startContinuation(event, body) {
   try {
     var base = process.env.URL || (event.headers && event.headers.host ? "https://" + event.headers.host : "");
     if (!base) return false;
-    var auth = (event.headers && (event.headers.authorization || event.headers.Authorization)) || "";
+    // Server-til-server: bruker service-nøkkelen i stedet for brukerens innloggingstoken, som kan ha
+    // utløpt (og en Background Function svarer 202 uansett, så en avvisning ble aldri synlig).
+    var key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!key) return false;
+    var auth = "Bearer " + key;
     var res = await fetch(base + "/.netlify/functions/transcribe-audio-background", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": auth },
@@ -241,10 +245,12 @@ async function processCase(supabase, openaiKey, body, ctx) {
 
 exports.handler = async function (event) {
   const openaiKey = process.env.OPENAI_API_KEY;
-  if (!(await isAuthorizedUser(event))) return { statusCode: 401, body: "" };
-
   var body;
   try { body = JSON.parse(event.body || "{}"); } catch (e) { return { statusCode: 400, body: "" }; }
+
+  var hdr = (event.headers && (event.headers.authorization || event.headers.Authorization)) || "";
+  var erFortsettelse = body.fortsett === true && !!process.env.SUPABASE_SERVICE_ROLE_KEY && hdr === "Bearer " + process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!erFortsettelse && !(await isAuthorizedUser(event))) return { statusCode: 401, body: "" };
 
   var caseId = body.caseId;
   var audioPaths = body.audioPaths || (body.audioPath ? [body.audioPath] : []);
